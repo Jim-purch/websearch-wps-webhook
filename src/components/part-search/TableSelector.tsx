@@ -35,7 +35,15 @@ export function TableSelector({
             >
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                     <span className="text-xl">📊</span>
-                    步骤 2: 选择数据表 {selectedTableNames.size > 0 && <span className="text-sm font-normal text-[var(--text-muted)]">({selectedTableNames.size} 已选)</span>}
+                    步骤 2: 选择数据表
+                    {!isOpen && selectedTableNames.size > 0 ? (
+                        <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
+                            - 已选: {Array.from(selectedTableNames).slice(0, 3).join(', ')}
+                            {selectedTableNames.size > 3 && ` 等${selectedTableNames.size}个表`}
+                        </span>
+                    ) : (
+                        selectedTableNames.size > 0 && <span className="text-sm font-normal text-[var(--text-muted)]">({selectedTableNames.size} 已选)</span>
+                    )}
                 </h3>
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                     ▼

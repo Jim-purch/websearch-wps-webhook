@@ -28,6 +28,11 @@ export function TokenSelector({ tokens, selectedToken, isLoading, onSelect }: To
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                     <span className="text-xl">🔑</span>
                     步骤 1: 选择 Token
+                    {!isOpen && selectedToken && (
+                        <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
+                            - 已选: {selectedToken.name}
+                        </span>
+                    )}
                 </h3>
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                     ▼
