@@ -33,7 +33,7 @@ export interface TableSearchResult {
 
 export function usePartSearch() {
     const { tokens, isLoading: isLoadingTokens } = useTokens()
-    const { sharedTokens, isLoading: isLoadingShared, getUsableSharedTokens } = useSharedTokens()
+    const { isLoading: isLoadingShared, getUsableSharedTokens } = useSharedTokens()
 
     // 当前选中的 Token
     const [selectedToken, setSelectedToken] = useState<Token | null>(null)
@@ -113,7 +113,7 @@ export function usePartSearch() {
         } finally {
             setIsLoadingTables(false)
         }
-    }, [tokens])
+    }, [allTokens])
 
     // 切换表选择
     const toggleTable = useCallback((tableName: string) => {

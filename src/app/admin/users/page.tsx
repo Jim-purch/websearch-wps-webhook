@@ -12,7 +12,6 @@ export default function UsersPage() {
     const supabase = createClient()
 
     const fetchUsers = useCallback(async () => {
-        setIsLoading(true)
         const { data } = await supabase
             .from('user_profiles')
             .select('*')
@@ -23,6 +22,7 @@ export default function UsersPage() {
     }, [supabase])
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchUsers()
     }, [fetchUsers])
 
@@ -143,8 +143,8 @@ export default function UsersPage() {
                                                 <button
                                                     onClick={() => toggleUserActive(user.id, user.is_active)}
                                                     className={`px-3 py-1 rounded text-sm ${user.is_active
-                                                            ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                                                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                        ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                                                        : 'bg-green-100 text-green-700 hover:bg-green-200'
                                                         }`}
                                                 >
                                                     {user.is_active ? '停用' : '激活'}

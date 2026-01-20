@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WPS Token Manager",
+  title: "WPS快速查询",
   description: "管理和分享您的 WPS 脚本令牌",
 };
 

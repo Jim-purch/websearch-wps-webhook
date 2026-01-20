@@ -76,7 +76,7 @@ export default function DashboardPage() {
             <div className="card p-6">
                 <h2 className="text-lg font-bold mb-4">快捷操作</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Link href="/dashboard/tokens" className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[#667eea] transition-colors">
+                    <Link href="/dashboard/profile" className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[#667eea] transition-colors">
                         <span className="text-2xl">📋</span>
                         <div>
                             <p className="font-medium">管理 Token</p>
@@ -84,7 +84,7 @@ export default function DashboardPage() {
                         </div>
                     </Link>
 
-                    <Link href="/dashboard/tokens?new=1" className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[#667eea] transition-colors">
+                    <Link href="/dashboard/profile" className="flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[#667eea] transition-colors">
                         <span className="text-2xl">➕</span>
                         <div>
                             <p className="font-medium">新建 Token</p>

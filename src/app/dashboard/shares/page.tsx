@@ -8,7 +8,7 @@ import type { TokenShare, CreateShareInput, Token } from '@/types'
 
 export default function SharesPage() {
     const { tokens } = useTokens()
-    const { sharedTokens, isLoading: isLoadingShared, claimShare, removeSharedToken, fetchSharedTokens } = useSharedTokens()
+    const { sharedTokens, isLoading: isLoadingShared, claimShare, removeSharedToken } = useSharedTokens()
     const [shares, setShares] = useState<(TokenShare & { token?: Token })[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [showNewForm, setShowNewForm] = useState(false)
@@ -27,7 +27,6 @@ export default function SharesPage() {
     const supabase = createClient()
 
     const fetchShares = useCallback(async () => {
-        setIsLoading(true)
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
@@ -46,6 +45,7 @@ export default function SharesPage() {
     }, [supabase])
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchShares()
     }, [fetchShares])
 
@@ -255,7 +255,7 @@ export default function SharesPage() {
                         <div className="text-4xl mb-4">📭</div>
                         <p className="text-[var(--text-muted)]">暂无接收的分享</p>
                         <p className="text-sm text-[var(--text-muted)] mt-2">
-                            点击上方"添加分享码"按钮，输入他人的分享码来接收 Token
+                            点击上方&quot;添加分享码&quot;按钮，输入他人的分享码来接收 Token
                         </p>
                     </div>
                 ) : (

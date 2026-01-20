@@ -6,6 +6,21 @@ import type { LoginLog, TokenUsageLog, SystemStatistics } from '@/types'
 
 type TabType = 'overview' | 'logins' | 'tokenUsage'
 
+const StatCard = ({ icon, label, value, subLabel }: { icon: string; label: string; value: number; subLabel?: string }) => (
+    <div className="card p-6">
+        <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center text-2xl">
+                {icon}
+            </div>
+            <div>
+                <p className="text-[var(--text-muted)] text-sm">{label}</p>
+                <p className="text-2xl font-bold">{value}</p>
+                {subLabel && <p className="text-xs text-[var(--text-muted)]">{subLabel}</p>}
+            </div>
+        </div>
+    </div>
+)
+
 export default function StatisticsPage() {
     const [activeTab, setActiveTab] = useState<TabType>('overview')
     const [statistics, setStatistics] = useState<SystemStatistics | null>(null)
@@ -126,21 +141,6 @@ export default function StatisticsPage() {
         use: '使用',
         share: '分享',
     }
-
-    const StatCard = ({ icon, label, value, subLabel }: { icon: string; label: string; value: number; subLabel?: string }) => (
-        <div className="card p-6">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center text-2xl">
-                    {icon}
-                </div>
-                <div>
-                    <p className="text-[var(--text-muted)] text-sm">{label}</p>
-                    <p className="text-2xl font-bold">{value}</p>
-                    {subLabel && <p className="text-xs text-[var(--text-muted)]">{subLabel}</p>}
-                </div>
-            </div>
-        </div>
-    )
 
     if (isLoading) {
         return (
