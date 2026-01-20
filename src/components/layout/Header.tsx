@@ -17,7 +17,7 @@ export function Header() {
         <header className="header">
             <div className="flex items-center gap-4">
                 <Link href="/dashboard" className="text-xl font-bold text-white hover:opacity-90">
-                    🔐 WPS Token Manager
+                    🔐 WPS快速查询
                 </Link>
             </div>
 

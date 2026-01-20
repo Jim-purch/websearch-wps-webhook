@@ -338,5 +338,35 @@ CREATE POLICY "Admins can view all token usage logs" ON token_usage_logs
 -- 注意：请先通过邮箱注册，然后运行以下命令将账户设为管理员
 -- =====================================================
 
--- 将指定邮箱设为管理员并激活
--- UPDATE user_profiles SET role = 'admin', is_active = true WHERE email = 'your-admin@email.com';
+-- =====================================================
+-- 系统设置表
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  description TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_by UUID REFERENCES user_profiles(id)
+);
+
+-- 插入默认设置
+INSERT INTO system_settings (key, value, description)
+VALUES ('allow_registration', 'true'::jsonb, '是否允许新用户注册')
+ON CONFLICT (key) DO NOTHING;
+
+-- 启用 RLS
+ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+
+-- 删除旧策略（如果存在）
+DROP POLICY IF EXISTS "Public can view system settings" ON system_settings;
+DROP POLICY IF EXISTS "Admins can manage system settings" ON system_settings;
+
+-- 允许所有人查看系统设置（包括未登录用户，用于注册页面判断）
+CREATE POLICY "Public can view system settings" ON system_settings
+  FOR SELECT USING (true);
+
+-- 仅管理员可以修改系统设置
+CREATE POLICY "Admins can manage system settings" ON system_settings
+  FOR ALL USING (public.is_admin());
+

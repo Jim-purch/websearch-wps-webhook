@@ -9,6 +9,18 @@ export default function UsersPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all')
 
+    // New Feature States
+    const [isRegistrationOpen, setIsRegistrationOpen] = useState(true)
+    const [showCreateModal, setShowCreateModal] = useState(false)
+    const [isCreating, setIsCreating] = useState(false)
+    const [newUser, setNewUser] = useState({
+        email: '',
+        password: '',
+        displayName: '',
+        role: 'user',
+        isActive: true
+    })
+
     const supabase = createClient()
 
     const fetchUsers = useCallback(async () => {
@@ -21,10 +33,21 @@ export default function UsersPage() {
         setIsLoading(false)
     }, [supabase])
 
+    const fetchSettings = useCallback(async () => {
+        const { data } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'allow_registration')
+            .single()
+        if (data) {
+            setIsRegistrationOpen(data.value)
+        }
+    }, [supabase])
+
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchUsers()
-    }, [fetchUsers])
+        fetchSettings()
+    }, [fetchUsers, fetchSettings])
 
     const toggleUserActive = async (userId: string, isActive: boolean) => {
         await supabase
@@ -41,6 +64,55 @@ export default function UsersPage() {
             .update({ role: newRole, updated_at: new Date().toISOString() })
             .eq('id', userId)
         fetchUsers()
+    }
+
+    const toggleRegistration = async () => {
+        const newValue = !isRegistrationOpen
+        const { error } = await supabase
+            .from('system_settings')
+            .upsert({ key: 'allow_registration', value: newValue })
+
+        if (!error) {
+            setIsRegistrationOpen(newValue)
+        } else {
+            alert('更新设置失败')
+        }
+    }
+
+    const handleCreateUser = async (e: React.FormEvent) => {
+        e.preventDefault()
+
+        if (newUser.password.length < 6) {
+            alert('密码至少需要6位')
+            return
+        }
+
+        setIsCreating(true)
+        try {
+            const res = await fetch('/api/admin/users/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newUser)
+            })
+
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || '创建失败')
+
+            setShowCreateModal(false)
+            setNewUser({
+                email: '',
+                password: '',
+                displayName: '',
+                role: 'user',
+                isActive: true
+            })
+            fetchUsers()
+            alert('用户创建成功')
+        } catch (err: any) {
+            alert(err.message)
+        } finally {
+            setIsCreating(false)
+        }
     }
 
     const filteredUsers = users.filter(user => {
@@ -61,11 +133,36 @@ export default function UsersPage() {
 
     return (
         <div className="max-w-6xl">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold">用户管理</h1>
-                    <p className="text-[var(--text-muted)]">管理系统用户和权限</p>
+            <div className="flex flex-col gap-6 mb-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold">用户管理</h1>
+                        <p className="text-[var(--text-muted)]">管理系统用户和权限</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        {/* Registration Toggle */}
+                        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-[var(--border)]">
+                            <span className="text-sm font-medium">开放注册</span>
+                            <button
+                                onClick={toggleRegistration}
+                                className={`w-12 h-6 rounded-full transition-colors relative ${isRegistrationOpen ? 'bg-green-500' : 'bg-gray-300'
+                                    }`}
+                            >
+                                <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${isRegistrationOpen ? 'left-7' : 'left-1'
+                                    }`} />
+                            </button>
+                        </div>
+
+                        {/* Add User Button */}
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="btn-primary flex items-center gap-2"
+                        >
+                            <span>➕</span> 新增用户
+                        </button>
+                    </div>
                 </div>
+
                 <div className="flex gap-2">
                     <button
                         onClick={() => setFilter('all')}
@@ -164,6 +261,101 @@ export default function UsersPage() {
                     </div>
                 )}
             </div>
+
+            {/* Create User Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold">新增用户</h2>
+                            <button
+                                onClick={() => setShowCreateModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleCreateUser} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">邮箱 *</label>
+                                <input
+                                    type="email"
+                                    required
+                                    className="input w-full"
+                                    value={newUser.email}
+                                    onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">显示名称</label>
+                                <input
+                                    type="text"
+                                    className="input w-full"
+                                    value={newUser.displayName}
+                                    onChange={e => setNewUser({ ...newUser, displayName: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">密码 *</label>
+                                <input
+                                    type="password"
+                                    required
+                                    minLength={6}
+                                    className="input w-full"
+                                    value={newUser.password}
+                                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                                    placeholder="至少6位"
+                                />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium mb-1">角色</label>
+                                    <select
+                                        className="input w-full"
+                                        value={newUser.role}
+                                        onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                                    >
+                                        <option value="user">普通用户</option>
+                                        <option value="admin">管理员</option>
+                                    </select>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium mb-1">状态</label>
+                                    <select
+                                        className="input w-full"
+                                        value={newUser.isActive ? 'true' : 'false'}
+                                        onChange={e => setNewUser({ ...newUser, isActive: e.target.value === 'true' })}
+                                    >
+                                        <option value="true">已激活</option>
+                                        <option value="false">待激活</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCreateModal(false)}
+                                    className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isCreating}
+                                    className="btn-primary"
+                                >
+                                    {isCreating ? '创建中...' : '确认创建'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

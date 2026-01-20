@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
+import { createClient } from '@/lib/supabase/client'
 
 export default function RegisterPage() {
     const [email, setEmail] = useState('')
@@ -12,7 +13,32 @@ export default function RegisterPage() {
     const [error, setError] = useState('')
     const [success, setSuccess] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
+    const [isRegistrationAllowed, setIsRegistrationAllowed] = useState(true) // Default true to avoid flash? Or false? 
+    // Best to wait.
+    const [checkingStatus, setCheckingStatus] = useState(true)
     const { signUp } = useAuth()
+    const supabase = createClient()
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const { data } = await supabase
+                    .from('system_settings')
+                    .select('value')
+                    .eq('key', 'allow_registration')
+                    .single()
+
+                if (data) {
+                    setIsRegistrationAllowed(data.value)
+                }
+            } catch (e) {
+                console.error('Failed to check registration status', e)
+            } finally {
+                setCheckingStatus(false)
+            }
+        }
+        checkStatus()
+    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -44,6 +70,34 @@ export default function RegisterPage() {
         }
     }
 
+    if (checkingStatus) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="spinner" />
+            </div>
+        )
+    }
+
+    if (!isRegistrationAllowed) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="card p-8 w-full max-w-md text-center">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-3xl">🚫</span>
+                    </div>
+                    <h1 className="text-2xl font-bold mb-4">注册未开放</h1>
+                    <p className="text-[var(--text-muted)] mb-6">
+                        系统当前暂停新用户注册。<br />
+                        请联系管理员为您创建账户。
+                    </p>
+                    <Link href="/login" className="btn-primary inline-block">
+                        返回登录
+                    </Link>
+                </div>
+            </div>
+        )
+    }
+
     if (success) {
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
@@ -73,7 +127,7 @@ export default function RegisterPage() {
                         <span className="text-3xl">🔐</span>
                     </div>
                     <h1 className="text-2xl font-bold gradient-text">创建账户</h1>
-                    <p className="text-[var(--text-muted)] mt-2">加入 WPS Token Manager</p>
+                    <p className="text-[var(--text-muted)] mt-2">加入 WPS快速查询</p>
                 </div>
 
                 {/* 错误提示 */}
