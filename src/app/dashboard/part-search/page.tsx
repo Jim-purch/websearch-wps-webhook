@@ -33,7 +33,9 @@ export default function PartSearchPage() {
         searchResults,
         isSearching,
         searchError,
-        performSearch
+        performSearch,
+        exportToExcel,
+        isExporting
     } = usePartSearch()
 
     // 检查是否已选择列
@@ -93,6 +95,8 @@ export default function PartSearchPage() {
                         selectedColumns={selectedColumns}
                         isSearching={isSearching}
                         onSearch={performSearch}
+                        onExport={exportToExcel}
+                        isExporting={isExporting}
                     />
                 )}
 

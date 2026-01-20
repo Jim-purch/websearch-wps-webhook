@@ -49,9 +49,13 @@ export function usePartSearch() {
     const [selectedColumns, setSelectedColumns] = useState<Record<string, string[]>>({})
 
     // 搜索结果
+    // 搜索结果
     const [searchResults, setSearchResults] = useState<TableSearchResult[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [searchError, setSearchError] = useState<string | null>(null)
+
+    // 导出状态
+    const [isExporting, setIsExporting] = useState(false)
 
     // 合并自己的 Token 和分享的 Token
     const allTokens = useMemo(() => {
@@ -226,11 +230,10 @@ export function usePartSearch() {
         })
     }, [])
 
-    // 执行搜索
-    const performSearch = useCallback(async (conditions: SearchCondition[]) => {
+    // 核心搜索逻辑
+    const fetchSearchResults = useCallback(async (conditions: SearchCondition[]) => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
-            setSearchError('Token 配置不完整')
-            return
+            throw new Error('Token 配置不完整')
         }
 
         // 按表分组条件（支持 tableKey 格式，如 tableName__copy_1）
@@ -255,13 +258,8 @@ export function usePartSearch() {
 
         const tableKeys = Object.keys(conditionsByTableKey)
         if (tableKeys.length === 0) {
-            setSearchError('请至少填写一个搜索条件')
-            return
+            throw new Error('请至少填写一个搜索条件')
         }
-
-        setIsSearching(true)
-        setSearchError(null)
-        setSearchResults([])
 
         const results: TableSearchResult[] = []
 
@@ -314,13 +312,96 @@ export function usePartSearch() {
                     error: err instanceof Error ? err.message : '搜索失败'
                 })
             }
-
-            // 逐个更新结果（实时显示）
-            setSearchResults([...results])
         }
 
-        setIsSearching(false)
+        return results
     }, [selectedToken])
+
+    // 执行搜索
+    const performSearch = useCallback(async (conditions: SearchCondition[]) => {
+        setIsSearching(true)
+        setSearchError(null)
+        setSearchResults([])
+
+        try {
+            const results = await fetchSearchResults(conditions)
+            setSearchResults(results)
+        } catch (err) {
+            setSearchError(err instanceof Error ? err.message : '搜索发生错误')
+        } finally {
+            setIsSearching(false)
+        }
+    }, [fetchSearchResults])
+
+    // 导出到 Excel
+    const exportToExcel = useCallback(async (conditions: SearchCondition[]) => {
+        setIsExporting(true)
+        setSearchError(null)
+
+        try {
+            const results = await fetchSearchResults(conditions)
+
+            // 动态导入 ExcelJS 和 file-saver 以避免 SSR 问题和减少初始包大小
+            const ExcelJS = (await import('exceljs')).default
+            const { saveAs } = (await import('file-saver'))
+
+            const workbook = new ExcelJS.Workbook()
+            let hasData = false
+
+            results.forEach(result => {
+                if (result.records && result.records.length > 0) {
+                    hasData = true
+                    // 处理数据，展平字段
+                    const flatRecords = result.records.map(r => {
+                        if (r.fields && typeof r.fields === 'object') {
+                            return r.fields as Record<string, unknown>
+                        }
+                        return r
+                    })
+
+                    // Sheet 名称处理
+                    let sheetName = result.tableName.replace(/[\\/?*[\]]/g, '_').substring(0, 31)
+                    let counter = 1
+                    let finalSheetName = sheetName
+                    while (workbook.getWorksheet(finalSheetName)) {
+                        finalSheetName = `${sheetName.substring(0, 28)}(${counter})`
+                        counter++
+                    }
+
+                    const worksheet = workbook.addWorksheet(finalSheetName)
+
+                    // 自动生成列头
+                    if (flatRecords.length > 0) {
+                        // 获取所有记录的所有唯一键，以防止某些记录缺少字段
+                        const allKeys = Array.from(new Set(flatRecords.flatMap(r => Object.keys(r))))
+
+                        worksheet.columns = allKeys.map(key => ({
+                            header: key,
+                            key: key,
+                            width: 20 // 默认宽度
+                        }))
+
+                        worksheet.addRows(flatRecords)
+                    }
+                }
+            })
+
+            if (!hasData) {
+                setSearchError('没有可导出的数据')
+                return
+            }
+
+            // 导出文件
+            const buffer = await workbook.xlsx.writeBuffer()
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+            saveAs(blob, `搜索结果_${new Date().toISOString().slice(0, 10)}.xlsx`)
+        } catch (err) {
+            console.error('Export error:', err)
+            setSearchError(err instanceof Error ? err.message : '导出发生错误')
+        } finally {
+            setIsExporting(false)
+        }
+    }, [fetchSearchResults])
 
     return {
         // Token
@@ -352,6 +433,8 @@ export function usePartSearch() {
         searchResults,
         isSearching,
         searchError,
-        performSearch
+        performSearch,
+        exportToExcel,
+        isExporting
     }
 }

@@ -7,6 +7,8 @@ interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
     onSearch: (conditions: SearchCondition[]) => void
+    onExport?: (conditions: SearchCondition[]) => void
+    isExporting?: boolean
 }
 
 interface InputState {
@@ -14,8 +16,16 @@ interface InputState {
     op: 'Contains' | 'Equals'
 }
 
-export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFormProps) {
-    // 为每个 table+column 组合生成输入状态
+export function SearchForm({
+    selectedColumns,
+    isSearching,
+    onSearch,
+    onExport,
+    isExporting = false
+}: SearchFormProps) {
+    // ... existing logic ...
+
+    // (Ensure inputKeys and inputs state logic remains unchanged)
     const inputKeys = useMemo(() => {
         const keys: Array<{ tableName: string; columnName: string }> = []
         for (const [tableName, columns] of Object.entries(selectedColumns)) {
@@ -42,10 +52,8 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
         }))
     }
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault()
-
-        const conditions: SearchCondition[] = inputKeys
+    const getConditions = () => {
+        return inputKeys
             .map(({ tableName, columnName }) => {
                 const key = `${tableName}__${columnName}`
                 const input = inputs[key]
@@ -56,9 +64,18 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
                     op: input?.op || 'Contains'
                 }
             })
-            .filter(c => c.searchValue.trim() !== '')
+            .filter(c => c.searchValue.trim() !== '') as SearchCondition[]
+    }
 
-        onSearch(conditions)
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        onSearch(getConditions())
+    }
+
+    const handleExport = () => {
+        if (onExport) {
+            onExport(getConditions())
+        }
     }
 
     if (inputKeys.length === 0) {
@@ -144,11 +161,11 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
                     })}
                 </div>
 
-                <div className="text-center">
+                <div className="text-center flex justify-center gap-4">
                     <button
                         type="submit"
-                        disabled={isSearching}
-                        className="btn-primary px-4 py-2 text-sm w-full sm:w-auto"
+                        disabled={isSearching || isExporting}
+                        className="btn-primary px-4 py-2 text-sm w-full sm:w-auto min-w-[120px]"
                     >
                         {isSearching ? (
                             <span className="flex items-center gap-2 justify-center">
@@ -162,6 +179,27 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
                             </span>
                         )}
                     </button>
+
+                    {onExport && (
+                        <button
+                            type="button"
+                            onClick={handleExport}
+                            disabled={isSearching || isExporting}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#10b981] hover:bg-[#059669] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
+                        >
+                            {isExporting ? (
+                                <span className="flex items-center gap-2">
+                                    <span className="spinner w-4 h-4 border-white/30 border-t-white"></span>
+                                    导出中...
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-2">
+                                    <span>📤</span>
+                                    批量导出
+                                </span>
+                            )}
+                        </button>
+                    )}
                 </div>
             </form>
         </div>
