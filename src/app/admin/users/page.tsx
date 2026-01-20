@@ -141,8 +141,8 @@ export default function UsersPage() {
                     </div>
                     <div className="flex items-center gap-4">
                         {/* Registration Toggle */}
-                        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-[var(--border)]">
-                            <span className="text-sm font-medium">开放注册</span>
+                        <div className="flex items-center gap-2 bg-[var(--card-bg)] px-4 py-2 rounded-lg border border-[var(--border)]">
+                            <span className="text-sm font-medium text-[var(--foreground)]">开放注册</span>
                             <button
                                 onClick={toggleRegistration}
                                 className={`w-12 h-6 rounded-full transition-colors relative ${isRegistrationOpen ? 'bg-green-500' : 'bg-gray-300'
@@ -166,19 +166,19 @@ export default function UsersPage() {
                 <div className="flex gap-2">
                     <button
                         onClick={() => setFilter('all')}
-                        className={`px-4 py-2 rounded-lg ${filter === 'all' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                        className={`px-4 py-2 rounded-lg transition-colors ${filter === 'all' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                     >
                         全部 ({users.length})
                     </button>
                     <button
                         onClick={() => setFilter('active')}
-                        className={`px-4 py-2 rounded-lg ${filter === 'active' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                        className={`px-4 py-2 rounded-lg transition-colors ${filter === 'active' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                     >
                         已激活 ({users.filter(u => u.is_active).length})
                     </button>
                     <button
                         onClick={() => setFilter('inactive')}
-                        className={`px-4 py-2 rounded-lg ${filter === 'inactive' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                        className={`px-4 py-2 rounded-lg transition-colors ${filter === 'inactive' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                     >
                         待激活 ({users.filter(u => !u.is_active).length})
                     </button>
@@ -210,7 +210,7 @@ export default function UsersPage() {
                             </thead>
                             <tbody>
                                 {filteredUsers.map((user) => (
-                                    <tr key={user.id} className="border-b border-[var(--border)] last:border-0 hover:bg-gray-50">
+                                    <tr key={user.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--hover-bg)]">
                                         <td className="p-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center text-white font-bold">
@@ -265,12 +265,12 @@ export default function UsersPage() {
             {/* Create User Modal */}
             {showCreateModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in">
+                    <div className="bg-[var(--card-bg)] rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in border border-[var(--border)]">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold">新增用户</h2>
                             <button
                                 onClick={() => setShowCreateModal(false)}
-                                className="text-gray-400 hover:text-gray-600"
+                                className="text-[var(--text-muted)] hover:text-[var(--foreground)]"
                             >
                                 ✕
                             </button>
@@ -340,7 +340,7 @@ export default function UsersPage() {
                                 <button
                                     type="button"
                                     onClick={() => setShowCreateModal(false)}
-                                    className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+                                    className="px-4 py-2 rounded-lg bg-[var(--bg-secondary)] text-[var(--foreground)] hover:bg-[var(--hover-bg)] border border-[var(--border)]"
                                 >
                                     取消
                                 </button>

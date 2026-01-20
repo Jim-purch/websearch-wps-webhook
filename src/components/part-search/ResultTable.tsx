@@ -130,7 +130,7 @@ function ResultCard({ result, index }: { result: TableSearchResult; index: numbe
                             </thead>
                             <tbody>
                                 {rows.map((row, rowIdx) => (
-                                    <tr key={rowIdx} className="hover:bg-[rgba(102,126,234,0.05)]">
+                                    <tr key={rowIdx} className="hover:bg-[var(--hover-bg)]">
                                         {columns.map(col => {
                                             let val = row[col]
                                             if (val && typeof val === 'object') {

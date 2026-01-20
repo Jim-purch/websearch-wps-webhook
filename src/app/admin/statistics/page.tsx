@@ -164,19 +164,19 @@ export default function StatisticsPage() {
             <div className="flex gap-2 mb-6">
                 <button
                     onClick={() => setActiveTab('overview')}
-                    className={`px-4 py-2 rounded-lg ${activeTab === 'overview' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                    className={`px-4 py-2 rounded-lg transition-colors ${activeTab === 'overview' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                 >
                     📊 概览
                 </button>
                 <button
                     onClick={() => setActiveTab('logins')}
-                    className={`px-4 py-2 rounded-lg ${activeTab === 'logins' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                    className={`px-4 py-2 rounded-lg transition-colors ${activeTab === 'logins' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                 >
                     🔐 登录记录
                 </button>
                 <button
                     onClick={() => setActiveTab('tokenUsage')}
-                    className={`px-4 py-2 rounded-lg ${activeTab === 'tokenUsage' ? 'gradient-primary text-white' : 'bg-gray-100'}`}
+                    className={`px-4 py-2 rounded-lg transition-colors ${activeTab === 'tokenUsage' ? 'gradient-primary text-white' : 'bg-[var(--bg-secondary)] text-[var(--foreground)] border border-[var(--border)]'}`}
                 >
                     🎫 Token 操作
                 </button>
@@ -243,7 +243,7 @@ export default function StatisticsPage() {
                                 </thead>
                                 <tbody>
                                     {loginLogs.map((log) => (
-                                        <tr key={log.id} className="border-b border-[var(--border)] last:border-0 hover:bg-gray-50">
+                                        <tr key={log.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--hover-bg)]">
                                             <td className="p-4">
                                                 <div>
                                                     <p className="font-medium">{log.user_profiles?.display_name || '未知'}</p>
@@ -289,7 +289,7 @@ export default function StatisticsPage() {
                                 </thead>
                                 <tbody>
                                     {tokenUsageLogs.map((log) => (
-                                        <tr key={log.id} className="border-b border-[var(--border)] last:border-0 hover:bg-gray-50">
+                                        <tr key={log.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--hover-bg)]">
                                             <td className="p-4">
                                                 <div>
                                                     <p className="font-medium">{log.user_profiles?.display_name || '未知'}</p>

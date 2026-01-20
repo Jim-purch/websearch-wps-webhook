@@ -55,7 +55,7 @@ export default function ShareAccessPage({ params }: { params: Promise<{ code: st
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="card p-8 w-full max-w-md text-center">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-[rgba(239,68,68,0.15)] rounded-full flex items-center justify-center mx-auto mb-4">
                         <span className="text-3xl">❌</span>
                     </div>
                     <h1 className="text-2xl font-bold mb-4">访问失败</h1>
@@ -98,7 +98,7 @@ export default function ShareAccessPage({ params }: { params: Promise<{ code: st
                     {token?.webhook_url && (
                         <div className="mb-6">
                             <h2 className="font-medium mb-2">Webhook URL</h2>
-                            <code className="block bg-gray-100 p-3 rounded-lg text-sm break-all">
+                            <code className="block bg-[var(--code-bg)] text-[var(--code-text)] p-3 rounded-lg text-sm break-all">
                                 {token.webhook_url}
                             </code>
                         </div>
@@ -107,7 +107,7 @@ export default function ShareAccessPage({ params }: { params: Promise<{ code: st
                     {share?.permission === 'use' && token?.token_value && (
                         <div className="mb-6">
                             <h2 className="font-medium mb-2">Token 值</h2>
-                            <code className="block bg-gray-100 p-3 rounded-lg text-sm break-all max-h-40 overflow-auto">
+                            <code className="block bg-[var(--code-bg)] text-[var(--code-text)] p-3 rounded-lg text-sm break-all max-h-40 overflow-auto">
                                 {token.token_value}
                             </code>
                         </div>

@@ -323,11 +323,11 @@ export default function SharesPage() {
                                         )}
                                     </div>
                                     <p className="text-sm text-[var(--text-muted)] ml-8">
-                                        分享码: <code className="bg-gray-100 px-2 py-0.5 rounded">{share.share_code}</code>
+                                        分享码: <code className="bg-[var(--code-bg)] text-[var(--code-text)] px-2 py-0.5 rounded">{share.share_code}</code>
                                         {share.recipient && (
                                             <span className="ml-3">
-                                                · 已分享给: <strong>{share.recipient.display_name || '未设置名称'}</strong>
-                                                <span className="text-gray-400 ml-1">({share.recipient.email})</span>
+                                                · 已分享给: <strong className="text-[var(--foreground)]">{share.recipient.display_name || '未设置名称'}</strong>
+                                                <span className="text-[var(--text-muted)] ml-1">({share.recipient.email})</span>
                                             </span>
                                         )}
                                     </p>

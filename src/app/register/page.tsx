@@ -82,7 +82,7 @@ export default function RegisterPage() {
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="card p-8 w-full max-w-md text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-full flex items-center justify-center mx-auto mb-4">
                         <span className="text-3xl">🚫</span>
                     </div>
                     <h1 className="text-2xl font-bold mb-4">注册未开放</h1>
@@ -102,7 +102,7 @@ export default function RegisterPage() {
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="card p-8 w-full max-w-md text-center">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-[rgba(34,197,94,0.15)] rounded-full flex items-center justify-center mx-auto mb-4">
                         <span className="text-3xl">✅</span>
                     </div>
                     <h1 className="text-2xl font-bold mb-4">注册成功！</h1>

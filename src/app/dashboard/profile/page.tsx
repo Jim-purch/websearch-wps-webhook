@@ -244,7 +244,7 @@ export default function ProfilePage() {
                     ) : (
                         <ul className="file-list">
                             {tokens.map((token) => (
-                                <li key={token.id} className="file-item hover:bg-[rgba(102,126,234,0.02)]">
+                                <li key={token.id} className="file-item hover:bg-[var(--hover-bg)]">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-1">
                                             <span className="text-xl">🔑</span>
@@ -281,7 +281,7 @@ export default function ProfilePage() {
                                         ) : (
                                             <button
                                                 onClick={() => setDeleteConfirm(token.id)}
-                                                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                                className="p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"
                                                 title="删除"
                                             >
                                                 🗑️
