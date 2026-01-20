@@ -38,7 +38,7 @@ export default function PartSearchPage() {
     const hasSelectedColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
 
     return (
-        <div className="max-w-6xl">
+        <div className="w-full">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold mb-2">
                     <span className="mr-2">📦</span>

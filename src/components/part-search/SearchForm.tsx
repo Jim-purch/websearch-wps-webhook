@@ -128,15 +128,15 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
                     <button
                         type="submit"
                         disabled={isSearching}
-                        className="btn-primary px-8 py-3 text-base"
+                        className="btn-primary px-4 py-2 text-sm w-full sm:w-auto"
                     >
                         {isSearching ? (
-                            <span className="flex items-center gap-2">
+                            <span className="flex items-center gap-2 justify-center">
                                 <span className="spinner w-4 h-4"></span>
                                 搜索中...
                             </span>
                         ) : (
-                            <span className="flex items-center gap-2">
+                            <span className="flex items-center gap-2 justify-center">
                                 <span>🔍</span>
                                 执行搜索
                             </span>

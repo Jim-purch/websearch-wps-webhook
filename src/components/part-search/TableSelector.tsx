@@ -77,7 +77,7 @@ export function TableSelector({
                             type="button"
                             onClick={() => onToggle(table.name)}
                             className={`
-                                flex items-center gap-2 px-4 py-2 rounded-lg border transition-all
+                                flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all
                                 ${isSelected
                                     ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)] text-[#eab308]'
                                     : 'border-[var(--border)] hover:border-[#667eea]'
