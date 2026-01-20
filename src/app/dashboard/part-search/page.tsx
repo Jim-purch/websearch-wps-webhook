@@ -28,6 +28,8 @@ export default function PartSearchPage() {
         toggleColumn,
         selectAllColumns,
         deselectAllColumns,
+        duplicateTable,
+        removeTableCopy,
         searchResults,
         isSearching,
         searchError,
@@ -80,6 +82,8 @@ export default function PartSearchPage() {
                         onToggle={toggleColumn}
                         onSelectAll={selectAllColumns}
                         onDeselectAll={deselectAllColumns}
+                        onDuplicate={duplicateTable}
+                        onRemove={removeTableCopy}
                     />
                 )}
 

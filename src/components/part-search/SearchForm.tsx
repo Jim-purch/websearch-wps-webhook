@@ -74,23 +74,28 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
 
             <form onSubmit={handleSubmit}>
                 <div className="space-y-4 mb-6">
-                    {Object.entries(selectedColumns).map(([tableName, columns]) => {
+                    {Object.entries(selectedColumns).map(([tableKey, columns]) => {
                         if (columns.length === 0) return null
+
+                        // 获取显示名称
+                        const displayName = tableKey.includes('__copy_')
+                            ? `${tableKey.split('__copy_')[0]} (副本${tableKey.split('__copy_')[1]})`
+                            : tableKey
 
                         return (
                             <div
-                                key={tableName}
+                                key={tableKey}
                                 className="rounded-lg border border-[var(--border)] overflow-hidden"
                             >
                                 <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)]">
                                     <span className="text-[#eab308] font-medium flex items-center gap-2">
                                         <span>📊</span>
-                                        {tableName}
+                                        {displayName}
                                     </span>
                                 </div>
                                 <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                                     {columns.map((columnName) => {
-                                        const key = `${tableName}__${columnName}`
+                                        const key = `${tableKey}__${columnName}`
                                         const input = inputs[key] || { value: '', op: 'Contains' }
                                         const isExact = input.op === 'Equals'
 

@@ -173,19 +173,58 @@ export function usePartSearch() {
     // 全选/取消全选列
     const selectAllColumns = useCallback(() => {
         const newSelectedColumns: Record<string, string[]> = {}
-        for (const [tableName, columns] of Object.entries(columnsData)) {
-            newSelectedColumns[tableName] = columns.map(c => c.name)
+        for (const [tableKey, columns] of Object.entries(columnsData)) {
+            newSelectedColumns[tableKey] = columns.map(c => c.name)
         }
         setSelectedColumns(newSelectedColumns)
     }, [columnsData])
 
     const deselectAllColumns = useCallback(() => {
         const newSelectedColumns: Record<string, string[]> = {}
-        for (const tableName of Object.keys(columnsData)) {
-            newSelectedColumns[tableName] = []
+        for (const tableKey of Object.keys(columnsData)) {
+            newSelectedColumns[tableKey] = []
         }
         setSelectedColumns(newSelectedColumns)
     }, [columnsData])
+
+    // 复制表（用于同一表的不同列搜索）
+    const duplicateTable = useCallback((tableKey: string) => {
+        // 从 key 中提取真实表名
+        const realTableName = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
+        const columns = columnsData[tableKey]
+        if (!columns) return
+
+        // 生成新的 key
+        const existingKeys = Object.keys(columnsData).filter(k =>
+            k === realTableName || k.startsWith(`${realTableName}__copy_`)
+        )
+        const newKey = `${realTableName}__copy_${existingKeys.length}`
+
+        setColumnsData(prev => ({
+            ...prev,
+            [newKey]: columns
+        }))
+        setSelectedColumns(prev => ({
+            ...prev,
+            [newKey]: []
+        }))
+    }, [columnsData])
+
+    // 删除复制的表
+    const removeTableCopy = useCallback((tableKey: string) => {
+        if (!tableKey.includes('__copy_')) return // 不能删除原始表
+
+        setColumnsData(prev => {
+            const next = { ...prev }
+            delete next[tableKey]
+            return next
+        })
+        setSelectedColumns(prev => {
+            const next = { ...prev }
+            delete next[tableKey]
+            return next
+        })
+    }, [])
 
     // 执行搜索
     const performSearch = useCallback(async (conditions: SearchCondition[]) => {
@@ -194,23 +233,28 @@ export function usePartSearch() {
             return
         }
 
-        // 按表分组条件
-        const conditionsByTable: Record<string, WpsSearchCriteria[]> = {}
+        // 按表分组条件（支持 tableKey 格式，如 tableName__copy_1）
+        const conditionsByTableKey: Record<string, { realTableName: string; criteria: WpsSearchCriteria[] }> = {}
         for (const cond of conditions) {
             if (!cond.searchValue.trim()) continue
 
-            if (!conditionsByTable[cond.tableName]) {
-                conditionsByTable[cond.tableName] = []
+            // tableName 可能是 "表名" 或 "表名__copy_1" 格式
+            const realTableName = cond.tableName.includes('__copy_')
+                ? cond.tableName.split('__copy_')[0]
+                : cond.tableName
+
+            if (!conditionsByTableKey[cond.tableName]) {
+                conditionsByTableKey[cond.tableName] = { realTableName, criteria: [] }
             }
-            conditionsByTable[cond.tableName].push({
+            conditionsByTableKey[cond.tableName].criteria.push({
                 columnName: cond.columnName,
                 searchValue: cond.searchValue,
                 op: cond.op
             })
         }
 
-        const tableNames = Object.keys(conditionsByTable)
-        if (tableNames.length === 0) {
+        const tableKeys = Object.keys(conditionsByTableKey)
+        if (tableKeys.length === 0) {
             setSearchError('请至少填写一个搜索条件')
             return
         }
@@ -221,23 +265,28 @@ export function usePartSearch() {
 
         const results: TableSearchResult[] = []
 
-        for (const tableName of tableNames) {
-            const criteria = conditionsByTable[tableName]
+        for (const tableKey of tableKeys) {
+            const { realTableName, criteria } = conditionsByTableKey[tableKey]
             const criteriaDesc = criteria
                 .map(c => `${c.columnName} ${c.op === 'Contains' ? '包含' : '等于'} "${c.searchValue}"`)
                 .join(' AND ')
 
+            // 显示名：如果是复制的表，添加副本标记
+            const displayTableName = tableKey.includes('__copy_')
+                ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
+                : realTableName
+
             try {
                 const result = await searchMultiCriteria(
                     selectedToken.id,
-                    tableName,
+                    realTableName,
                     criteria
                 )
 
                 if (result.success && result.data) {
                     const data = result.data as WpsSearchResult
                     results.push({
-                        tableName,
+                        tableName: displayTableName,
                         criteriaDescription: criteriaDesc,
                         records: data.records || [],
                         totalCount: data.totalCount || 0,
@@ -247,7 +296,7 @@ export function usePartSearch() {
                     })
                 } else {
                     results.push({
-                        tableName,
+                        tableName: displayTableName,
                         criteriaDescription: criteriaDesc,
                         records: [],
                         totalCount: 0,
@@ -257,7 +306,7 @@ export function usePartSearch() {
                 }
             } catch (err) {
                 results.push({
-                    tableName,
+                    tableName: displayTableName,
                     criteriaDescription: criteriaDesc,
                     records: [],
                     totalCount: 0,
@@ -296,6 +345,8 @@ export function usePartSearch() {
         toggleColumn,
         selectAllColumns,
         deselectAllColumns,
+        duplicateTable,
+        removeTableCopy,
 
         // Search
         searchResults,
