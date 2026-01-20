@@ -161,6 +161,94 @@ CREATE POLICY "Users can update own shares" ON token_shares
 CREATE POLICY "Users can delete own shares" ON token_shares
   FOR DELETE USING (auth.uid() = shared_by);
 
+-- 用户可以通过分享码领取分享（已废弃，改用 RPC）
+-- DROP POLICY IF EXISTS "Users can claim shares by code" ON token_shares;
+
+-- Users can delete (leave) shares that are shared with them (but NOT the template share)
+CREATE POLICY "Users can delete received shares" ON token_shares
+  FOR DELETE USING (auth.uid() = shared_with AND share_code IS NULL);
+
+-- =====================================================
+-- RPC: Claims a shared token via code (Multi-user support)
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION claim_shared_token(code TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  target_share RECORD;
+  existing_share RECORD;
+  new_share_id UUID;
+  current_user_id UUID;
+  token_name TEXT;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', '请先登录');
+  END IF;
+
+  -- 1. Find the share record by code
+  SELECT ts.*, t.name as token_name INTO target_share
+  FROM token_shares ts
+  JOIN tokens t ON t.id = ts.token_id
+  WHERE ts.share_code = code 
+    AND ts.is_active = true
+    AND (ts.expires_at IS NULL OR ts.expires_at > NOW());
+
+  IF target_share IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', '分享码无效或已失效');
+  END IF;
+
+  -- 2. Check if user is the owner (cannot claim own)
+  IF target_share.shared_by = current_user_id THEN
+    RETURN jsonb_build_object('success', false, 'error', '不能领取自己创建的分享');
+  END IF;
+
+  -- 3. Check if user already has this token shared
+  SELECT * INTO existing_share
+  FROM token_shares
+  WHERE token_id = target_share.token_id
+    AND shared_with = current_user_id;
+    
+  IF existing_share IS NOT NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', '您已经拥有此 Token 的权限');
+  END IF;
+
+  -- 4. Create new share record
+  INSERT INTO token_shares (
+    token_id,
+    shared_by,
+    shared_with,
+    permission,
+    is_active
+  ) VALUES (
+    target_share.token_id,
+    target_share.shared_by,
+    current_user_id,
+    target_share.permission,
+    true
+  ) RETURNING id INTO new_share_id;
+  
+  -- 5. Log usage
+  INSERT INTO token_usage_logs (
+    token_id,
+    user_id,
+    action,
+    details
+  ) VALUES (
+    target_share.token_id,
+    current_user_id,
+    'use',
+    jsonb_build_object('type', 'claim_share', 'share_code', code)
+  );
+
+  RETURN jsonb_build_object('success', true, 'share_id', new_share_id, 'token_name', target_share.token_name);
+END;
+$$;
+
 -- =====================================================
 -- 触发器：自动创建 user_profile
 -- =====================================================
@@ -186,6 +274,64 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =====================================================
+-- 系统统计表
+-- =====================================================
+
+-- 用户登录记录表
+CREATE TABLE IF NOT EXISTS login_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  login_at TIMESTAMPTZ DEFAULT NOW(),
+  ip_address TEXT,
+  user_agent TEXT
+);
+
+-- Token 使用记录表
+CREATE TABLE IF NOT EXISTS token_usage_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_id UUID REFERENCES tokens(id) ON DELETE SET NULL,
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('create', 'update', 'delete', 'use', 'share')),
+  details JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_login_logs_user_id ON login_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_login_logs_login_at ON login_logs(login_at);
+CREATE INDEX IF NOT EXISTS idx_token_usage_logs_user_id ON token_usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_logs_token_id ON token_usage_logs(token_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_logs_created_at ON token_usage_logs(created_at);
+
+-- 启用 RLS
+ALTER TABLE login_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE token_usage_logs ENABLE ROW LEVEL SECURITY;
+
+-- 删除旧策略（如果存在）
+DROP POLICY IF EXISTS "Users can insert own login logs" ON login_logs;
+DROP POLICY IF EXISTS "Admins can view all login logs" ON login_logs;
+DROP POLICY IF EXISTS "Users can insert own token usage logs" ON token_usage_logs;
+DROP POLICY IF EXISTS "Admins can view all token usage logs" ON token_usage_logs;
+
+-- login_logs 策略
+-- 用户可以插入自己的登录记录
+CREATE POLICY "Users can insert own login logs" ON login_logs
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- 管理员可以查看所有登录记录
+CREATE POLICY "Admins can view all login logs" ON login_logs
+  FOR SELECT USING (public.is_admin());
+
+-- token_usage_logs 策略
+-- 用户可以插入自己的 token 使用记录
+CREATE POLICY "Users can insert own token usage logs" ON token_usage_logs
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- 管理员可以查看所有 token 使用记录
+CREATE POLICY "Admins can view all token usage logs" ON token_usage_logs
+  FOR SELECT USING (public.is_admin());
 
 -- =====================================================
 -- 初始化管理员账户（可选）

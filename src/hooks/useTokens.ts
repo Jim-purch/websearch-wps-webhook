@@ -35,6 +35,20 @@ export function useTokens() {
         fetchTokens()
     }, [fetchTokens])
 
+    // 记录 Token 操作日志
+    const logTokenUsage = async (tokenId: string | null, userId: string, action: string, details?: Record<string, unknown>) => {
+        try {
+            await supabase.from('token_usage_logs').insert({
+                token_id: tokenId,
+                user_id: userId,
+                action,
+                details: details || null,
+            })
+        } catch (err) {
+            console.error('Failed to log token usage:', err)
+        }
+    }
+
     // 创建 Token
     const createToken = async (input: CreateTokenInput) => {
         try {
@@ -52,6 +66,10 @@ export function useTokens() {
 
             if (error) throw error
             setTokens(prev => [data, ...prev])
+
+            // 记录创建操作
+            await logTokenUsage(data.id, user.id, 'create', { name: data.name })
+
             return { data, error: null }
         } catch (err) {
             return { data: null, error: err instanceof Error ? err.message : '创建失败' }
@@ -61,6 +79,8 @@ export function useTokens() {
     // 更新 Token
     const updateToken = async (id: string, input: UpdateTokenInput) => {
         try {
+            const { data: { user } } = await supabase.auth.getUser()
+
             const { data, error } = await supabase
                 .from('tokens')
                 .update({ ...input, updated_at: new Date().toISOString() })
@@ -70,6 +90,12 @@ export function useTokens() {
 
             if (error) throw error
             setTokens(prev => prev.map(t => t.id === id ? data : t))
+
+            // 记录更新操作
+            if (user) {
+                await logTokenUsage(id, user.id, 'update', { name: data.name, changes: Object.keys(input) })
+            }
+
             return { data, error: null }
         } catch (err) {
             return { data: null, error: err instanceof Error ? err.message : '更新失败' }
@@ -79,6 +105,9 @@ export function useTokens() {
     // 删除 Token
     const deleteToken = async (id: string) => {
         try {
+            const { data: { user } } = await supabase.auth.getUser()
+            const token = tokens.find(t => t.id === id)
+
             const { error } = await supabase
                 .from('tokens')
                 .delete()
@@ -86,6 +115,12 @@ export function useTokens() {
 
             if (error) throw error
             setTokens(prev => prev.filter(t => t.id !== id))
+
+            // 记录删除操作
+            if (user) {
+                await logTokenUsage(null, user.id, 'delete', { tokenName: token?.name })
+            }
+
             return { error: null }
         } catch (err) {
             return { error: err instanceof Error ? err.message : '删除失败' }

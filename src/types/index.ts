@@ -84,3 +84,44 @@ export interface TokenWithShares extends Token {
 export interface SharedToken extends TokenShare {
     token?: Token
 }
+
+// Token 使用操作类型
+export type TokenAction = 'create' | 'update' | 'delete' | 'use' | 'share'
+
+// 登录记录
+export interface LoginLog {
+    id: string
+    user_id: string
+    login_at: string
+    ip_address: string | null
+    user_agent: string | null
+    // 联表查询时包含用户信息
+    user_profiles?: UserProfile
+}
+
+// Token 使用记录
+export interface TokenUsageLog {
+    id: string
+    token_id: string | null
+    user_id: string
+    action: TokenAction
+    details: Record<string, unknown> | null
+    created_at: string
+    // 联表查询时包含用户和 Token 信息
+    user_profiles?: UserProfile
+    tokens?: Token
+}
+
+// 系统统计概览
+export interface SystemStatistics {
+    totalUsers: number
+    activeUsers: number
+    inactiveUsers: number
+    adminUsers: number
+    totalTokens: number
+    activeTokens: number
+    totalShares: number
+    todayLogins: number
+    weekLogins: number
+    monthLogins: number
+}

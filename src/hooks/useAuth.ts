@@ -104,10 +104,24 @@ export function useAuth() {
 
     // 登录
     const signIn = async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password,
         })
+
+        // 登录成功后记录日志
+        if (!error && data?.user) {
+            try {
+                await supabase.from('login_logs').insert({
+                    user_id: data.user.id,
+                    ip_address: null, // 客户端无法可靠获取 IP
+                    user_agent: typeof window !== 'undefined' ? window.navigator.userAgent : null,
+                })
+            } catch (logError) {
+                console.error('Failed to log login:', logError)
+            }
+        }
+
         return { error }
     }
 

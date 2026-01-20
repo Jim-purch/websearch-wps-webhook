@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useTokens } from './useTokens'
+import { useSharedTokens } from './useSharedTokens'
 import {
     getTableList,
     searchMultiCriteria,
@@ -32,6 +33,7 @@ export interface TableSearchResult {
 
 export function usePartSearch() {
     const { tokens, isLoading: isLoadingTokens } = useTokens()
+    const { sharedTokens, isLoading: isLoadingShared, getUsableSharedTokens } = useSharedTokens()
 
     // 当前选中的 Token
     const [selectedToken, setSelectedToken] = useState<Token | null>(null)
@@ -51,9 +53,30 @@ export function usePartSearch() {
     const [isSearching, setIsSearching] = useState(false)
     const [searchError, setSearchError] = useState<string | null>(null)
 
+    // 合并自己的 Token 和分享的 Token
+    const allTokens = useMemo(() => {
+        const sharedUsableTokens = getUsableSharedTokens()
+            .filter(s => s.token?.webhook_url)
+            .map(s => ({
+                ...s.token!,
+                _isShared: true,
+                _sharerEmail: s.sharer_email
+            } as Token & { _isShared?: boolean; _sharerEmail?: string }))
+
+        const sharedTokenIds = new Set(sharedUsableTokens.map(t => t.id))
+
+        const ownTokens = tokens.filter(t =>
+            t.is_active &&
+            t.webhook_url &&
+            !sharedTokenIds.has(t.id)
+        )
+
+        return [...ownTokens, ...sharedUsableTokens]
+    }, [tokens, getUsableSharedTokens])
+
     // 选择 Token
     const selectToken = useCallback(async (tokenId: string) => {
-        const token = tokens.find(t => t.id === tokenId)
+        const token = allTokens.find(t => t.id === tokenId)
         if (!token) {
             setSelectedToken(null)
             setTables([])
@@ -248,13 +271,10 @@ export function usePartSearch() {
         setIsSearching(false)
     }, [selectedToken])
 
-    // 获取有 webhook_url 的活跃 Token
-    const availableTokens = tokens.filter(t => t.is_active && t.webhook_url)
-
     return {
         // Token
-        tokens: availableTokens,
-        isLoadingTokens,
+        tokens: allTokens,
+        isLoadingTokens: isLoadingTokens || isLoadingShared,
         selectedToken,
         selectToken,
 

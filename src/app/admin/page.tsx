@@ -31,9 +31,9 @@ export default function AdminPage() {
                     </p>
                 </Link>
 
-                <div className="card p-6 opacity-60">
+                <Link href="/admin/statistics" className="card p-6 hover:shadow-lg transition-shadow">
                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-12 h-12 rounded-xl bg-gray-200 flex items-center justify-center text-2xl">
+                        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center text-2xl">
                             📊
                         </div>
                         <div>
@@ -42,9 +42,9 @@ export default function AdminPage() {
                         </div>
                     </div>
                     <p className="text-sm text-[var(--text-muted)]">
-                        即将推出...
+                        用户登录记录、Token 创建及使用情况
                     </p>
-                </div>
+                </Link>
             </div>
         </div>
     )
