@@ -73,51 +73,66 @@ export function SearchForm({ selectedColumns, isSearching, onSearch }: SearchFor
             </h3>
 
             <form onSubmit={handleSubmit}>
-                <div className="space-y-3 mb-6">
-                    {inputKeys.map(({ tableName, columnName }) => {
-                        const key = `${tableName}__${columnName}`
-                        const input = inputs[key] || { value: '', op: 'Contains' }
+                <div className="space-y-4 mb-6">
+                    {Object.entries(selectedColumns).map(([tableName, columns]) => {
+                        if (columns.length === 0) return null
 
                         return (
                             <div
-                                key={key}
-                                className="flex flex-col sm:flex-row gap-2 p-3 rounded-lg bg-[var(--card-bg)] border border-[var(--border)]"
+                                key={tableName}
+                                className="rounded-lg border border-[var(--border)] overflow-hidden"
                             >
-                                <div className="text-sm text-[var(--text-muted)] sm:w-48 sm:flex-shrink-0">
-                                    <span className="text-[#eab308] font-medium">{tableName}</span>
-                                    <span className="mx-1">→</span>
-                                    <span>{columnName}</span>
+                                <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)]">
+                                    <span className="text-[#eab308] font-medium flex items-center gap-2">
+                                        <span>📊</span>
+                                        {tableName}
+                                    </span>
                                 </div>
-                                <div className="flex gap-2 flex-1 items-center">
-                                    <div className="flex gap-3 flex-shrink-0">
-                                        <label className="flex items-center gap-1 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name={`op_${key}`}
-                                                checked={input.op === 'Contains'}
-                                                onChange={() => handleOpChange(key, 'Contains')}
-                                                className="accent-[#667eea]"
-                                            />
-                                            <span className="text-sm">模糊</span>
-                                        </label>
-                                        <label className="flex items-center gap-1 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name={`op_${key}`}
-                                                checked={input.op === 'Equals'}
-                                                onChange={() => handleOpChange(key, 'Equals')}
-                                                className="accent-[#667eea]"
-                                            />
-                                            <span className="text-sm">精确</span>
-                                        </label>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={input.value}
-                                        onChange={(e) => handleInputChange(key, e.target.value)}
-                                        placeholder="输入搜索值..."
-                                        className="input flex-1"
-                                    />
+                                <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                                    {columns.map((columnName) => {
+                                        const key = `${tableName}__${columnName}`
+                                        const input = inputs[key] || { value: '', op: 'Contains' }
+                                        const isExact = input.op === 'Equals'
+
+                                        return (
+                                            <div
+                                                key={key}
+                                                className="flex flex-col gap-1.5"
+                                            >
+                                                <div
+                                                    onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
+                                                    className="cursor-pointer flex items-center gap-2 select-none group w-fit"
+                                                    title="点击切换模糊/精确搜索"
+                                                >
+                                                    <span className={`
+                                                        text-sm font-medium transition-colors
+                                                        ${isExact
+                                                            ? 'text-[#667eea] font-bold'
+                                                            : 'text-[var(--text-muted)] group-hover:text-[var(--foreground)]'
+                                                        }
+                                                    `}>
+                                                        {columnName}
+                                                    </span>
+                                                    <span className={`
+                                                        text-[10px] px-1.5 py-0.5 rounded border transition-all
+                                                        ${isExact
+                                                            ? 'bg-[rgba(102,126,234,0.1)] text-[#667eea] border-[#667eea]'
+                                                            : 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
+                                                        }
+                                                    `}>
+                                                        {isExact ? '精确' : '模糊'}
+                                                    </span>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={input.value}
+                                                    onChange={(e) => handleInputChange(key, e.target.value)}
+                                                    placeholder="输入搜索关键字..."
+                                                    className="input w-full"
+                                                />
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )
