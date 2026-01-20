@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WPS快速查询",
+  title: "WPS快速查找",
   description: "管理和分享您的 WPS 脚本令牌",
 };
 

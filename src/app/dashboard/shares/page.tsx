@@ -4,18 +4,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTokens } from '@/hooks/useTokens'
 import { useSharedTokens } from '@/hooks/useSharedTokens'
-import type { TokenShare, CreateShareInput, Token } from '@/types'
+import type { TokenShare, CreateShareInput, Token, UserProfile } from '@/types'
 
 export default function SharesPage() {
     const { tokens } = useTokens()
     const { sharedTokens, isLoading: isLoadingShared, claimShare, removeSharedToken } = useSharedTokens()
-    const [shares, setShares] = useState<(TokenShare & { token?: Token })[]>([])
+    const [shares, setShares] = useState<(TokenShare & { token?: Token; recipient?: Pick<UserProfile, 'display_name' | 'email'> })[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [showNewForm, setShowNewForm] = useState(false)
     const [showClaimForm, setShowClaimForm] = useState(false)
     const [newShare, setNewShare] = useState<CreateShareInput>({
         token_id: '',
-        permission: 'view',
+        permission: 'use',
     })
     const [claimCode, setClaimCode] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -32,14 +32,19 @@ export default function SharesPage() {
 
         const { data } = await supabase
             .from('token_shares')
-            .select('*, token:tokens(*)')
+            .select(`
+                *,
+                token:tokens(*),
+                recipient:user_profiles!token_shares_shared_with_fkey(display_name, email)
+            `)
             .eq('shared_by', user.id)
             .order('created_at', { ascending: false })
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setShares((data || []).map((s: any) => ({
             ...s,
-            token: s.token as Token
+            token: s.token as Token,
+            recipient: s.recipient as Pick<UserProfile, 'display_name' | 'email'> | undefined
         })))
         setIsLoading(false)
     }, [supabase])
@@ -77,7 +82,7 @@ export default function SharesPage() {
             setError(error.message)
         } else {
             setShowNewForm(false)
-            setNewShare({ token_id: '', permission: 'view' })
+            setNewShare({ token_id: '', permission: 'use' })
             fetchShares()
         }
         setIsSubmitting(false)
@@ -215,17 +220,6 @@ export default function SharesPage() {
                                 ))}
                             </select>
                         </div>
-                        <div>
-                            <label className="label">权限</label>
-                            <select
-                                value={newShare.permission}
-                                onChange={(e) => setNewShare({ ...newShare, permission: e.target.value as 'view' | 'use' })}
-                                className="input"
-                            >
-                                <option value="view">仅查看</option>
-                                <option value="use">可使用</option>
-                            </select>
-                        </div>
                         <div className="flex gap-3">
                             <button type="submit" disabled={isSubmitting} className="btn-primary">
                                 {isSubmitting ? '创建中...' : '创建分享'}
@@ -330,6 +324,12 @@ export default function SharesPage() {
                                     </div>
                                     <p className="text-sm text-[var(--text-muted)] ml-8">
                                         分享码: <code className="bg-gray-100 px-2 py-0.5 rounded">{share.share_code}</code>
+                                        {share.recipient && (
+                                            <span className="ml-3">
+                                                · 已分享给: <strong>{share.recipient.display_name || '未设置名称'}</strong>
+                                                <span className="text-gray-400 ml-1">({share.recipient.email})</span>
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">

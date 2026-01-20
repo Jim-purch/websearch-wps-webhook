@@ -55,21 +55,23 @@ export function usePartSearch() {
 
     // 合并自己的 Token 和分享的 Token
     const allTokens = useMemo(() => {
+        // 先获取自己的有效 Token
+        const ownTokens = tokens.filter(t =>
+            t.is_active &&
+            t.webhook_url
+        )
+
+        // 收集自己 Token 的 ID
+        const ownTokenIds = new Set(ownTokens.map(t => t.id))
+
+        // 获取分享的可用 Token（排除自己已拥有的）
         const sharedUsableTokens = getUsableSharedTokens()
-            .filter(s => s.token?.webhook_url)
+            .filter(s => s.token?.webhook_url && !ownTokenIds.has(s.token.id))
             .map(s => ({
                 ...s.token!,
                 _isShared: true,
                 _sharerEmail: s.sharer_email
             } as Token & { _isShared?: boolean; _sharerEmail?: string }))
-
-        const sharedTokenIds = new Set(sharedUsableTokens.map(t => t.id))
-
-        const ownTokens = tokens.filter(t =>
-            t.is_active &&
-            t.webhook_url &&
-            !sharedTokenIds.has(t.id)
-        )
 
         return [...ownTokens, ...sharedUsableTokens]
     }, [tokens, getUsableSharedTokens])

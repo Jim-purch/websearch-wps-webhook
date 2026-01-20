@@ -40,7 +40,7 @@ export default function LoginPage() {
                     <div className="w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
                         <span className="text-3xl">🔐</span>
                     </div>
-                    <h1 className="text-2xl font-bold gradient-text">WPS快速查询</h1>
+                    <h1 className="text-2xl font-bold gradient-text">WPS快速查找</h1>
                     <p className="text-[var(--text-muted)] mt-2">登录您的账户</p>
                 </div>
 
