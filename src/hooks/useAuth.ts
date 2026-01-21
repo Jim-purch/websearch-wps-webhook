@@ -127,6 +127,11 @@ export function useAuth() {
 
     // 注册
     const signUp = async (email: string, password: string, displayName?: string) => {
+        // 获取当前域名作为邮件确认后的重定向地址
+        const siteUrl = typeof window !== 'undefined'
+            ? window.location.origin
+            : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
         const { error } = await supabase.auth.signUp({
             email,
             password,
@@ -134,6 +139,7 @@ export function useAuth() {
                 data: {
                     display_name: displayName,
                 },
+                emailRedirectTo: `${siteUrl}/auth/callback`,
             },
         })
         return { error }
