@@ -88,11 +88,12 @@ export function ColumnSelector({
                                     )}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                    {columns.map((col) => {
+                                    {columns.map((col, index) => {
                                         const isSelected = selected.includes(col.name)
+                                        const uniqueKey = col.id || `${col.name}-${index}`
                                         return (
                                             <button
-                                                key={col.name}
+                                                key={uniqueKey}
                                                 type="button"
                                                 onClick={() => onToggle(tableKey, col.name)}
                                                 className={`
