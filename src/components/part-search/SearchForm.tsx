@@ -7,7 +7,7 @@ interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
     onSearch: (conditions: SearchCondition[]) => void
-    onExport?: (conditions: SearchCondition[]) => void
+    onExport?: () => void
     isExporting?: boolean
     autoLoadImages: boolean
     onAutoLoadImagesChange: (value: boolean) => void
@@ -87,7 +87,7 @@ export function SearchForm({
 
     const handleExport = () => {
         if (onExport) {
-            onExport(getConditions())
+            onExport()
         }
     }
 

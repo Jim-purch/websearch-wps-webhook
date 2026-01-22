@@ -267,9 +267,13 @@ export function usePartSearch() {
             if (!conditionsByTableKey[cond.tableName]) {
                 conditionsByTableKey[cond.tableName] = { realTableName, criteria: [] }
             }
+            // 清理搜索值：去除回车换行符
+            const cleanValue = cond.searchValue.replace(/[\r\n]+/g, '').trim()
+            if (!cleanValue) continue
+
             conditionsByTableKey[cond.tableName].criteria.push({
                 columnName: cond.columnName,
-                searchValue: cond.searchValue,
+                searchValue: cleanValue,
                 op: cond.op
             })
         }
@@ -351,23 +355,18 @@ export function usePartSearch() {
         }
     }, [fetchSearchResults])
 
-    // 导出到 Excel
-    const exportToExcel = useCallback(async (conditions: SearchCondition[]) => {
+    // 导出到 Excel (仅导出当前显示的结果)
+    const exportToExcel = useCallback(async () => {
+        if (searchResults.length === 0) {
+            setSearchError('没有可导出的结果，请先执行搜索')
+            return
+        }
+
         setIsExporting(true)
         setSearchError(null)
 
         try {
-            let results: TableSearchResult[]
-
-            if (conditions.length > 0) {
-                // 如果有搜索条件，尝试重新获取（确保数据最新/完整）
-                results = await fetchSearchResults(conditions)
-            } else if (searchResults.length > 0) {
-                // 如果没有搜索条件但有现有结果（如批量搜索结果），直接导出
-                results = searchResults
-            } else {
-                throw new Error('请至少填写一个搜索条件或先执行搜索')
-            }
+            const results = searchResults
 
             // 动态导入 ExcelJS 和 file-saver 以避免 SSR 问题和减少初始包大小
             const ExcelJS = (await import('exceljs')).default
@@ -621,7 +620,7 @@ export function usePartSearch() {
         } finally {
             setIsExporting(false)
         }
-    }, [fetchSearchResults, searchResults])
+    }, [searchResults])
 
     // 下载批量查询模板 (多 Sheet 模式)
     const downloadBatchTemplate = useCallback(async () => {
@@ -787,12 +786,24 @@ export function usePartSearch() {
                         const fieldName = colIndexToField[colNumber]
                         if (!fieldName || fieldName === 'Query_ID') return
 
-                        const val = cell.value?.toString() || ''
-                        if (val.trim() === '') return
+                        // 优先使用 ExcelJS 的 .text 属性获取格式化后的文本 (支持 Rich Text)
+                        // 如果 .text 不存在（防止版本差异），回退到 value 处理
+                        let val = ''
+                        const unsafeCell = cell as any
+                        if ('text' in unsafeCell) {
+                            val = unsafeCell.text || ''
+                        } else {
+                            val = cell.value?.toString() || ''
+                        }
+
+                        // 清理 Excel 单元格数据：去除回车换行符
+                        const cleanVal = val.replace(/[\r\n]+/g, '').trim()
+
+                        if (cleanVal === '') return
 
                         criteria.push({
                             columnName: fieldName,
-                            searchValue: val,
+                            searchValue: cleanVal,
                             op: 'Contains'
                         })
                     })
