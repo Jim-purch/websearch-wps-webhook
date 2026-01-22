@@ -40,14 +40,19 @@ const IMAGE_THUMBNAIL_SIZE = { maxWidth: 60, maxHeight: 48 }
 function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () => void; isCopied: boolean }) {
     const [showPreview, setShowPreview] = useState(false)
     const [imgError, setImgError] = useState(false)
+    const [retryCount, setRetryCount] = useState(0)
 
     if (imgError) {
         return (
             <span
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer
-                    ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(239,68,68,0.15)] text-[#ef4444]'}`}
-                onClick={onCopy}
-                title="图片加载失败，点击复制链接"
+                    ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(239,68,68,0.15)] text-[#ef4444] hover:bg-[rgba(239,68,68,0.25)]'}`}
+                onClick={(e) => {
+                    e.stopPropagation()
+                    setImgError(false)
+                    setRetryCount(c => c + 1)
+                }}
+                title="图片加载失败，点击重试"
             >
                 ❌ 图片加载失败
             </span>
@@ -57,6 +62,7 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
     return (
         <>
             <img
+                key={retryCount}
                 src={src}
                 alt="图片"
                 style={{ maxWidth: IMAGE_THUMBNAIL_SIZE.maxWidth, maxHeight: IMAGE_THUMBNAIL_SIZE.maxHeight }}
@@ -123,6 +129,7 @@ function LazyImageCell({
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [attempted, setAttempted] = useState(false)
+    const [forceLoad, setForceLoad] = useState(false)
 
     // 如果 cachedUrl 改变 (例如从父组件传入了新的缓存)，更新本地状态
     useEffect(() => {
@@ -153,12 +160,13 @@ function LazyImageCell({
         }
     }, [tokenId, sheetName, cellAddress, loading, attempted, onImageLoad, imageUrl])
 
-    // 自动加载
+    // 自动加载 或 强制重试
     useEffect(() => {
-        if (autoLoad && tokenId && !attempted && !loading && !imageUrl) {
+        if ((autoLoad || forceLoad) && tokenId && !attempted && !loading && !imageUrl) {
             fetchImageUrl()
+            if (forceLoad) setForceLoad(false)
         }
-    }, [autoLoad, tokenId, attempted, loading, fetchImageUrl, imageUrl])
+    }, [autoLoad, forceLoad, tokenId, attempted, loading, fetchImageUrl, imageUrl])
 
     // 如果已获取到URL，显示图片
     if (imageUrl) {
@@ -172,8 +180,13 @@ function LazyImageCell({
             <div
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors
                     ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(239,68,68,0.15)] text-[#ef4444] hover:bg-[rgba(239,68,68,0.25)]'}`}
-                onClick={() => onCopy(imageId)}
-                title={`无法加载图片，点击复制ID: ${imageId}`}
+                onClick={(e) => {
+                    e.stopPropagation()
+                    setError(null)
+                    setAttempted(false)
+                    setForceLoad(true)
+                }}
+                title={`无法加载图片，点击重试 (ID: ${imageId})`}
             >
                 <span>⚠️</span>
                 <span className="font-mono">{shortId}</span>
