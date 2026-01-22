@@ -33,6 +33,7 @@ export interface TableSearchResult {
     originalTotalCount?: number | string
     maxRecords?: number
     error?: string
+    originalQueryColumns?: string[]  // 原始查询列名称列表
 }
 
 export function usePartSearch() {
@@ -471,6 +472,13 @@ export function usePartSearch() {
                             allKeys.unshift('QueryID')
                         }
 
+                        // 获取原始查询列，并放在 QueryID 后面
+                        const originalQueryColumns = result.originalQueryColumns || []
+                        if (hasBatchQueryID && originalQueryColumns.length > 0) {
+                            allKeys = allKeys.filter(k => !originalQueryColumns.includes(k))
+                            allKeys.splice(1, 0, ...originalQueryColumns)
+                        }
+
                         // 检测哪些列包含图片，并收集DISPIMG的cellAddress
                         const imageColumns = new Set<string>()
                         const dispImgCellAddressesToFetch: string[] = []
@@ -683,6 +691,13 @@ export function usePartSearch() {
             if (hasBatchQueryID) {
                 allKeys = allKeys.filter(k => k !== '_BatchQueryID')
                 allKeys.unshift('QueryID')
+            }
+
+            // 获取原始查询列，并放在 QueryID 后面
+            const originalQueryColumns = result.originalQueryColumns || []
+            if (hasBatchQueryID && originalQueryColumns.length > 0) {
+                allKeys = allKeys.filter(k => !originalQueryColumns.includes(k))
+                allKeys.splice(1, 0, ...originalQueryColumns)
             }
 
             // 辅助函数：获取图片数据并转换为base64
@@ -967,7 +982,7 @@ export function usePartSearch() {
             const workbook = new ExcelJS.Workbook()
             await workbook.xlsx.load(await file.arrayBuffer())
 
-            const batchRequests: Record<string, { realTableName: string, items: Array<{ id: string, criteria: WpsSearchCriteria[] }> }> = {}
+            const batchRequests: Record<string, { realTableName: string, items: Array<{ id: string, criteria: WpsSearchCriteria[], originalValues: Record<string, string> }> }> = {}
 
             // 遍历 Excel 中的所有 Sheet
             workbook.eachSheet((worksheet, sheetId) => {
@@ -1041,6 +1056,7 @@ export function usePartSearch() {
                     const rowId = idColNum ? (row.getCell(idColNum).value?.toString() || `row_${rowNumber}`) : `row_${rowNumber}`
 
                     const criteria: WpsSearchCriteria[] = []
+                    const originalValues: Record<string, string> = {}
 
                     row.eachCell((cell, colNumber) => {
                         const fieldName = colIndexToField[colNumber]
@@ -1061,6 +1077,9 @@ export function usePartSearch() {
 
                         if (cleanVal === '') return
 
+                        // 保存原始值
+                        originalValues[fieldName] = cleanVal
+
                         // 根据查询模式决定操作符
                         let op: 'Contains' | 'Equals' = matchMode === 'exact' ? 'Equals' : 'Contains'
 
@@ -1080,7 +1099,8 @@ export function usePartSearch() {
                     if (criteria.length > 0) {
                         batchRequests[tableKey].items.push({
                             id: rowId,
-                            criteria
+                            criteria,
+                            originalValues
                         })
                     }
                 })
@@ -1102,6 +1122,10 @@ export function usePartSearch() {
                     ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
                     : realTableName
 
+                const originalQueryColumns = items.length > 0
+                    ? Array.from(new Set(items.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`))))
+                    : []
+
                 try {
                     const res = await searchBatch(selectedToken.id, realTableName, items)
 
@@ -1111,9 +1135,16 @@ export function usePartSearch() {
 
                         for (const itemResult of batchRes.results) {
                             if (itemResult.success && itemResult.records) {
+                                const item = items.find(i => i.id === itemResult.id)
+                                const originalValues = item?.originalValues || {}
+                                const prefixedOriginalValues: Record<string, string> = {}
+                                for (const [key, value] of Object.entries(originalValues)) {
+                                    prefixedOriginalValues[`原始_${key}`] = value
+                                }
                                 const recordsWithId = itemResult.records.map(r => ({
                                     ...r,
-                                    _BatchQueryID: itemResult.id
+                                    _BatchQueryID: itemResult.id,
+                                    ...prefixedOriginalValues
                                 }))
                                 allRecords.push(...recordsWithId)
                             }
@@ -1126,7 +1157,8 @@ export function usePartSearch() {
                             records: allRecords,
                             totalCount: batchRes.totalMatches,
                             truncated: false,
-                            error: undefined
+                            error: undefined,
+                            originalQueryColumns
                         })
 
                     } else {

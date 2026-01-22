@@ -249,7 +249,11 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         ? Object.keys(rows[0]).filter(k => k !== 'id' && k !== 'recordId' && k !== '_BatchQueryID')
         : []
 
-    const displayColumns = hasBatchQueryID ? ['_BatchQueryID', ...columns] : columns
+    const originalQueryColumns = result.originalQueryColumns || []
+
+    const displayColumns = hasBatchQueryID
+        ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
+        : columns
 
     const handleCellClick = useCallback(async (value: string, cellKey: string) => {
         const success = await copyToClipboard(value)
