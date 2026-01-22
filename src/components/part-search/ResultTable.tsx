@@ -241,9 +241,13 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         return record
     })
 
+    const hasBatchQueryID = records.some(r => '_BatchQueryID' in r)
+
     const columns = rows.length > 0
-        ? Object.keys(rows[0]).filter(k => k !== 'id' && k !== 'recordId')
+        ? Object.keys(rows[0]).filter(k => k !== 'id' && k !== 'recordId' && k !== '_BatchQueryID')
         : []
+
+    const displayColumns = hasBatchQueryID ? ['_BatchQueryID', ...columns] : columns
 
     const handleCellClick = useCallback(async (value: string, cellKey: string) => {
         const success = await copyToClipboard(value)
@@ -313,12 +317,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                         <table className="w-full border-collapse text-sm">
                             <thead>
                                 <tr>
-                                    {columns.map(col => (
+                                    {displayColumns.map(col => (
                                         <th
                                             key={col}
                                             className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap"
                                         >
-                                            {col}
+                                            {col === '_BatchQueryID' ? 'QueryID' : col}
                                         </th>
                                     ))}
                                     <th className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)]">
@@ -329,7 +333,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                             <tbody>
                                 {rows.map((row, rowIdx) => (
                                     <tr key={rowIdx} className="hover:bg-[var(--hover-bg)]">
-                                        {columns.map(col => {
+                                        {displayColumns.map(col => {
                                             const val = row[col]
                                             const cellKey = `${index}-${rowIdx}-${col}`
                                             const isCopied = copiedCell === cellKey
