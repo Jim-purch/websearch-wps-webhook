@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { usePartSearch } from '@/hooks/usePartSearch'
 import {
     TokenSelector,
@@ -37,6 +38,9 @@ export default function PartSearchPage() {
         exportToExcel,
         isExporting
     } = usePartSearch()
+
+    // 自动加载图片选项
+    const [autoLoadImages, setAutoLoadImages] = useState(false)
 
     // 检查是否已选择列
     const hasSelectedColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
@@ -97,6 +101,8 @@ export default function PartSearchPage() {
                         onSearch={performSearch}
                         onExport={exportToExcel}
                         isExporting={isExporting}
+                        autoLoadImages={autoLoadImages}
+                        onAutoLoadImagesChange={setAutoLoadImages}
                     />
                 )}
 
@@ -106,7 +112,12 @@ export default function PartSearchPage() {
                 )}
 
                 {/* Results */}
-                <ResultTable results={searchResults} isSearching={isSearching} />
+                <ResultTable
+                    results={searchResults}
+                    isSearching={isSearching}
+                    tokenId={selectedToken?.id}
+                    autoLoadImages={autoLoadImages}
+                />
             </div>
         </div>
     )

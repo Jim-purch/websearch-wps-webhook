@@ -9,6 +9,8 @@ interface SearchFormProps {
     onSearch: (conditions: SearchCondition[]) => void
     onExport?: (conditions: SearchCondition[]) => void
     isExporting?: boolean
+    autoLoadImages: boolean
+    onAutoLoadImagesChange: (value: boolean) => void
 }
 
 interface InputState {
@@ -21,7 +23,9 @@ export function SearchForm({
     isSearching,
     onSearch,
     onExport,
-    isExporting = false
+    isExporting = false,
+    autoLoadImages,
+    onAutoLoadImagesChange
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -172,7 +176,24 @@ export function SearchForm({
                             })}
                         </div>
 
-                        <div className="text-center flex justify-center gap-4">
+                        <div className="text-center flex flex-wrap justify-center items-center gap-4">
+                            {/* 自动加载图片选项 */}
+                            <label
+                                className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--hover-bg)] transition-colors"
+                                title="开启后，搜索结果中的图片会自动加载显示"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={autoLoadImages}
+                                    onChange={(e) => onAutoLoadImagesChange(e.target.checked)}
+                                    className="w-4 h-4 accent-[#eab308]"
+                                />
+                                <span className="text-sm flex items-center gap-1">
+                                    <span>🖼️</span>
+                                    自动加载图片
+                                </span>
+                            </label>
+
                             <button
                                 type="submit"
                                 disabled={isSearching || isExporting}

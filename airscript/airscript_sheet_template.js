@@ -367,6 +367,75 @@ function columnToLetter(colNum) {
     }
     return letter
 }
+
+/**
+ * 获取工作表中所有单元格图片的URL映射
+ * @param {Object} sheet - 工作表对象
+ * @returns {Object} 单元格地址到图片URL的映射 {address: url}
+ */
+function getSheetCellImages(sheet) {
+    const imageMap = {}
+
+    try {
+        const shapes = sheet.Shapes
+        if (!shapes || shapes.Count === 0) {
+            return imageMap
+        }
+
+        console.log("开始获取工作表图片信息, Shapes数量: " + shapes.Count)
+
+        for (let i = 1; i <= shapes.Count; i++) {
+            try {
+                const shape = shapes.Item(i)
+
+                // 获取图片所在的左上角单元格
+                const topLeftCell = shape.TopLeftCell
+                if (!topLeftCell) continue
+
+                const address = topLeftCell.Address().replace(/\$/g, '')
+
+                // 尝试通过选择单元格并获取图片URL
+                try {
+                    topLeftCell.Select()
+                    const imgUrl = Application.ActiveSheet.Shapes.GetActiveShapeImg()
+                    if (imgUrl) {
+                        imageMap[address] = imgUrl
+                        console.log("获取到图片URL: " + address + " -> " + imgUrl.substring(0, 50) + "...")
+                    }
+                } catch (selectErr) {
+                    // GetActiveShapeImg可能在某些情况下失败，跳过
+                    console.log("获取图片URL失败(selectErr): " + address)
+                }
+            } catch (shapeErr) {
+                // 跳过无法处理的shape
+                console.log("处理Shape " + i + " 失败: " + shapeErr)
+            }
+        }
+
+        console.log("图片URL获取完成, 共获取 " + Object.keys(imageMap).length + " 个")
+
+    } catch (err) {
+        console.log("获取Sheet图片信息失败: " + err)
+    }
+
+    return imageMap
+}
+
+/**
+ * 检测单元格值是否为DISPIMG公式
+ * @param {any} value - 单元格值
+ * @returns {Object|null} 如果是DISPIMG返回 {imageId}, 否则返回null
+ */
+function parseDispImgFormula(value) {
+    if (typeof value !== 'string') return null
+
+    // 匹配 =DISPIMG("ID_xxx",1) 格式
+    const match = value.match(/^=DISPIMG\("([^"]+)",\s*\d+\)$/i)
+    if (match) {
+        return { imageId: match[1] }
+    }
+    return null
+}
 /**
  * 多条件 AND 搜索记录（智能表格版本 - 优化版）
  * 使用 Excel Find 方法加速搜索，而不是逐行遍历
@@ -482,6 +551,12 @@ function searchMultiCriteria(sheetName, criteria) {
 
         console.log("搜索条件: " + criteriaDescriptions.join(" AND "))
 
+        // 获取工作表中的图片URL映射
+        console.log("正在获取图片信息...")
+        const imageMap = getSheetCellImages(sheet)
+        const hasImages = Object.keys(imageMap).length > 0
+        console.log("图片信息获取完成, 共 " + Object.keys(imageMap).length + " 张图片")
+
         // 使用 Find 方法优化搜索
         // 策略：用第一个条件的 Find 快速定位候选行，再验证其他条件
         const records = []
@@ -534,11 +609,38 @@ function searchMultiCriteria(sheetName, criteria) {
                 }
 
                 if (matchAll) {
-                    // 获取整行数据
+                    // 获取整行数据，并处理图片信息
                     const rowData = {}
                     for (const colName of allColumns) {
                         const colIndex = columnMap[colName]
-                        rowData[colName] = sheet.Cells(row, colIndex).Value
+                        const cell = sheet.Cells(row, colIndex)
+                        let cellValue = cell.Value
+
+                        // 获取单元格地址（去掉$符号）
+                        const cellAddr = cell.Address().replace(/\$/g, '')
+
+                        // 检查是否有对应的图片URL
+                        if (hasImages && imageMap[cellAddr]) {
+                            // 将图片URL作为特殊对象返回
+                            rowData[colName] = {
+                                _type: 'image',
+                                value: cellValue,
+                                imageUrl: imageMap[cellAddr]
+                            }
+                        } else {
+                            // 检查是否为DISPIMG公式（作为后备方案）
+                            const dispImg = parseDispImgFormula(cellValue)
+                            if (dispImg) {
+                                rowData[colName] = {
+                                    _type: 'dispimg',
+                                    value: cellValue,
+                                    imageId: dispImg.imageId,
+                                    cellAddress: cellAddr  // 添加单元格地址，供前端调用getImageUrl
+                                }
+                            } else {
+                                rowData[colName] = cellValue
+                            }
+                        }
                     }
                     records.push(rowData)
 
@@ -599,11 +701,102 @@ if (action === "getAll") {
     result = searchMultiCriteria(argv.sheetName, argv.criteria)
 } else if (action === "getData") {
     result = getRangeData(argv.sheetName, argv.range, argv.hasHeader)
+} else if (action === "getImageUrl") {
+    // 获取单元格图片URL
+    result = getImageUrlFromCell(argv.sheetName, argv.cellAddress, argv.cells)
 } else {
     result = {
         success: false,
         error: "未知操作: " + action,
-        message: "支持的操作: getAll, search, searchMulti, getData"
+        message: "支持的操作: getAll, search, searchMulti, getData, getImageUrl"
+    }
+}
+
+/**
+ * 获取指定单元格的图片URL
+ * @param {string} sheetName - 工作表名称
+ * @param {string} cellAddress - 单个单元格地址 (如 "A1")
+ * @param {Array} cells - 多个单元格地址数组 (如 ["A1", "B2", "C3"])
+ * @returns {Object} 包含图片URL的对象
+ */
+function getImageUrlFromCell(sheetName, cellAddress, cells) {
+    console.log("获取图片URL: 表=" + sheetName + ", 单元格=" + (cellAddress || JSON.stringify(cells)))
+
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    if (!cellAddress && (!cells || cells.length === 0)) {
+        return {
+            success: false,
+            error: "缺少参数: cellAddress 或 cells",
+            message: "请提供单元格地址或地址数组"
+        }
+    }
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName
+            }
+        }
+
+        // 激活工作表
+        sheet.Activate()
+
+        const imageUrls = {}
+        const cellList = cells || [cellAddress]
+
+        for (const addr of cellList) {
+            try {
+                // 选择指定单元格
+                const cell = sheet.Range(addr)
+                cell.Select()
+
+                // 尝试获取图片URL
+                const imgUrl = Application.ActiveSheet.Shapes.GetActiveShapeImg()
+
+                if (imgUrl) {
+                    imageUrls[addr] = imgUrl
+                    console.log("获取到图片: " + addr + " -> " + imgUrl.substring(0, 60) + "...")
+                } else {
+                    console.log("单元格 " + addr + " 没有图片或无法获取URL")
+                    imageUrls[addr] = null
+                }
+            } catch (cellErr) {
+                console.log("获取单元格 " + addr + " 图片失败: " + cellErr)
+                imageUrls[addr] = null
+            }
+        }
+
+        // 统计成功获取的数量
+        const successCount = Object.values(imageUrls).filter(v => v !== null).length
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            requestedCount: cellList.length,
+            successCount: successCount,
+            imageUrls: imageUrls
+        }
+
+    } catch (error) {
+        console.error("获取图片URL失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "获取图片URL时发生错误"
+        }
     }
 }
 

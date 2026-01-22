@@ -166,3 +166,32 @@ export async function getTableDetails(
         data: { columns }
     }
 }
+
+// 图片URL获取结果类型
+export interface WpsImageUrlResult {
+    success: boolean
+    sheetName?: string
+    requestedCount?: number
+    successCount?: number
+    imageUrls?: Record<string, string | null>
+}
+
+/**
+ * 获取指定单元格的图片URL
+ * @param tokenId - WPS Token ID
+ * @param sheetName - 工作表名称
+ * @param cells - 单元格地址数组 (如 ["A1", "B2"])
+ */
+export async function getImageUrls(
+    tokenId: string,
+    sheetName: string,
+    cells: string[]
+): Promise<ParsedWpsResult<WpsImageUrlResult>> {
+    const result = await callWpsProxy<WpsImageUrlResult>(tokenId, {
+        action: 'getImageUrl',
+        sheetName,
+        cells
+    })
+
+    return result
+}

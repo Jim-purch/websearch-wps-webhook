@@ -6,6 +6,8 @@ import type { TableSearchResult } from '@/hooks/usePartSearch'
 interface ResultTableProps {
     results: TableSearchResult[]
     isSearching: boolean
+    tokenId?: string  // 用于获取图片URL
+    autoLoadImages?: boolean  // 自动加载图片
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -29,7 +31,167 @@ function copyToClipboard(text: string): Promise<boolean> {
     }
 }
 
-function ResultCard({ result, index }: { result: TableSearchResult; index: number }) {
+// 图片尺寸常量
+const IMAGE_THUMBNAIL_SIZE = { maxWidth: 60, maxHeight: 48 }
+
+// 图片预览组件 - 支持缩略图和灯箱效果
+function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () => void; isCopied: boolean }) {
+    const [showPreview, setShowPreview] = useState(false)
+    const [imgError, setImgError] = useState(false)
+
+    if (imgError) {
+        return (
+            <span
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer
+                    ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(239,68,68,0.15)] text-[#ef4444]'}`}
+                onClick={onCopy}
+                title="图片加载失败，点击复制链接"
+            >
+                ❌ 图片加载失败
+            </span>
+        )
+    }
+
+    return (
+        <>
+            <img
+                src={src}
+                alt="图片"
+                style={{ maxWidth: IMAGE_THUMBNAIL_SIZE.maxWidth, maxHeight: IMAGE_THUMBNAIL_SIZE.maxHeight }}
+                className={`object-contain cursor-pointer rounded border ${isCopied ? 'border-[#22c55e]' : 'border-[var(--border)] hover:border-[#eab308]'} transition-colors`}
+                onClick={() => setShowPreview(true)}
+                onError={() => setImgError(true)}
+                title="点击查看大图"
+            />
+            {showPreview && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+                    onClick={() => setShowPreview(false)}
+                >
+                    <div className="relative max-w-[90vw] max-h-[90vh]">
+                        <img
+                            src={src}
+                            alt="大图预览"
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                        />
+                        <button
+                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 flex items-center justify-center"
+                            onClick={(e) => { e.stopPropagation(); setShowPreview(false) }}
+                        >
+                            ✕
+                        </button>
+                        <button
+                            className="absolute bottom-2 right-2 px-3 py-1 rounded bg-[#eab308] text-black text-sm hover:bg-[#ca9a06]"
+                            onClick={(e) => { e.stopPropagation(); onCopy() }}
+                        >
+                            📋 复制链接
+                        </button>
+                    </div>
+                </div>
+            )}
+        </>
+    )
+}
+
+import { useEffect } from 'react'
+import { getImageUrls } from '@/lib/wps'
+
+function LazyImageCell({
+    tokenId,
+    sheetName,
+    cellAddress,
+    imageId,
+    onCopy,
+    isCopied,
+    autoLoad = false
+}: {
+    tokenId?: string;
+    sheetName: string;
+    cellAddress: string;
+    imageId: string;
+    onCopy: (text: string) => void;
+    isCopied: boolean;
+    autoLoad?: boolean;
+}) {
+    const [imageUrl, setImageUrl] = useState<string | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [attempted, setAttempted] = useState(false)
+
+    const fetchImageUrl = useCallback(async () => {
+        if (!tokenId || loading || attempted) return
+
+        setLoading(true)
+        setAttempted(true)
+        try {
+            const result = await getImageUrls(tokenId, sheetName, [cellAddress])
+            if (result.success && result.data?.imageUrls?.[cellAddress]) {
+                setImageUrl(result.data.imageUrls[cellAddress])
+            } else {
+                setError('无法获取图片')
+            }
+        } catch (e) {
+            setError('请求失败')
+        } finally {
+            setLoading(false)
+        }
+    }, [tokenId, sheetName, cellAddress, loading, attempted])
+
+    // 自动加载
+    useEffect(() => {
+        if (autoLoad && tokenId && !attempted && !loading) {
+            fetchImageUrl()
+        }
+    }, [autoLoad, tokenId, attempted, loading, fetchImageUrl])
+
+    // 如果已获取到URL，显示图片
+    if (imageUrl) {
+        return <ImageWithPreview src={imageUrl} onCopy={() => onCopy(imageUrl)} isCopied={isCopied} />
+    }
+
+    // 错误状态
+    if (error) {
+        const shortId = imageId.length > 16 ? `${imageId.slice(0, 8)}...${imageId.slice(-6)}` : imageId
+        return (
+            <div
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors
+                    ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(239,68,68,0.15)] text-[#ef4444] hover:bg-[rgba(239,68,68,0.25)]'}`}
+                onClick={() => onCopy(imageId)}
+                title={`无法加载图片，点击复制ID: ${imageId}`}
+            >
+                <span>⚠️</span>
+                <span className="font-mono">{shortId}</span>
+            </div>
+        )
+    }
+
+    // 加载状态
+    if (loading) {
+        return (
+            <div className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[rgba(234,179,8,0.15)] text-[#eab308]">
+                <span className="animate-spin">⏳</span>
+                <span>加载中...</span>
+            </div>
+        )
+    }
+
+    // 初始状态 - 显示加载按钮
+    const shortId = imageId.length > 16 ? `${imageId.slice(0, 8)}...${imageId.slice(-6)}` : imageId
+    return (
+        <div
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors
+                ${isCopied ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]' : 'bg-[rgba(234,179,8,0.15)] text-[#eab308] hover:bg-[rgba(234,179,8,0.3)]'}`}
+            onClick={tokenId ? fetchImageUrl : () => onCopy(imageId)}
+            title={tokenId ? `点击加载图片 (ID: ${imageId})` : `点击复制ID: ${imageId}`}
+        >
+            <span>🖼️</span>
+            <span className="font-mono">{shortId}</span>
+            {tokenId && <span className="text-[10px] opacity-60">[载入]</span>}
+        </div>
+    )
+}
+
+function ResultCard({ result, index, tokenId, autoLoadImages }: { result: TableSearchResult; index: number; tokenId?: string; autoLoadImages?: boolean }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
 
@@ -132,24 +294,89 @@ function ResultCard({ result, index }: { result: TableSearchResult; index: numbe
                                 {rows.map((row, rowIdx) => (
                                     <tr key={rowIdx} className="hover:bg-[var(--hover-bg)]">
                                         {columns.map(col => {
-                                            let val = row[col]
-                                            if (val && typeof val === 'object') {
-                                                val = JSON.stringify(val)
-                                            }
+                                            const val = row[col]
                                             const cellKey = `${index}-${rowIdx}-${col}`
                                             const isCopied = copiedCell === cellKey
+
+                                            // 检测是否为图片对象 (来自AirScript)
+                                            if (val && typeof val === 'object' && '_type' in val) {
+                                                const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; value?: string }
+
+                                                // 有图片URL - 直接显示图片
+                                                if (imgObj._type === 'image' && imgObj.imageUrl) {
+                                                    return (
+                                                        <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                            <ImageWithPreview
+                                                                src={imgObj.imageUrl}
+                                                                onCopy={() => handleCellClick(imgObj.imageUrl!, cellKey)}
+                                                                isCopied={isCopied}
+                                                            />
+                                                        </td>
+                                                    )
+                                                }
+
+                                                // DISPIMG格式 - 使用懒加载组件获取图片URL
+                                                if (imgObj._type === 'dispimg' && imgObj.imageId) {
+                                                    const imgObjFull = imgObj as { _type: string; imageId: string; cellAddress?: string; value?: string }
+
+                                                    // 如果有cellAddress和tokenId，使用LazyImageCell自动加载
+                                                    if (imgObjFull.cellAddress && tokenId) {
+                                                        return (
+                                                            <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                                <LazyImageCell
+                                                                    tokenId={tokenId}
+                                                                    sheetName={result.tableName}
+                                                                    cellAddress={imgObjFull.cellAddress}
+                                                                    imageId={imgObjFull.imageId}
+                                                                    onCopy={(text) => handleCellClick(text, cellKey)}
+                                                                    isCopied={isCopied}
+                                                                    autoLoad={autoLoadImages}
+                                                                />
+                                                            </td>
+                                                        )
+                                                    }
+
+                                                    // 没有cellAddress时，显示图片ID徽章
+                                                    const shortId = imgObj.imageId.length > 16
+                                                        ? `${imgObj.imageId.slice(0, 8)}...${imgObj.imageId.slice(-6)}`
+                                                        : imgObj.imageId
+                                                    return (
+                                                        <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                            <div
+                                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors
+                                                                    ${isCopied
+                                                                        ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]'
+                                                                        : 'bg-[rgba(234,179,8,0.15)] text-[#eab308] hover:bg-[rgba(234,179,8,0.3)]'
+                                                                    }`}
+                                                                onClick={() => handleCellClick(imgObj.imageId!, cellKey)}
+                                                                title={`图片ID: ${imgObj.imageId}\n点击复制`}
+                                                            >
+                                                                <span>🖼️</span>
+                                                                <span className="font-mono">{shortId}</span>
+                                                            </div>
+                                                        </td>
+                                                    )
+                                                }
+                                            }
+
+                                            // 普通值处理
+                                            let displayVal = val
+                                            if (val && typeof val === 'object') {
+                                                displayVal = JSON.stringify(val)
+                                            }
+                                            const strVal = String(displayVal ?? '')
 
                                             return (
                                                 <td
                                                     key={col}
-                                                    onClick={() => handleCellClick(String(val ?? ''), cellKey)}
+                                                    onClick={() => handleCellClick(strVal, cellKey)}
                                                     className={`
                                                         px-3 py-2 border-b border-[var(--border)] cursor-pointer transition-colors
                                                         ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : 'hover:bg-[rgba(234,179,8,0.2)]'}
                                                     `}
                                                     title="点击复制"
                                                 >
-                                                    {String(val ?? '')}
+                                                    {strVal}
                                                 </td>
                                             )
                                         })}
@@ -174,7 +401,7 @@ function ResultCard({ result, index }: { result: TableSearchResult; index: numbe
     )
 }
 
-export function ResultTable({ results, isSearching }: ResultTableProps) {
+export function ResultTable({ results, isSearching, tokenId, autoLoadImages }: ResultTableProps) {
     if (isSearching && results.length === 0) {
         return (
             <div className="card p-8">
@@ -200,7 +427,7 @@ export function ResultTable({ results, isSearching }: ResultTableProps) {
     return (
         <div>
             {results.map((result, index) => (
-                <ResultCard key={`${result.tableName}-${index}`} result={result} index={index} />
+                <ResultCard key={`${result.tableName}-${index}`} result={result} index={index} tokenId={tokenId} autoLoadImages={autoLoadImages} />
             ))}
         </div>
     )
