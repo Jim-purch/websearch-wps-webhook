@@ -6,10 +6,12 @@ import { useSharedTokens } from './useSharedTokens'
 import {
     getTableList,
     searchMultiCriteria,
+    searchBatch,
     getImageUrls,
     type WpsTable,
     type WpsSearchCriteria,
     type WpsSearchResult,
+    type WpsBatchSearchResult,
     type WpsColumn
 } from '@/lib/wps'
 import type { Token } from '@/types'
@@ -54,6 +56,9 @@ export function usePartSearch() {
     const [searchResults, setSearchResults] = useState<TableSearchResult[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [searchError, setSearchError] = useState<string | null>(null)
+
+    // 批量搜索状态
+    const [isBatchSearching, setIsBatchSearching] = useState(false)
 
     // 导出状态
     const [isExporting, setIsExporting] = useState(false)
@@ -352,7 +357,17 @@ export function usePartSearch() {
         setSearchError(null)
 
         try {
-            const results = await fetchSearchResults(conditions)
+            let results: TableSearchResult[]
+
+            if (conditions.length > 0) {
+                // 如果有搜索条件，尝试重新获取（确保数据最新/完整）
+                results = await fetchSearchResults(conditions)
+            } else if (searchResults.length > 0) {
+                // 如果没有搜索条件但有现有结果（如批量搜索结果），直接导出
+                results = searchResults
+            } else {
+                throw new Error('请至少填写一个搜索条件或先执行搜索')
+            }
 
             // 动态导入 ExcelJS 和 file-saver 以避免 SSR 问题和减少初始包大小
             const ExcelJS = (await import('exceljs')).default
@@ -606,7 +621,229 @@ export function usePartSearch() {
         } finally {
             setIsExporting(false)
         }
-    }, [fetchSearchResults])
+    }, [fetchSearchResults, searchResults])
+
+    // 下载批量查询模板
+    const downloadBatchTemplate = useCallback(async () => {
+        if (!Object.values(selectedColumns).some(cols => cols.length > 0)) {
+            setSearchError('请先选择至少一个表和列')
+            return
+        }
+
+        try {
+            const ExcelJS = (await import('exceljs')).default
+            const { saveAs } = (await import('file-saver'))
+            const workbook = new ExcelJS.Workbook()
+            const worksheet = workbook.addWorksheet('Batch Query Template')
+
+            // 生成表头: 表名__列名
+            // 另外添加一个 ID 列方便追踪（可选，但这里我们主要靠行号或ID列）
+            const headers = ['Query_ID'] // 第一列作为ID
+
+            for (const [tableKey, columns] of Object.entries(selectedColumns)) {
+                if (columns.length === 0) continue
+                for (const col of columns) {
+                    headers.push(`${tableKey}__${col}`)
+                }
+            }
+
+            worksheet.addRow(headers)
+
+            // 添加一行示例数据
+            const exampleRow = ['example_1']
+            for (let i = 1; i < headers.length; i++) {
+                exampleRow.push('')
+            }
+            worksheet.addRow(exampleRow)
+
+            // 设置列宽
+            worksheet.columns = headers.map(h => ({ header: h, key: h, width: 25 }))
+
+            const buffer = await workbook.xlsx.writeBuffer()
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+            saveAs(blob, `批量查询模板_${new Date().toISOString().slice(0, 10)}.xlsx`)
+
+        } catch (err) {
+            console.error('Template download error:', err)
+            setSearchError('下载模板失败')
+        }
+    }, [selectedColumns])
+
+    // 执行批量搜索 (解析 Excel -> 调用 API -> 聚合结果)
+    const performBatchSearch = useCallback(async (file: File) => {
+        if (!selectedToken?.id || !selectedToken?.webhook_url) {
+            setSearchError('Token 配置不完整')
+            return
+        }
+
+        setIsBatchSearching(true)
+        setSearchError(null)
+        setSearchResults([]) // 清空旧结果
+
+        try {
+            const ExcelJS = (await import('exceljs')).default
+            const workbook = new ExcelJS.Workbook()
+            await workbook.xlsx.load(await file.arrayBuffer())
+
+            const worksheet = workbook.getWorksheet(1)
+            if (!worksheet) throw new Error('Excel 文件为空')
+
+            // 1. 解析表头映射
+            // 格式: tableName__columnName
+            const headerMap: Record<number, { tableKey: string, columnName: string } | 'ID'> = {}
+
+            const headerRow = worksheet.getRow(1)
+            let hasValidColumn = false
+
+            headerRow.eachCell((cell, colNumber) => {
+                const val = (cell.value?.toString() || '').trim()
+                if (val.toLowerCase() === 'query_id' || val.toLowerCase() === 'id') {
+                    headerMap[colNumber] = 'ID'
+                } else if (val.includes('__')) {
+                    const [tableKey, columnName] = val.split('__')
+                    if (tableKey && columnName) {
+                        headerMap[colNumber] = { tableKey, columnName }
+                        hasValidColumn = true
+                    }
+                }
+            })
+
+            if (!hasValidColumn) {
+                throw new Error('未找到有效的查询列 (格式: 表名__列名)')
+            }
+
+            // 2. 读取数据行并构建查询
+            // Group by Table -> List of { id, criteria[] }
+            const batchRequests: Record<string, { realTableName: string, items: Array<{ id: string, criteria: WpsSearchCriteria[] }> }> = {}
+
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return // 跳过表头
+
+                const rowId = row.getCell(1).value?.toString() || `row_${rowNumber}`
+                const rowCriteriaByTable: Record<string, WpsSearchCriteria[]> = {}
+                let hasCriteria = false
+
+                // 遍历该行的所有列
+                row.eachCell((cell, colNumber) => {
+                    const colInfo = headerMap[colNumber]
+                    if (!colInfo || colInfo === 'ID') return
+
+                    const cellValue = cell.value?.toString() || ''
+                    if (cellValue.trim() === '') return // 跳过空值
+
+                    const { tableKey, columnName } = colInfo
+
+                    // 初始化该表的 criteria 数组
+                    if (!rowCriteriaByTable[tableKey]) {
+                        rowCriteriaByTable[tableKey] = []
+                    }
+
+                    // 默认使用 Contains, 可以扩展逻辑支持 Exact (例如通过 Excel 注释或特定前缀)
+                    // 这里简化逻辑，默认 Contains
+                    rowCriteriaByTable[tableKey].push({
+                        columnName: columnName,
+                        searchValue: cellValue,
+                        op: 'Contains'
+                    })
+                    hasCriteria = true
+                })
+
+                if (!hasCriteria) return
+
+                // 将该行的查询分配到各个表的 batch requests 中
+                for (const [tableKey, criteria] of Object.entries(rowCriteriaByTable)) {
+                    const realTableName = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
+
+                    if (!batchRequests[tableKey]) {
+                        batchRequests[tableKey] = { realTableName, items: [] }
+                    }
+
+                    batchRequests[tableKey].items.push({
+                        id: rowId, // 使用行号或ID作为标识
+                        criteria: criteria
+                    })
+                }
+            })
+
+            // 3. 并行执行批量查询
+            const tableKeys = Object.keys(batchRequests)
+            if (tableKeys.length === 0) {
+                throw new Error('未解析到有效的查询数据')
+            }
+
+            const allResults: TableSearchResult[] = []
+
+            await Promise.all(tableKeys.map(async (tableKey) => {
+                const { realTableName, items } = batchRequests[tableKey]
+                const displayTableName = tableKey.includes('__copy_')
+                    ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
+                    : realTableName
+
+                try {
+                    const res = await searchBatch(selectedToken.id, realTableName, items)
+
+                    if (res.success && res.data) {
+                        const batchRes = res.data as WpsBatchSearchResult
+
+                        // 将批量结果扁平化为 TableSearchResult 列表
+                        // 每个成功的 query item 可能会返回多条 records
+                        // 我们把它们合并显示，或者保留 ID 映射
+                        // 为了复用 ResultTable，我们将所有结果合并，并添加 QueryID 字段
+
+                        const allRecords: Record<string, unknown>[] = []
+
+                        // 遍历每个查询项的结果
+                        for (const itemResult of batchRes.results) {
+                            if (itemResult.success && itemResult.records) {
+                                // 给每条记录附加 Query ID，方便用户分辨
+                                const recordsWithId = itemResult.records.map(r => ({
+                                    ...r,
+                                    _BatchQueryID: itemResult.id // 特殊字段显示来源
+                                }))
+                                allRecords.push(...recordsWithId)
+                            }
+                        }
+
+                        allResults.push({
+                            tableName: displayTableName,
+                            criteriaDescription: `批量查询 (${batchRes.totalQueries} 个条件)`,
+                            records: allRecords,
+                            totalCount: batchRes.totalMatches,
+                            truncated: false, // 批量查询每个子查询可能截断，但不影响整体显示逻辑
+                            error: undefined
+                        })
+
+                    } else {
+                        allResults.push({
+                            tableName: displayTableName,
+                            criteriaDescription: '批量查询失败',
+                            records: [],
+                            totalCount: 0,
+                            truncated: false,
+                            error: res.error || 'API 调用失败'
+                        })
+                    }
+                } catch (err) {
+                    allResults.push({
+                        tableName: displayTableName,
+                        criteriaDescription: '批量查询异常',
+                        records: [],
+                        totalCount: 0,
+                        truncated: false,
+                        error: err instanceof Error ? err.message : '未知错误'
+                    })
+                }
+            }))
+
+            setSearchResults(allResults)
+
+        } catch (err) {
+            console.error('Batch search error:', err)
+            setSearchError(err instanceof Error ? err.message : '批量搜索发生错误')
+        } finally {
+            setIsBatchSearching(false)
+        }
+    }, [selectedToken, selectedColumns])
 
     return {
         // Token
@@ -642,6 +879,11 @@ export function usePartSearch() {
         exportToExcel,
         isExporting,
         handleImageLoad,
-        imageUrlCache
+        imageUrlCache,
+
+        // Batch Search
+        isBatchSearching,
+        downloadBatchTemplate,
+        performBatchSearch
     }
 }

@@ -724,11 +724,242 @@ if (action === "getAll") {
 } else if (action === "getImageUrl") {
     // 获取单元格图片URL
     result = getImageUrlFromCell(argv.sheetName, argv.cellAddress, argv.cells)
+} else if (action === "searchBatch") {
+    // 批量搜索
+    result = searchBatch(argv.sheetName, argv.batchCriteria)
 } else {
     result = {
         success: false,
         error: "未知操作: " + action,
-        message: "支持的操作: getAll, search, searchMulti, getData, getImageUrl"
+        message: "支持的操作: getAll, search, searchMulti, searchBatch, getData, getImageUrl"
+    }
+}
+
+/**
+ * 批量搜索 (支持多行查询)
+ * @param {string} sheetName - 工作表名称
+ * @param {Array} batchCriteria - 批量查询条件数组，每个元素为 {id: string, criteria: Array}
+ * @returns {Object} 包含所有查询结果的对象
+ */
+function searchBatch(sheetName, batchCriteria) {
+    console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
+
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    if (!batchCriteria || !Array.isArray(batchCriteria) || batchCriteria.length === 0) {
+        return {
+            success: false,
+            error: "缺少参数: batchCriteria",
+            message: "请提供批量查询条件"
+        }
+    }
+
+    const batchResults = []
+    let totalMatchCount = 0
+
+    // 为了性能考虑，首先获取工作表对象和预加载图片信息
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName
+            }
+        }
+
+        // 预加载图片映射（如果需要）
+        // 注意：如果批量查询量很大，这里可能需要优化，目前复用现有逻辑
+        const imageMap = getSheetCellImages(sheet)
+        const hasImages = Object.keys(imageMap).length > 0
+
+        // 获取表头映射，避免每次查询都重新解析
+        const usedRange = sheet.UsedRange
+        if (!usedRange) {
+            return {
+                success: true,
+                sheetName: sheetName,
+                results: [],
+                message: "工作表为空"
+            }
+        }
+
+        const startRow = usedRange.Row
+        const startCol = usedRange.Column
+        const colCount = usedRange.Columns.Count
+
+        const columnMap = {}
+        const nameCounts = {}
+        const headerRow = startRow
+
+        for (let col = 0; col < colCount; col++) {
+            const headerValue = sheet.Cells(headerRow, startCol + col).Value
+            let colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+
+            if (nameCounts[colName]) {
+                nameCounts[colName]++
+                colName = `${colName}-${nameCounts[colName]}`
+            } else {
+                nameCounts[colName] = 1
+            }
+
+            columnMap[colName] = startCol + col
+        }
+        const allColumns = Object.keys(columnMap)
+
+        // 遍历每一个查询请求
+        for (let i = 0; i < batchCriteria.length; i++) {
+            const queryItem = batchCriteria[i]
+            const queryId = queryItem.id || ("q_" + i)
+            const criteria = queryItem.criteria
+
+            // 复用 searchMultiCriteria 的核心逻辑，但为了避免重复打开Sheet和解析Header，
+            // 最好是提取核心搜索逻辑。但鉴于AirScript限制，我们这里简化处理：
+            // 直接调用优化的内部搜索逻辑（这里需要稍微重构 searchMultiCriteria 以便复用，
+            // 或者简单地在这里实现类似的 Find 逻辑）
+
+            // 简单起见，且为了保证一致性，我们在这里实现一个简化的 searchMultiCriteria 变体，
+            // 复用已经获取的 resources (sheet, imageMap, columnMap)
+
+            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow)
+
+            batchResults.push({
+                id: queryId,
+                ...itemResult
+            })
+
+            totalMatchCount += itemResult.records ? itemResult.records.length : 0
+
+            // Log 进度
+            if ((i + 1) % 10 === 0) {
+                console.log("已处理 " + (i + 1) + "/" + batchCriteria.length + " 个查询")
+            }
+        }
+
+        console.log("批量搜索完成，总匹配记录: " + totalMatchCount)
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            totalQueries: batchCriteria.length,
+            totalMatches: totalMatchCount,
+            results: batchResults
+        }
+
+    } catch (err) {
+        console.error("批量搜索发生严重错误: " + err)
+        return {
+            success: false,
+            error: String(err),
+            message: "批量搜索执行失败"
+        }
+    }
+}
+
+/**
+ * 内部复用的多条件搜索逻辑 (接收预处理好的Sheet对象和映射)
+ */
+function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow) {
+    if (!criteria || criteria.length === 0) {
+        return { success: false, error: "无搜索条件", records: [] }
+    }
+
+    // 验证列和条件
+    const validCriteria = []
+    for (const crit of criteria) {
+        const columnName = crit.columnName
+        if (!columnName || !columnMap[columnName]) continue
+
+        validCriteria.push({
+            columnName: columnName,
+            colIndex: columnMap[columnName],
+            searchValue: crit.searchValue || "",
+            opType: crit.op || "Contains"
+        })
+    }
+
+    if (validCriteria.length === 0) {
+        return { success: false, error: "条件无效", records: [] }
+    }
+
+    // 搜索逻辑 (Copy-Paste adapted from searchMultiCriteria to avoid function call overhead context issues in AirScript sometimes)
+    const records = []
+    const MAX_RECORDS = 50 // 批量搜索时，单次查询限制更严格一些，防止总包过大
+    const processedRows = {}
+
+    const firstCrit = validCriteria[0]
+    const searchCol = sheet.Columns(firstCrit.colIndex)
+    const lookAt = firstCrit.opType === "Equals" ? "etWhole" : "etPart"
+
+    let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
+
+    if (foundCell) {
+        const firstAddress = foundCell.Address()
+
+        do {
+            const row = foundCell.Row
+
+            if (row === headerRow || processedRows[row]) {
+                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+                if (!foundCell || foundCell.Address() === firstAddress) break
+                continue
+            }
+
+            processedRows[row] = true
+
+            let matchAll = true
+            for (let i = 1; i < validCriteria.length; i++) {
+                const crit = validCriteria[i]
+                const cellValue = sheet.Cells(row, crit.colIndex).Value
+                const cellStr = cellValue ? String(cellValue) : ""
+
+                if (crit.opType === "Equals") {
+                    if (cellStr !== crit.searchValue) { matchAll = false; break; }
+                } else {
+                    if (cellStr.indexOf(crit.searchValue) === -1) { matchAll = false; break; }
+                }
+            }
+
+            if (matchAll) {
+                const rowData = {}
+                for (const colName of allColumns) {
+                    const colIndex = columnMap[colName]
+                    const cell = sheet.Cells(row, colIndex)
+                    let cellValue = cell.Value
+                    const cellAddr = cell.Address().replace(/\$/g, '')
+
+                    if (hasImages && imageMap[cellAddr]) {
+                        rowData[colName] = { _type: 'image', value: cellValue, imageUrl: imageMap[cellAddr] }
+                    } else {
+                        const dispImg = parseDispImgFormula(cellValue)
+                        if (dispImg) {
+                            rowData[colName] = { _type: 'dispimg', value: cellValue, imageId: dispImg.imageId, cellAddress: cellAddr }
+                        } else {
+                            rowData[colName] = cellValue
+                        }
+                    }
+                }
+                records.push(rowData)
+                if (records.length >= MAX_RECORDS) break
+            }
+
+            foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+
+        } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+    }
+
+    return {
+        success: true,
+        records: records,
+        truncated: records.length >= MAX_RECORDS
     }
 }
 

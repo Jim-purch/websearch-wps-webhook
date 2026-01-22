@@ -38,7 +38,10 @@ export default function PartSearchPage() {
         exportToExcel,
         isExporting,
         handleImageLoad,
-        imageUrlCache
+        imageUrlCache,
+        isBatchSearching,
+        downloadBatchTemplate,
+        performBatchSearch
     } = usePartSearch()
 
     // 自动加载图片选项
@@ -105,6 +108,9 @@ export default function PartSearchPage() {
                         isExporting={isExporting}
                         autoLoadImages={autoLoadImages}
                         onAutoLoadImagesChange={setAutoLoadImages}
+                        onDownloadTemplate={downloadBatchTemplate}
+                        onBatchSearch={performBatchSearch}
+                        isBatchSearching={isBatchSearching}
                     />
                 )}
 

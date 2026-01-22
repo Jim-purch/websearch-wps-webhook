@@ -195,3 +195,39 @@ export async function getImageUrls(
 
     return result
 }
+
+/**
+ * 批量搜索结果类型
+ */
+export interface WpsBatchSearchResult {
+    success: boolean
+    sheetName: string
+    totalQueries: number
+    totalMatches: number
+    results: Array<{
+        id: string
+        success: boolean
+        records?: Record<string, unknown>[]
+        error?: string
+    }>
+}
+
+/**
+ * 批量搜索
+ * @param tokenId
+ * @param sheetName
+ * @param batchCriteria Array of { id: string, criteria: WpsSearchCriteria[] }
+ */
+export async function searchBatch(
+    tokenId: string,
+    sheetName: string,
+    batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>
+): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
+    const result = await callWpsProxy<WpsBatchSearchResult>(tokenId, {
+        action: 'searchBatch',
+        sheetName,
+        batchCriteria
+    })
+
+    return result
+}

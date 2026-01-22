@@ -11,6 +11,10 @@ interface SearchFormProps {
     isExporting?: boolean
     autoLoadImages: boolean
     onAutoLoadImagesChange: (value: boolean) => void
+    // Batch Search Props
+    onDownloadTemplate?: () => void
+    onBatchSearch?: (file: File) => void
+    isBatchSearching?: boolean
 }
 
 interface InputState {
@@ -25,7 +29,10 @@ export function SearchForm({
     onExport,
     isExporting = false,
     autoLoadImages,
-    onAutoLoadImagesChange
+    onAutoLoadImagesChange,
+    onDownloadTemplate,
+    onBatchSearch,
+    isBatchSearching = false
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -80,6 +87,15 @@ export function SearchForm({
     const handleExport = () => {
         if (onExport) {
             onExport(getConditions())
+        }
+    }
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (file && onBatchSearch) {
+            onBatchSearch(file)
+            // 重置 input value 使得同一个文件可以重复上传
+            e.target.value = ''
         }
     }
 
@@ -212,6 +228,45 @@ export function SearchForm({
                                 )}
                             </button>
 
+                            {onDownloadTemplate && onBatchSearch && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={onDownloadTemplate}
+                                        disabled={isSearching || isExporting || isBatchSearching}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
+                                        title="根据当前选择的列下载批量查询Excel模板"
+                                    >
+                                        <span>⬇️</span>
+                                        下载模板
+                                    </button>
+
+                                    <label
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-sm transition-all w-full sm:w-auto min-w-[120px] justify-center cursor-pointer ${(isSearching || isExporting || isBatchSearching) ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''
+                                            }`}
+                                    >
+                                        {isBatchSearching ? (
+                                            <span className="flex items-center gap-2">
+                                                <span className="spinner w-4 h-4 border-white/30 border-t-white"></span>
+                                                查询中...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <span>📂</span>
+                                                上传查询
+                                            </span>
+                                        )}
+                                        <input
+                                            type="file"
+                                            accept=".xlsx,.xls"
+                                            className="hidden"
+                                            onChange={handleFileChange}
+                                            disabled={isSearching || isExporting || isBatchSearching}
+                                        />
+                                    </label>
+                                </>
+                            )}
+
                             {onExport && (
                                 <button
                                     type="button"
@@ -234,8 +289,9 @@ export function SearchForm({
                             )}
                         </div>
                     </form>
-                </div>
-            )}
-        </div>
+                </div >
+            )
+            }
+        </div >
     )
 }
