@@ -107,8 +107,8 @@ export function ColumnSelector({
                                                 <input
                                                     type="checkbox"
                                                     checked={isSelected}
-                                                    onChange={() => onToggle(tableKey, col.name)}
-                                                    className="accent-[#eab308] w-3 h-3"
+                                                    readOnly
+                                                    className="accent-[#eab308] w-3 h-3 pointer-events-none"
                                                 />
                                                 <span>{col.name}</span>
                                                 {col.type && (

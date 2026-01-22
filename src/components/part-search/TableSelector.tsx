@@ -81,8 +81,8 @@ export function TableSelector({
                                             <input
                                                 type="checkbox"
                                                 checked={isSelected}
-                                                onChange={() => onToggle(table.name)}
-                                                className="accent-[#eab308]"
+                                                readOnly
+                                                className="accent-[#eab308] pointer-events-none"
                                             />
                                             <span>{table.name}</span>
                                             <span className="text-xs text-[var(--text-muted)]">
