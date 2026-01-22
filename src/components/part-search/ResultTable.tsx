@@ -10,6 +10,7 @@ interface ResultTableProps {
     autoLoadImages?: boolean  // 自动加载图片
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void // 图片加载回调
     imageUrlCache?: Record<string, string> // 图片缓存
+    onExportSingle?: (result: TableSearchResult) => void // 导出单个结果的回调
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -220,13 +221,14 @@ function LazyImageCell({
     )
 }
 
-function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, imageUrlCache }: {
+function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, imageUrlCache, onExportSingle }: {
     result: TableSearchResult;
     index: number;
     tokenId?: string;
     autoLoadImages?: boolean;
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void;
     imageUrlCache?: Record<string, string>;
+    onExportSingle?: (result: TableSearchResult) => void;
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
@@ -295,10 +297,26 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                         </span>
                     )}
                 </h4>
-                <span className="text-sm text-[var(--text-muted)] bg-[var(--card-bg)] px-3 py-1 rounded-full">
-                    {result.totalCount} 条结果
-                    {result.truncated && ' (已截断)'}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm text-[var(--text-muted)] bg-[var(--card-bg)] px-3 py-1 rounded-full">
+                        {result.totalCount} 条结果
+                        {result.truncated && ' (已截断)'}
+                    </span>
+                    {onExportSingle && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onExportSingle(result)
+                            }}
+                            className="btn-export flex items-center gap-1 px-3 py-1 text-sm"
+                            title="导出此结果表"
+                        >
+                            <span>📤</span>
+                            导出
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Body */}
@@ -446,7 +464,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     )
 }
 
-export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onImageLoad, imageUrlCache }: ResultTableProps) {
+export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onImageLoad, imageUrlCache, onExportSingle }: ResultTableProps) {
     if (isSearching && results.length === 0) {
         return (
             <div className="card p-8">
@@ -480,6 +498,7 @@ export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onI
                     autoLoadImages={autoLoadImages}
                     onImageLoad={onImageLoad}
                     imageUrlCache={imageUrlCache}
+                    onExportSingle={onExportSingle}
                 />
             ))}
         </div>

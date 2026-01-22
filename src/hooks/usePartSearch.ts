@@ -459,7 +459,14 @@ export function usePartSearch() {
 
                     if (flatRecords.length > 0) {
                         // 获取所有记录的所有唯一键
-                        const allKeys = Array.from(new Set(flatRecords.flatMap(r => Object.keys(r))))
+                        let allKeys = Array.from(new Set(flatRecords.flatMap(r => Object.keys(r))))
+
+                        // 处理 _BatchQueryID 列：重命名为 QueryID 并放到第一列
+                        const hasBatchQueryID = allKeys.includes('_BatchQueryID')
+                        if (hasBatchQueryID) {
+                            allKeys = allKeys.filter(k => k !== '_BatchQueryID')
+                            allKeys.unshift('QueryID')
+                        }
 
                         // 检测哪些列包含图片，并收集DISPIMG的cellAddress
                         const imageColumns = new Set<string>()
@@ -468,7 +475,14 @@ export function usePartSearch() {
 
                         for (const record of flatRecords) {
                             for (const key of allKeys) {
-                                const imgInfo = isImageCell(record[key])
+                                let value = record[key]
+
+                                // 如果是 QueryID 列且原始数据中有 _BatchQueryID，则使用 _BatchQueryID 的值
+                                if (key === 'QueryID' && hasBatchQueryID && '_BatchQueryID' in record) {
+                                    value = record['_BatchQueryID']
+                                }
+
+                                const imgInfo = isImageCell(value)
                                 if (imgInfo) {
                                     imageColumns.add(key)
                                     if (imgInfo.cellAddress && !imgInfo.imageUrl) {
@@ -525,7 +539,13 @@ export function usePartSearch() {
 
                             for (let colIdx = 0; colIdx < allKeys.length; colIdx++) {
                                 const key = allKeys[colIdx]
-                                const value = record[key]
+                                let value = record[key]
+
+                                // 如果是 QueryID 列且原始数据中有 _BatchQueryID，则使用 _BatchQueryID 的值
+                                if (key === 'QueryID' && hasBatchQueryID && '_BatchQueryID' in record) {
+                                    value = record['_BatchQueryID']
+                                }
+
                                 const imgInfo = isImageCell(value)
 
                                 if (imgInfo?.imageUrl) {
@@ -625,6 +645,239 @@ export function usePartSearch() {
             setIsExporting(false)
         }
     }, [searchResults])
+
+    // 导出单个结果到 Excel
+    const exportSingleResult = useCallback(async (result: TableSearchResult) => {
+        if (!result.records || result.records.length === 0) {
+            setSearchError('没有可导出的数据')
+            return
+        }
+
+        try {
+            const ExcelJS = (await import('exceljs')).default
+            const { saveAs } = (await import('file-saver'))
+
+            const workbook = new ExcelJS.Workbook()
+
+            // 处理数据，展平字段
+            const flatRecords = result.records.map(r => {
+                if (r.fields && typeof r.fields === 'object') {
+                    return r.fields as Record<string, unknown>
+                }
+                return r
+            })
+
+            // Sheet 名称处理
+            let sheetName = result.tableName.replace(/[\\/?*[\]]/g, '_').substring(0, 31)
+
+            const worksheet = workbook.addWorksheet(sheetName)
+
+            // 获取所有记录的所有唯一键
+            let allKeys = Array.from(new Set(flatRecords.flatMap(r => Object.keys(r))))
+
+            // 处理 _BatchQueryID 列：重命名为 QueryID 并放到第一列
+            const hasBatchQueryID = allKeys.includes('_BatchQueryID')
+            if (hasBatchQueryID) {
+                allKeys = allKeys.filter(k => k !== '_BatchQueryID')
+                allKeys.unshift('QueryID')
+            }
+
+            // 辅助函数：获取图片数据并转换为base64
+            async function fetchImageAsBase64(url: string): Promise<{ base64: string; extension: 'png' | 'jpeg' | 'gif' } | null> {
+                try {
+                    const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`
+                    const response = await fetch(proxyUrl)
+
+                    if (!response.ok) {
+                        return null
+                    }
+
+                    const blob = await response.blob()
+                    if (blob.size === 0) {
+                        return null
+                    }
+
+                    const contentType = blob.type
+                    let extension: 'png' | 'jpeg' | 'gif' = 'png'
+                    if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+                        extension = 'jpeg'
+                    } else if (contentType.includes('gif')) {
+                        extension = 'gif'
+                    }
+
+                    const buffer = await blob.arrayBuffer()
+                    const base64 = btoa(
+                        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                    )
+
+                    return { base64, extension }
+                } catch (err) {
+                    return null
+                }
+            }
+
+            // 检测单元格是否为图片类型
+            function isImageCell(value: unknown): { imageUrl?: string; imageId?: string; cellAddress?: string } | null {
+                if (value && typeof value === 'object' && '_type' in value) {
+                    const obj = value as { _type: string; imageUrl?: string; imageId?: string; cellAddress?: string }
+                    if (obj._type === 'image' && obj.imageUrl) {
+                        return { imageUrl: obj.imageUrl }
+                    }
+                    if (obj._type === 'dispimg' && obj.imageId) {
+                        return { imageId: obj.imageId, cellAddress: obj.cellAddress }
+                    }
+                }
+                return null
+            }
+
+            // 检测哪些列包含图片，并收集DISPIMG的cellAddress
+            const imageColumns = new Set<string>()
+            const dispImgCellAddressesToFetch: string[] = []
+            const dispImgCellAddressesCached: string[] = []
+
+            for (const record of flatRecords) {
+                for (const key of allKeys) {
+                    const imgInfo = isImageCell(record[key])
+                    if (imgInfo) {
+                        imageColumns.add(key)
+                        if (imgInfo.cellAddress && !imgInfo.imageUrl) {
+                            const cacheKey = `${result.realTableName || result.tableName}__${imgInfo.cellAddress}`
+                            if (imageUrlCache[cacheKey]) {
+                                dispImgCellAddressesCached.push(imgInfo.cellAddress)
+                            } else {
+                                dispImgCellAddressesToFetch.push(imgInfo.cellAddress)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 合并图片URL：缓存的 + 新获取的
+            let fetchedImageUrls: Record<string, string | null> = {}
+
+            if (dispImgCellAddressesCached.length > 0) {
+                for (const address of dispImgCellAddressesCached) {
+                    const cacheKey = `${result.realTableName || result.tableName}__${address}`
+                    fetchedImageUrls[address] = imageUrlCache[cacheKey]
+                }
+            }
+
+            if (dispImgCellAddressesToFetch.length > 0 && selectedToken) {
+                try {
+                    const imgResult = await getImageUrls(selectedToken.id, result.realTableName || result.tableName, dispImgCellAddressesToFetch)
+                    if (imgResult.success && imgResult.data?.imageUrls) {
+                        Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
+                    }
+                } catch (e) {
+                    console.error('导出: 获取图片URL失败', e)
+                }
+            }
+
+            worksheet.columns = allKeys.map(key => ({
+                header: key,
+                key: key,
+                width: imageColumns.has(key) ? 15 : 20
+            }))
+
+            // 添加数据行
+            const imagePositions: Array<{ row: number; col: number; url: string }> = []
+
+            for (let rowIdx = 0; rowIdx < flatRecords.length; rowIdx++) {
+                const record = flatRecords[rowIdx]
+                const rowData: Record<string, unknown> = {}
+
+                for (let colIdx = 0; colIdx < allKeys.length; colIdx++) {
+                    const key = allKeys[colIdx]
+                    let value = record[key]
+
+                    // 如果是 QueryID 列且原始数据中有 _BatchQueryID，则使用 _BatchQueryID 的值
+                    if (key === 'QueryID' && hasBatchQueryID && '_BatchQueryID' in record) {
+                        value = record['_BatchQueryID']
+                    }
+
+                    const imgInfo = isImageCell(value)
+
+                    if (imgInfo?.imageUrl) {
+                        imagePositions.push({
+                            row: rowIdx + 2,
+                            col: colIdx + 1,
+                            url: imgInfo.imageUrl
+                        })
+                        rowData[key] = ''
+                    } else if (imgInfo?.cellAddress && fetchedImageUrls[imgInfo.cellAddress]) {
+                        imagePositions.push({
+                            row: rowIdx + 2,
+                            col: colIdx + 1,
+                            url: fetchedImageUrls[imgInfo.cellAddress]!
+                        })
+                        rowData[key] = ''
+                    } else if (imgInfo?.imageId) {
+                        rowData[key] = `[图片: ${imgInfo.imageId}]`
+                    } else {
+                        rowData[key] = value
+                    }
+                }
+                worksheet.addRow(rowData)
+            }
+
+            // 设置图片行的高度
+            if (imageColumns.size > 0) {
+                for (let rowIdx = 2; rowIdx <= flatRecords.length + 1; rowIdx++) {
+                    worksheet.getRow(rowIdx).height = 50
+                }
+            }
+
+            // 下载并嵌入图片
+            const CONCURRENCY = 5
+            const processImage = async (pos: { row: number; col: number; url: string }) => {
+                const imgData = await fetchImageAsBase64(pos.url)
+                if (imgData) {
+                    try {
+                        const imageId = workbook.addImage({
+                            base64: imgData.base64,
+                            extension: imgData.extension
+                        })
+                        const colLetter = String.fromCharCode(64 + pos.col)
+                        const cellRange = `${colLetter}${pos.row}:${colLetter}${pos.row}`
+                        worksheet.addImage(imageId, cellRange as `${string}:${string}`)
+                    } catch (embedErr) {
+                        console.error(`[导出] 嵌入图片失败:`, embedErr)
+                    }
+                }
+            }
+
+            const queue = [...imagePositions]
+            const workers = Array(Math.min(CONCURRENCY, queue.length))
+                .fill(null)
+                .map(async () => {
+                    while (queue.length > 0) {
+                        const pos = queue.shift()
+                        if (pos) {
+                            await processImage(pos)
+                        }
+                    }
+                })
+
+            await Promise.all(workers)
+
+            // 生成文件名：表名_查询条件
+            const criteriaText = result.criteriaDescription
+                .replace(/包含|等于/g, '')
+                .replace(/"/g, '')
+                .replace(/\s+/g, '_')
+                .substring(0, 50)
+
+            const fileName = `${result.tableName}_${criteriaText}.xlsx`
+
+            // 导出文件
+            const buffer = await workbook.xlsx.writeBuffer()
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+            saveAs(blob, fileName)
+        } catch (err) {
+            console.error('Export single result error:', err)
+            setSearchError(err instanceof Error ? err.message : '导出发生错误')
+        }
+    }, [selectedToken, imageUrlCache])
 
     // 下载批量查询模板 (多 Sheet 模式)
     const downloadBatchTemplate = useCallback(async () => {
@@ -930,6 +1183,7 @@ export function usePartSearch() {
         searchError,
         performSearch,
         exportToExcel,
+        exportSingleResult,
         isExporting,
         handleImageLoad,
         imageUrlCache,

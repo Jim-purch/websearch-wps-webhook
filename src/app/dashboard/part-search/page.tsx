@@ -36,6 +36,7 @@ export default function PartSearchPage() {
         searchError,
         performSearch,
         exportToExcel,
+        exportSingleResult,
         isExporting,
         handleImageLoad,
         imageUrlCache,
@@ -127,6 +128,7 @@ export default function PartSearchPage() {
                     autoLoadImages={autoLoadImages}
                     onImageLoad={handleImageLoad}
                     imageUrlCache={imageUrlCache}
+                    onExportSingle={exportSingleResult}
                 />
             </div>
         </div>
