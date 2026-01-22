@@ -49,6 +49,7 @@ export function SearchForm({
 
     const [inputs, setInputs] = useState<Record<string, InputState>>({})
     const [isOpen, setIsOpen] = useState(true)
+    const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
 
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({
@@ -96,7 +97,14 @@ export function SearchForm({
             onBatchSearch(file)
             // 重置 input value 使得同一个文件可以重复上传
             e.target.value = ''
+            setIsBatchModalOpen(false) // 关闭弹窗
         }
+    }
+
+    const openBatchModal = () => {
+        // 清除当前查询条件
+        setInputs({})
+        setIsBatchModalOpen(true)
     }
 
     if (inputKeys.length === 0) {
@@ -229,42 +237,24 @@ export function SearchForm({
                             </button>
 
                             {onDownloadTemplate && onBatchSearch && (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={onDownloadTemplate}
-                                        disabled={isSearching || isExporting || isBatchSearching}
-                                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
-                                        title="根据当前选择的列下载批量查询Excel模板"
-                                    >
-                                        <span>⬇️</span>
-                                        下载模板
-                                    </button>
-
-                                    <label
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-sm transition-all w-full sm:w-auto min-w-[120px] justify-center cursor-pointer ${(isSearching || isExporting || isBatchSearching) ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''
-                                            }`}
-                                    >
-                                        {isBatchSearching ? (
-                                            <span className="flex items-center gap-2">
-                                                <span className="spinner w-4 h-4 border-white/30 border-t-white"></span>
-                                                查询中...
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-2">
-                                                <span>📂</span>
-                                                上传查询
-                                            </span>
-                                        )}
-                                        <input
-                                            type="file"
-                                            accept=".xlsx,.xls"
-                                            className="hidden"
-                                            onChange={handleFileChange}
-                                            disabled={isSearching || isExporting || isBatchSearching}
-                                        />
-                                    </label>
-                                </>
+                                <button
+                                    type="button"
+                                    onClick={openBatchModal}
+                                    disabled={isSearching || isExporting || isBatchSearching}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
+                                >
+                                    {isBatchSearching ? (
+                                        <span className="flex items-center gap-2">
+                                            <span className="spinner w-4 h-4 border-white/30 border-t-white"></span>
+                                            查询中...
+                                        </span>
+                                    ) : (
+                                        <span className="flex items-center gap-2">
+                                            <span>⚡</span>
+                                            批量查询
+                                        </span>
+                                    )}
+                                </button>
                             )}
 
                             {onExport && (
@@ -292,6 +282,55 @@ export function SearchForm({
                 </div >
             )
             }
+            {/* 批量查询弹窗 */}
+            {isBatchModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl shadow-2xl p-6 w-full max-w-md space-y-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-bold flex items-center gap-2">
+                                <span>⚡</span>
+                                批量查询
+                            </h3>
+                            <button
+                                onClick={() => setIsBatchModalOpen(false)}
+                                className="text-[var(--text-muted)] hover:text-[var(--foreground)] transition-colors p-1"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <p className="text-sm text-[var(--text-muted)]">
+                                1. 请先根据当前选中的表格和列下载查询模板。<br />
+                                2. 在模板的相应 Sheet 中填写查询条件。<br />
+                                3. 上传填写好的 Excel 文件进行批量查询。
+                            </p>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <button
+                                    type="button"
+                                    onClick={onDownloadTemplate}
+                                    className="flex flex-col items-center justify-center gap-3 p-4 rounded-lg bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 border border-[#3b82f6]/20 transition-all group"
+                                >
+                                    <span className="text-2xl group-hover:scale-110 transition-transform">⬇️</span>
+                                    <span className="font-medium text-[#3b82f6]">下载模板</span>
+                                </button>
+
+                                <label className="flex flex-col items-center justify-center gap-3 p-4 rounded-lg bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 transition-all cursor-pointer group">
+                                    <span className="text-2xl group-hover:scale-110 transition-transform">📂</span>
+                                    <span className="font-medium text-[#8b5cf6]">上传查询</span>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        className="hidden"
+                                        onChange={handleFileChange}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     )
 }

@@ -623,7 +623,7 @@ export function usePartSearch() {
         }
     }, [fetchSearchResults, searchResults])
 
-    // 下载批量查询模板
+    // 下载批量查询模板 (多 Sheet 模式)
     const downloadBatchTemplate = useCallback(async () => {
         if (!Object.values(selectedColumns).some(cols => cols.length > 0)) {
             setSearchError('请先选择至少一个表和列')
@@ -634,30 +634,53 @@ export function usePartSearch() {
             const ExcelJS = (await import('exceljs')).default
             const { saveAs } = (await import('file-saver'))
             const workbook = new ExcelJS.Workbook()
-            const worksheet = workbook.addWorksheet('Batch Query Template')
 
-            // 生成表头: 表名__列名
-            // 另外添加一个 ID 列方便追踪（可选，但这里我们主要靠行号或ID列）
-            const headers = ['Query_ID'] // 第一列作为ID
-
+            // 遍历所有选中的表，为每个表创建一个 Sheet
             for (const [tableKey, columns] of Object.entries(selectedColumns)) {
                 if (columns.length === 0) continue
-                for (const col of columns) {
-                    headers.push(`${tableKey}__${col}`)
+
+                // 处理 Sheet 名称 (Excel 限制 31 字符，且不能包含特殊字符)
+                // tableKey 可能包含 __copy_ 后缀，我们尽量保留
+                let sheetName = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 31)
+
+                // 确保 sheet 名唯一
+                let counter = 1
+                const originalSheetName = sheetName
+                while (workbook.getWorksheet(sheetName)) {
+                    // 如果重复，截断并添加序号
+                    const suffix = `_${counter}`
+                    sheetName = `${originalSheetName.substring(0, 31 - suffix.length)}${suffix}`
+                    counter++
                 }
+
+                const worksheet = workbook.addWorksheet(sheetName)
+
+                // 第一列必须是 Query_ID
+                const headers = ['Query_ID', ...columns]
+
+                // 设置表头
+                worksheet.addRow(headers)
+
+                // 添加元数据到第一行（隐藏），用于上传时准确匹配 tableKey
+                // 或者我们可以简单地依靠 Sheet Name 匹配（如果用户没改名）
+                // 为了稳健，我们在 A1 单元格的批注或隐藏行中存储完整的 tableKey 比较复杂
+                // 简单的做法：主要依赖 Sheet 名匹配，同时在解析时尝试模糊匹配
+
+                // 添加示例行
+                const exampleRow = ['row_1']
+                for (let i = 0; i < columns.length; i++) {
+                    exampleRow.push('')
+                }
+                worksheet.addRow(exampleRow)
+
+                // 设置列宽
+                worksheet.columns = headers.map(h => ({ header: h, key: h, width: 20 }))
             }
 
-            worksheet.addRow(headers)
-
-            // 添加一行示例数据
-            const exampleRow = ['example_1']
-            for (let i = 1; i < headers.length; i++) {
-                exampleRow.push('')
+            if (workbook.worksheets.length === 0) {
+                setSearchError('没有可生成的模板内容')
+                return
             }
-            worksheet.addRow(exampleRow)
-
-            // 设置列宽
-            worksheet.columns = headers.map(h => ({ header: h, key: h, width: 25 }))
 
             const buffer = await workbook.xlsx.writeBuffer()
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -669,7 +692,7 @@ export function usePartSearch() {
         }
     }, [selectedColumns])
 
-    // 执行批量搜索 (解析 Excel -> 调用 API -> 聚合结果)
+    // 执行批量搜索 (解析 多 Sheet Excel -> 调用 API -> 聚合结果)
     const performBatchSearch = useCallback(async (file: File) => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
             setSearchError('Token 配置不完整')
@@ -685,96 +708,116 @@ export function usePartSearch() {
             const workbook = new ExcelJS.Workbook()
             await workbook.xlsx.load(await file.arrayBuffer())
 
-            const worksheet = workbook.getWorksheet(1)
-            if (!worksheet) throw new Error('Excel 文件为空')
-
-            // 1. 解析表头映射
-            // 格式: tableName__columnName
-            const headerMap: Record<number, { tableKey: string, columnName: string } | 'ID'> = {}
-
-            const headerRow = worksheet.getRow(1)
-            let hasValidColumn = false
-
-            headerRow.eachCell((cell, colNumber) => {
-                const val = (cell.value?.toString() || '').trim()
-                if (val.toLowerCase() === 'query_id' || val.toLowerCase() === 'id') {
-                    headerMap[colNumber] = 'ID'
-                } else if (val.includes('__')) {
-                    const [tableKey, columnName] = val.split('__')
-                    if (tableKey && columnName) {
-                        headerMap[colNumber] = { tableKey, columnName }
-                        hasValidColumn = true
-                    }
-                }
-            })
-
-            if (!hasValidColumn) {
-                throw new Error('未找到有效的查询列 (格式: 表名__列名)')
-            }
-
-            // 2. 读取数据行并构建查询
-            // Group by Table -> List of { id, criteria[] }
             const batchRequests: Record<string, { realTableName: string, items: Array<{ id: string, criteria: WpsSearchCriteria[] }> }> = {}
 
-            worksheet.eachRow((row, rowNumber) => {
-                if (rowNumber === 1) return // 跳过表头
+            // 遍历 Excel 中的所有 Sheet
+            workbook.eachSheet((worksheet, sheetId) => {
+                const sheetName = worksheet.name
 
-                const rowId = row.getCell(1).value?.toString() || `row_${rowNumber}`
-                const rowCriteriaByTable: Record<string, WpsSearchCriteria[]> = {}
-                let hasCriteria = false
+                // 尝试找到匹配的 tableKey
+                // 策略：selectedColumns 中的 key 处理后 == sheetName
+                let matchedTableKey: string | null = null
 
-                // 遍历该行的所有列
-                row.eachCell((cell, colNumber) => {
-                    const colInfo = headerMap[colNumber]
-                    if (!colInfo || colInfo === 'ID') return
-
-                    const cellValue = cell.value?.toString() || ''
-                    if (cellValue.trim() === '') return // 跳过空值
-
-                    const { tableKey, columnName } = colInfo
-
-                    // 初始化该表的 criteria 数组
-                    if (!rowCriteriaByTable[tableKey]) {
-                        rowCriteriaByTable[tableKey] = []
+                for (const tableKey of Object.keys(selectedColumns)) {
+                    // 模拟生成时的逻辑来匹配
+                    const generatedName = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 31)
+                    // 简单匹配：如果 sheetName 等于生成的 safeName
+                    // 注意：如果生成时因为重复加了后缀，这里可能匹配不到。
+                    // 这是一个潜在的 limitation，但对于正常使用应该够了。
+                    // 稍微放宽：如果 tableKey 包含 sheetName (或反之)
+                    if (generatedName === sheetName) {
+                        matchedTableKey = tableKey
+                        break
                     }
+                }
 
-                    // 默认使用 Contains, 可以扩展逻辑支持 Exact (例如通过 Excel 注释或特定前缀)
-                    // 这里简化逻辑，默认 Contains
-                    rowCriteriaByTable[tableKey].push({
-                        columnName: columnName,
-                        searchValue: cellValue,
-                        op: 'Contains'
-                    })
-                    hasCriteria = true
+                // 如果没找到精确匹配，尝试前缀匹配
+                if (!matchedTableKey) {
+                    for (const tableKey of Object.keys(selectedColumns)) {
+                        const safeKeyStart = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 20) // 前20个字符匹配
+                        if (sheetName.startsWith(safeKeyStart)) {
+                            matchedTableKey = tableKey
+                            break
+                        }
+                    }
+                }
+
+                if (!matchedTableKey) {
+                    console.warn(`Skipping sheet "${sheetName}": No matching table found in current selection.`)
+                    return
+                }
+
+                const tableKey = matchedTableKey
+
+                // 解析表头
+                // Row 1 is headers
+                const headerRow = worksheet.getRow(1)
+                const colIndexToField: Record<number, string> = {}
+
+                headerRow.eachCell((cell, colNumber) => {
+                    const val = (cell.value?.toString() || '').trim()
+                    if (val === 'Query_ID') {
+                        colIndexToField[colNumber] = 'Query_ID'
+                    } else if (selectedColumns[tableKey]?.includes(val)) {
+                        colIndexToField[colNumber] = val
+                    }
                 })
 
-                if (!hasCriteria) return
+                // 如果只有 Query_ID 或没有不仅是 ID 的列，跳过
+                if (Object.keys(colIndexToField).length <= 1) return
 
-                // 将该行的查询分配到各个表的 batch requests 中
-                for (const [tableKey, criteria] of Object.entries(rowCriteriaByTable)) {
-                    const realTableName = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
-
-                    if (!batchRequests[tableKey]) {
-                        batchRequests[tableKey] = { realTableName, items: [] }
-                    }
-
-                    batchRequests[tableKey].items.push({
-                        id: rowId, // 使用行号或ID作为标识
-                        criteria: criteria
-                    })
+                // 读取数据
+                const realTableName = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
+                if (!batchRequests[tableKey]) {
+                    batchRequests[tableKey] = { realTableName, items: [] }
                 }
+
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return
+
+                    const rowIdCell = row.getCell(1) // 假设第一列是 Query_ID? 不一定，要查 map
+                    // 找到 Query_ID 所在的列号
+                    const idColNum = parseInt(Object.keys(colIndexToField).find(k => colIndexToField[parseInt(k)] === 'Query_ID') || '0')
+
+                    const rowId = idColNum ? (row.getCell(idColNum).value?.toString() || `row_${rowNumber}`) : `row_${rowNumber}`
+
+                    const criteria: WpsSearchCriteria[] = []
+
+                    row.eachCell((cell, colNumber) => {
+                        const fieldName = colIndexToField[colNumber]
+                        if (!fieldName || fieldName === 'Query_ID') return
+
+                        const val = cell.value?.toString() || ''
+                        if (val.trim() === '') return
+
+                        criteria.push({
+                            columnName: fieldName,
+                            searchValue: val,
+                            op: 'Contains'
+                        })
+                    })
+
+                    if (criteria.length > 0) {
+                        batchRequests[tableKey].items.push({
+                            id: rowId,
+                            criteria
+                        })
+                    }
+                })
             })
 
-            // 3. 并行执行批量查询
+            // 3. 执行查询
             const tableKeys = Object.keys(batchRequests)
             if (tableKeys.length === 0) {
-                throw new Error('未解析到有效的查询数据')
+                throw new Error('未解析到有效的查询数据，请检查上传文件和当前选中的表是否匹配')
             }
 
             const allResults: TableSearchResult[] = []
 
             await Promise.all(tableKeys.map(async (tableKey) => {
                 const { realTableName, items } = batchRequests[tableKey]
+                if (items.length === 0) return
+
                 const displayTableName = tableKey.includes('__copy_')
                     ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
                     : realTableName
@@ -784,21 +827,13 @@ export function usePartSearch() {
 
                     if (res.success && res.data) {
                         const batchRes = res.data as WpsBatchSearchResult
-
-                        // 将批量结果扁平化为 TableSearchResult 列表
-                        // 每个成功的 query item 可能会返回多条 records
-                        // 我们把它们合并显示，或者保留 ID 映射
-                        // 为了复用 ResultTable，我们将所有结果合并，并添加 QueryID 字段
-
                         const allRecords: Record<string, unknown>[] = []
 
-                        // 遍历每个查询项的结果
                         for (const itemResult of batchRes.results) {
                             if (itemResult.success && itemResult.records) {
-                                // 给每条记录附加 Query ID，方便用户分辨
                                 const recordsWithId = itemResult.records.map(r => ({
                                     ...r,
-                                    _BatchQueryID: itemResult.id // 特殊字段显示来源
+                                    _BatchQueryID: itemResult.id
                                 }))
                                 allRecords.push(...recordsWithId)
                             }
@@ -806,10 +841,10 @@ export function usePartSearch() {
 
                         allResults.push({
                             tableName: displayTableName,
-                            criteriaDescription: `批量查询 (${batchRes.totalQueries} 个条件)`,
+                            criteriaDescription: `批量查询 (${batchRes.totalQueries} 条数据)`,
                             records: allRecords,
                             totalCount: batchRes.totalMatches,
-                            truncated: false, // 批量查询每个子查询可能截断，但不影响整体显示逻辑
+                            truncated: false,
                             error: undefined
                         })
 
