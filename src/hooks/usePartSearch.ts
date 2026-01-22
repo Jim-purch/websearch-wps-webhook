@@ -6,6 +6,7 @@ import { useSharedTokens } from './useSharedTokens'
 import {
     getTableList,
     searchMultiCriteria,
+    getImageUrls,
     type WpsTable,
     type WpsSearchCriteria,
     type WpsSearchResult,
@@ -348,7 +349,63 @@ export function usePartSearch() {
             const workbook = new ExcelJS.Workbook()
             let hasData = false
 
-            results.forEach(result => {
+            // 辅助函数：获取图片数据并转换为base64
+            async function fetchImageAsBase64(url: string): Promise<{ base64: string; extension: 'png' | 'jpeg' | 'gif' } | null> {
+                console.log(`[导出] 开始下载图片: ${url.substring(0, 80)}...`)
+                try {
+                    // 使用后端代理获取图片，绕过CORS限制
+                    const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`
+                    const response = await fetch(proxyUrl)
+
+                    if (!response.ok) {
+                        console.error(`[导出] 图片下载失败: HTTP ${response.status} (via proxy)`)
+                        return null
+                    }
+
+                    const blob = await response.blob()
+                    console.log(`[导出] 图片下载成功: ${blob.size} bytes, type: ${blob.type}`)
+
+                    if (blob.size === 0) {
+                        console.error(`[导出] 图片大小为0`)
+                        return null
+                    }
+
+                    const contentType = blob.type
+                    let extension: 'png' | 'jpeg' | 'gif' = 'png'
+                    if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+                        extension = 'jpeg'
+                    } else if (contentType.includes('gif')) {
+                        extension = 'gif'
+                    }
+
+                    const buffer = await blob.arrayBuffer()
+                    const base64 = btoa(
+                        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                    )
+
+                    console.log(`[导出] Base64转换成功: ${base64.length} chars, extension: ${extension}`)
+                    return { base64, extension }
+                } catch (err) {
+                    console.error(`[导出] 图片下载异常:`, err)
+                    return null
+                }
+            }
+
+            // 检测单元格是否为图片类型
+            function isImageCell(value: unknown): { imageUrl?: string; imageId?: string; cellAddress?: string } | null {
+                if (value && typeof value === 'object' && '_type' in value) {
+                    const obj = value as { _type: string; imageUrl?: string; imageId?: string; cellAddress?: string }
+                    if (obj._type === 'image' && obj.imageUrl) {
+                        return { imageUrl: obj.imageUrl }
+                    }
+                    if (obj._type === 'dispimg' && obj.imageId) {
+                        return { imageId: obj.imageId, cellAddress: obj.cellAddress }
+                    }
+                }
+                return null
+            }
+
+            for (const result of results) {
                 if (result.records && result.records.length > 0) {
                     hasData = true
                     // 处理数据，展平字段
@@ -370,21 +427,118 @@ export function usePartSearch() {
 
                     const worksheet = workbook.addWorksheet(finalSheetName)
 
-                    // 自动生成列头
                     if (flatRecords.length > 0) {
-                        // 获取所有记录的所有唯一键，以防止某些记录缺少字段
+                        // 获取所有记录的所有唯一键
                         const allKeys = Array.from(new Set(flatRecords.flatMap(r => Object.keys(r))))
+
+                        // 检测哪些列包含图片，并收集DISPIMG的cellAddress
+                        const imageColumns = new Set<string>()
+                        const dispImgCellAddresses: string[] = []
+
+                        for (const record of flatRecords) {
+                            for (const key of allKeys) {
+                                const imgInfo = isImageCell(record[key])
+                                if (imgInfo) {
+                                    imageColumns.add(key)
+                                    if (imgInfo.cellAddress && !imgInfo.imageUrl) {
+                                        dispImgCellAddresses.push(imgInfo.cellAddress)
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果有DISPIMG单元格，先获取图片URL
+                        let fetchedImageUrls: Record<string, string | null> = {}
+                        if (dispImgCellAddresses.length > 0 && selectedToken) {
+                            console.log(`导出: 获取 ${dispImgCellAddresses.length} 个DISPIMG图片URL...`)
+                            try {
+                                const imgResult = await getImageUrls(selectedToken.id, result.tableName, dispImgCellAddresses)
+                                if (imgResult.success && imgResult.data?.imageUrls) {
+                                    fetchedImageUrls = imgResult.data.imageUrls
+                                    console.log(`导出: 成功获取 ${Object.values(fetchedImageUrls).filter(Boolean).length} 个图片URL`)
+                                }
+                            } catch (e) {
+                                console.error('导出: 获取图片URL失败', e)
+                            }
+                        }
 
                         worksheet.columns = allKeys.map(key => ({
                             header: key,
                             key: key,
-                            width: 20 // 默认宽度
+                            width: imageColumns.has(key) ? 15 : 20 // 图片列稍窄
                         }))
 
-                        worksheet.addRows(flatRecords)
+                        // 添加数据行，但先处理非图片数据
+                        const imagePositions: Array<{ row: number; col: number; url: string }> = []
+
+                        for (let rowIdx = 0; rowIdx < flatRecords.length; rowIdx++) {
+                            const record = flatRecords[rowIdx]
+                            const rowData: Record<string, unknown> = {}
+
+                            for (let colIdx = 0; colIdx < allKeys.length; colIdx++) {
+                                const key = allKeys[colIdx]
+                                const value = record[key]
+                                const imgInfo = isImageCell(value)
+
+                                if (imgInfo?.imageUrl) {
+                                    // 已有图片URL - 直接使用
+                                    imagePositions.push({
+                                        row: rowIdx + 2, // +2 因为第1行是表头
+                                        col: colIdx + 1,
+                                        url: imgInfo.imageUrl
+                                    })
+                                    rowData[key] = '' // 留空，图片会覆盖
+                                } else if (imgInfo?.cellAddress && fetchedImageUrls[imgInfo.cellAddress]) {
+                                    // DISPIMG且成功获取到URL
+                                    imagePositions.push({
+                                        row: rowIdx + 2,
+                                        col: colIdx + 1,
+                                        url: fetchedImageUrls[imgInfo.cellAddress]!
+                                    })
+                                    rowData[key] = '' // 留空，图片会覆盖
+                                } else if (imgInfo?.imageId) {
+                                    rowData[key] = `[图片: ${imgInfo.imageId}]` // 无法获取URL，显示ID
+                                } else {
+                                    rowData[key] = value
+                                }
+                            }
+                            worksheet.addRow(rowData)
+                        }
+
+                        // 设置图片行的高度
+                        if (imageColumns.size > 0) {
+                            for (let rowIdx = 2; rowIdx <= flatRecords.length + 1; rowIdx++) {
+                                worksheet.getRow(rowIdx).height = 50 // 图片行高度
+                            }
+                        }
+
+                        // 下载并嵌入图片
+                        console.log(`[导出] 开始处理 ${imagePositions.length} 个图片位置`)
+                        let embeddedCount = 0
+                        for (const pos of imagePositions) {
+                            console.log(`[导出] 处理图片位置: 行${pos.row}, 列${pos.col}, URL: ${pos.url.substring(0, 60)}...`)
+                            const imgData = await fetchImageAsBase64(pos.url)
+                            if (imgData) {
+                                try {
+                                    const imageId = workbook.addImage({
+                                        base64: imgData.base64,
+                                        extension: imgData.extension
+                                    })
+                                    // 使用单元格范围格式 (列从0开始计数)
+                                    const colLetter = String.fromCharCode(64 + pos.col) // 1->A, 2->B, etc.
+                                    const cellRange = `${colLetter}${pos.row}:${colLetter}${pos.row}`
+                                    console.log(`[导出] 嵌入图片到单元格: ${cellRange}`)
+                                    worksheet.addImage(imageId, cellRange as `${string}:${string}`)
+                                    embeddedCount++
+                                } catch (embedErr) {
+                                    console.error(`[导出] 嵌入图片失败:`, embedErr)
+                                }
+                            }
+                        }
+                        console.log(`[导出] 成功嵌入 ${embeddedCount}/${imagePositions.length} 个图片`)
                     }
                 }
-            })
+            }
 
             if (!hasData) {
                 setSearchError('没有可导出的数据')
