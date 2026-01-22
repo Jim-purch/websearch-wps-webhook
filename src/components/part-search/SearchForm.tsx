@@ -13,7 +13,7 @@ interface SearchFormProps {
     onAutoLoadImagesChange: (value: boolean) => void
     // Batch Search Props
     onDownloadTemplate?: () => void
-    onBatchSearch?: (file: File) => void
+    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact') => void
     isBatchSearching?: boolean
 }
 
@@ -50,6 +50,7 @@ export function SearchForm({
     const [inputs, setInputs] = useState<Record<string, InputState>>({})
     const [isOpen, setIsOpen] = useState(true)
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
+    const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
 
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({
@@ -94,7 +95,7 @@ export function SearchForm({
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file && onBatchSearch) {
-            onBatchSearch(file)
+            onBatchSearch(file, batchMatchMode)
             // 重置 input value 使得同一个文件可以重复上传
             e.target.value = ''
             setIsBatchModalOpen(false) // 关闭弹窗
@@ -305,6 +306,34 @@ export function SearchForm({
                                 2. 在模板的相应 Sheet 中填写查询条件。<br />
                                 3. 上传填写好的 Excel 文件进行批量查询。
                             </p>
+
+                            <div className="flex items-center gap-4 p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
+                                <span className="text-sm font-medium text-[var(--foreground)]">查询模式：</span>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBatchMatchMode('exact')}
+                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${
+                                            batchMatchMode === 'exact'
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                        }`}
+                                    >
+                                        精确查询
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBatchMatchMode('fuzzy')}
+                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${
+                                            batchMatchMode === 'fuzzy'
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                        }`}
+                                    >
+                                        模糊查询
+                                    </button>
+                                </div>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <button

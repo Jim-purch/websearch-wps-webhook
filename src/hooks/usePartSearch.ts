@@ -268,8 +268,11 @@ export function usePartSearch() {
             if (!conditionsByTableKey[cond.tableName]) {
                 conditionsByTableKey[cond.tableName] = { realTableName, criteria: [] }
             }
-            // 清理搜索值：去除回车换行符
-            const cleanValue = cond.searchValue.replace(/[\r\n]+/g, '').trim()
+            // 清理搜索值：去除回车、空格、"-"、.、大小写以及最开始的"0"
+            const cleanValue = cond.searchValue
+                .replace(/[\r\n\s\-\.]/g, '')
+                .replace(/^0+/, '')
+                .toLowerCase()
             if (!cleanValue) continue
 
             conditionsByTableKey[cond.tableName].criteria.push({
@@ -949,7 +952,7 @@ export function usePartSearch() {
     }, [selectedColumns])
 
     // 执行批量搜索 (解析 多 Sheet Excel -> 调用 API -> 聚合结果)
-    const performBatchSearch = useCallback(async (file: File) => {
+    const performBatchSearch = useCallback(async (file: File, matchMode: 'fuzzy' | 'exact' = 'exact') => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
             setSearchError('Token 配置不完整')
             return
@@ -1054,14 +1057,23 @@ export function usePartSearch() {
                         }
 
                         // 清理 Excel 单元格数据：去除回车换行符
-                        const cleanVal = val.replace(/[\r\n]+/g, '').trim()
+                        let cleanVal = val.replace(/[\r\n]+/g, '').trim()
 
                         if (cleanVal === '') return
 
+                        // 根据查询模式决定操作符
+                        let op: 'Contains' | 'Equals' = matchMode === 'exact' ? 'Equals' : 'Contains'
+
+                        // 清理特殊字符：去除回车、空格、"-"、.、大小写以及最开始的"0"
+                        let searchValue = cleanVal
+                            .replace(/[\r\n\s\-\.]/g, '')
+                            .replace(/^0+/, '')
+                            .toLowerCase()
+
                         criteria.push({
                             columnName: fieldName,
-                            searchValue: cleanVal,
-                            op: 'Contains'
+                            searchValue,
+                            op
                         })
                     })
 
