@@ -241,7 +241,7 @@ export function SearchForm({
                                     type="button"
                                     onClick={openBatchModal}
                                     disabled={isSearching || isExporting || isBatchSearching}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
+                                    className="btn-batch flex items-center gap-2 px-4 py-2 text-sm w-full sm:w-auto min-w-[120px] justify-center"
                                 >
                                     {isBatchSearching ? (
                                         <span className="flex items-center gap-2">
@@ -262,7 +262,7 @@ export function SearchForm({
                                     type="button"
                                     onClick={handleExport}
                                     disabled={isSearching || isExporting}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#10b981] hover:bg-[#059669] text-white text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto min-w-[120px] justify-center"
+                                    className="btn-export flex items-center gap-2 px-4 py-2 text-sm w-full sm:w-auto min-w-[120px] justify-center"
                                 >
                                     {isExporting ? (
                                         <span className="flex items-center gap-2">
