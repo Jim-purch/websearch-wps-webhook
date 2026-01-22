@@ -71,11 +71,21 @@ function getAllSheetsInfo() {
                 const colCount = usedRange.Columns.Count
                 const headerRow = usedRange.Row  // 通常是第1行
 
+                const nameCounts = {}
                 for (let col = 0; col < colCount; col++) {
                     const headerCell = sheet.Cells(headerRow, startCol + col)
                     const headerValue = headerCell.Value
                     // 使用表头值作为列名，如果为空则使用列字母
-                    const colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+                    let colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+
+                    // 处理重复列名: 自动添加 -N 后缀
+                    if (nameCounts[colName]) {
+                        nameCounts[colName]++
+                        colName = `${colName}-${nameCounts[colName]}`
+                    } else {
+                        nameCounts[colName] = 1
+                    }
+
                     columns.push({
                         name: colName,
                         type: "string",  // 智能表格没有明确的类型定义
@@ -503,10 +513,20 @@ function searchMultiCriteria(sheetName, criteria) {
 
         // 获取表头（第一行）建立列名到列号的映射
         const columnMap = {}
+        const nameCounts = {}
         const headerRow = startRow
         for (let col = 0; col < colCount; col++) {
             const headerValue = sheet.Cells(headerRow, startCol + col).Value
-            const colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+            let colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+
+            // 处理重复列名，确保与 getAllSheetsInfo 逻辑一致
+            if (nameCounts[colName]) {
+                nameCounts[colName]++
+                colName = `${colName}-${nameCounts[colName]}`
+            } else {
+                nameCounts[colName] = 1
+            }
+
             columnMap[colName] = startCol + col
         }
 
