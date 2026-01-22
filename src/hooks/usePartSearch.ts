@@ -25,6 +25,7 @@ export interface SearchCondition {
 
 export interface TableSearchResult {
     tableName: string
+    realTableName?: string  // 真实表名（用于图片加载等API调用）
     criteriaDescription: string
     records: Record<string, unknown>[]
     totalCount: number
@@ -307,6 +308,7 @@ export function usePartSearch() {
                     const data = result.data as WpsSearchResult
                     results.push({
                         tableName: displayTableName,
+                        realTableName: realTableName,
                         criteriaDescription: criteriaDesc,
                         records: data.records || [],
                         totalCount: data.totalCount || 0,
@@ -317,6 +319,7 @@ export function usePartSearch() {
                 } else {
                     results.push({
                         tableName: displayTableName,
+                        realTableName: realTableName,
                         criteriaDescription: criteriaDesc,
                         records: [],
                         totalCount: 0,
@@ -327,6 +330,7 @@ export function usePartSearch() {
             } catch (err) {
                 results.push({
                     tableName: displayTableName,
+                    realTableName: realTableName,
                     criteriaDescription: criteriaDesc,
                     records: [],
                     totalCount: 0,
@@ -469,7 +473,7 @@ export function usePartSearch() {
                                     imageColumns.add(key)
                                     if (imgInfo.cellAddress && !imgInfo.imageUrl) {
                                         // 检查缓存中是否有此图片的URL
-                                        const cacheKey = `${result.tableName}__${imgInfo.cellAddress}`
+                                        const cacheKey = `${result.realTableName || result.tableName}__${imgInfo.cellAddress}`
                                         if (imageUrlCache[cacheKey]) {
                                             dispImgCellAddressesCached.push(imgInfo.cellAddress)
                                         } else {
@@ -487,7 +491,7 @@ export function usePartSearch() {
                         if (dispImgCellAddressesCached.length > 0) {
                             console.log(`导出: 使用缓存的 ${dispImgCellAddressesCached.length} 个DISPIMG图片URL`)
                             for (const address of dispImgCellAddressesCached) {
-                                const cacheKey = `${result.tableName}__${address}`
+                                const cacheKey = `${result.realTableName || result.tableName}__${address}`
                                 fetchedImageUrls[address] = imageUrlCache[cacheKey]
                             }
                         }
@@ -496,7 +500,7 @@ export function usePartSearch() {
                         if (dispImgCellAddressesToFetch.length > 0 && selectedToken) {
                             console.log(`导出: 获取 ${dispImgCellAddressesToFetch.length} 个未缓存的DISPIMG图片URL...`)
                             try {
-                                const imgResult = await getImageUrls(selectedToken.id, result.tableName, dispImgCellAddressesToFetch)
+                                const imgResult = await getImageUrls(selectedToken.id, result.realTableName || result.tableName, dispImgCellAddressesToFetch)
                                 if (imgResult.success && imgResult.data?.imageUrls) {
                                     Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
                                     console.log(`导出: 成功获取 ${Object.values(imgResult.data.imageUrls).filter(Boolean).length} 个新图片URL`)
@@ -852,6 +856,7 @@ export function usePartSearch() {
 
                         allResults.push({
                             tableName: displayTableName,
+                            realTableName: realTableName,
                             criteriaDescription: `批量查询 (${batchRes.totalQueries} 条数据)`,
                             records: allRecords,
                             totalCount: batchRes.totalMatches,
@@ -862,6 +867,7 @@ export function usePartSearch() {
                     } else {
                         allResults.push({
                             tableName: displayTableName,
+                            realTableName: realTableName,
                             criteriaDescription: '批量查询失败',
                             records: [],
                             totalCount: 0,
@@ -872,6 +878,7 @@ export function usePartSearch() {
                 } catch (err) {
                     allResults.push({
                         tableName: displayTableName,
+                        realTableName: realTableName,
                         criteriaDescription: '批量查询异常',
                         records: [],
                         totalCount: 0,

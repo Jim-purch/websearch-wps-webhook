@@ -357,14 +357,14 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
 
                                                     // 如果有cellAddress和tokenId，使用LazyImageCell自动加载
                                                     if (imgObjFull.cellAddress && tokenId) {
-                                                        const cacheKey = `${result.tableName}__${imgObjFull.cellAddress}`
+                                                        const cacheKey = `${result.realTableName || result.tableName}__${imgObjFull.cellAddress}`
                                                         const cachedUrl = imageUrlCache?.[cacheKey]
 
                                                         return (
                                                             <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
                                                                 <LazyImageCell
                                                                     tokenId={tokenId}
-                                                                    sheetName={result.tableName}
+                                                                    sheetName={result.realTableName || result.tableName}
                                                                     cellAddress={imgObjFull.cellAddress}
                                                                     imageId={imgObjFull.imageId}
                                                                     onCopy={(text) => handleCellClick(text, cellKey)}
