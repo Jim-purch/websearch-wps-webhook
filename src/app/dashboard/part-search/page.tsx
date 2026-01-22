@@ -117,7 +117,13 @@ export default function PartSearchPage() {
 
                 {/* Error Display */}
                 {searchError && (
-                    <div className="alert alert-error">{searchError}</div>
+                    <div className="alert alert-error flex items-center gap-3">
+                        <span className="text-xl">⚠️</span>
+                        <div>
+                            <div className="font-semibold">操作失败</div>
+                            <div className="text-sm mt-1">{searchError}</div>
+                        </div>
+                    </div>
                 )}
 
                 {/* Results */}

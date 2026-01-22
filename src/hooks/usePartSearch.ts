@@ -1109,7 +1109,8 @@ export function usePartSearch() {
             // 3. 执行查询
             const tableKeys = Object.keys(batchRequests)
             if (tableKeys.length === 0) {
-                throw new Error('未解析到有效的查询数据，请检查上传文件和当前选中的表是否匹配')
+                setSearchError('未解析到有效的查询数据，请检查上传文件和当前选中的表是否匹配')
+                return
             }
 
             const allResults: TableSearchResult[] = []
