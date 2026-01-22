@@ -58,6 +58,18 @@ export function usePartSearch() {
     // 导出状态
     const [isExporting, setIsExporting] = useState(false)
 
+    // 图片URL缓存 { "tableName__cellAddress": url }
+    const [imageUrlCache, setImageUrlCache] = useState<Record<string, string>>({})
+
+    const handleImageLoad = useCallback((tableName: string, cellAddress: string, url: string) => {
+        const key = `${tableName}__${cellAddress}`
+        setImageUrlCache(prev => {
+            // 如果已经存在且相同，不更新以避免重新渲染
+            if (prev[key] === url) return prev
+            return { ...prev, [key]: url }
+        })
+    }, [])
+
     // 合并自己的 Token 和分享的 Token
     const allTokens = useMemo(() => {
         // 先获取自己的有效 Token
@@ -433,7 +445,8 @@ export function usePartSearch() {
 
                         // 检测哪些列包含图片，并收集DISPIMG的cellAddress
                         const imageColumns = new Set<string>()
-                        const dispImgCellAddresses: string[] = []
+                        const dispImgCellAddressesToFetch: string[] = []
+                        const dispImgCellAddressesCached: string[] = []
 
                         for (const record of flatRecords) {
                             for (const key of allKeys) {
@@ -441,21 +454,38 @@ export function usePartSearch() {
                                 if (imgInfo) {
                                     imageColumns.add(key)
                                     if (imgInfo.cellAddress && !imgInfo.imageUrl) {
-                                        dispImgCellAddresses.push(imgInfo.cellAddress)
+                                        // 检查缓存中是否有此图片的URL
+                                        const cacheKey = `${result.tableName}__${imgInfo.cellAddress}`
+                                        if (imageUrlCache[cacheKey]) {
+                                            dispImgCellAddressesCached.push(imgInfo.cellAddress)
+                                        } else {
+                                            dispImgCellAddressesToFetch.push(imgInfo.cellAddress)
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        // 如果有DISPIMG单元格，先获取图片URL
+                        // 合并图片URL：缓存的 + 新获取的
                         let fetchedImageUrls: Record<string, string | null> = {}
-                        if (dispImgCellAddresses.length > 0 && selectedToken) {
-                            console.log(`导出: 获取 ${dispImgCellAddresses.length} 个DISPIMG图片URL...`)
+
+                        // 1. 如果有缓存的URL，先添加
+                        if (dispImgCellAddressesCached.length > 0) {
+                            console.log(`导出: 使用缓存的 ${dispImgCellAddressesCached.length} 个DISPIMG图片URL`)
+                            for (const address of dispImgCellAddressesCached) {
+                                const cacheKey = `${result.tableName}__${address}`
+                                fetchedImageUrls[address] = imageUrlCache[cacheKey]
+                            }
+                        }
+
+                        // 2. 如果有未缓存的DISPIMG单元格，获取图片URL
+                        if (dispImgCellAddressesToFetch.length > 0 && selectedToken) {
+                            console.log(`导出: 获取 ${dispImgCellAddressesToFetch.length} 个未缓存的DISPIMG图片URL...`)
                             try {
-                                const imgResult = await getImageUrls(selectedToken.id, result.tableName, dispImgCellAddresses)
+                                const imgResult = await getImageUrls(selectedToken.id, result.tableName, dispImgCellAddressesToFetch)
                                 if (imgResult.success && imgResult.data?.imageUrls) {
-                                    fetchedImageUrls = imgResult.data.imageUrls
-                                    console.log(`导出: 成功获取 ${Object.values(fetchedImageUrls).filter(Boolean).length} 个图片URL`)
+                                    Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
+                                    console.log(`导出: 成功获取 ${Object.values(imgResult.data.imageUrls).filter(Boolean).length} 个新图片URL`)
                                 }
                             } catch (e) {
                                 console.error('导出: 获取图片URL失败', e)
@@ -513,10 +543,14 @@ export function usePartSearch() {
                         }
 
                         // 下载并嵌入图片
-                        console.log(`[导出] 开始处理 ${imagePositions.length} 个图片位置`)
+                        // 下载并嵌入图片
+                        console.log(`[导出] 开始处理 ${imagePositions.length} 个图片位置 (并发数: 5)`)
                         let embeddedCount = 0
-                        for (const pos of imagePositions) {
-                            console.log(`[导出] 处理图片位置: 行${pos.row}, 列${pos.col}, URL: ${pos.url.substring(0, 60)}...`)
+
+                        // 并发控制函数
+                        const CONCURRENCY = 5
+                        const processImage = async (pos: { row: number; col: number; url: string }) => {
+                            console.log(`[导出] 处理图片位置: 行${pos.row}, 列${pos.col}, URL: ${pos.url.substring(0, 40)}...`)
                             const imgData = await fetchImageAsBase64(pos.url)
                             if (imgData) {
                                 try {
@@ -527,7 +561,8 @@ export function usePartSearch() {
                                     // 使用单元格范围格式 (列从0开始计数)
                                     const colLetter = String.fromCharCode(64 + pos.col) // 1->A, 2->B, etc.
                                     const cellRange = `${colLetter}${pos.row}:${colLetter}${pos.row}`
-                                    console.log(`[导出] 嵌入图片到单元格: ${cellRange}`)
+
+                                    // 注意: worksheet操作通常是同步的，但在Promise中需要确保顺序安全性（JS是单线程的，所以这里是安全的，只要exceljs内部没有异步状态竞争）
                                     worksheet.addImage(imageId, cellRange as `${string}:${string}`)
                                     embeddedCount++
                                 } catch (embedErr) {
@@ -535,6 +570,22 @@ export function usePartSearch() {
                                 }
                             }
                         }
+
+                        //创建一个简单的并发处理器
+                        const queue = [...imagePositions]
+                        const workers = Array(Math.min(CONCURRENCY, queue.length))
+                            .fill(null)
+                            .map(async () => {
+                                while (queue.length > 0) {
+                                    const pos = queue.shift()
+                                    if (pos) {
+                                        await processImage(pos)
+                                    }
+                                }
+                            })
+
+                        await Promise.all(workers)
+
                         console.log(`[导出] 成功嵌入 ${embeddedCount}/${imagePositions.length} 个图片`)
                     }
                 }
@@ -589,6 +640,8 @@ export function usePartSearch() {
         searchError,
         performSearch,
         exportToExcel,
-        isExporting
+        isExporting,
+        handleImageLoad,
+        imageUrlCache
     }
 }

@@ -8,6 +8,8 @@ interface ResultTableProps {
     isSearching: boolean
     tokenId?: string  // 用于获取图片URL
     autoLoadImages?: boolean  // 自动加载图片
+    onImageLoad?: (tableName: string, cellAddress: string, url: string) => void // 图片加载回调
+    imageUrlCache?: Record<string, string> // 图片缓存
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -103,7 +105,9 @@ function LazyImageCell({
     imageId,
     onCopy,
     isCopied,
-    autoLoad = false
+    autoLoad = false,
+    onImageLoad,
+    cachedUrl
 }: {
     tokenId?: string;
     sheetName: string;
@@ -112,21 +116,33 @@ function LazyImageCell({
     onCopy: (text: string) => void;
     isCopied: boolean;
     autoLoad?: boolean;
+    onImageLoad?: (tableName: string, cellAddress: string, url: string) => void
+    cachedUrl?: string
 }) {
-    const [imageUrl, setImageUrl] = useState<string | null>(null)
+    const [imageUrl, setImageUrl] = useState<string | null>(cachedUrl || null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [attempted, setAttempted] = useState(false)
 
+    // 如果 cachedUrl 改变 (例如从父组件传入了新的缓存)，更新本地状态
+    useEffect(() => {
+        if (cachedUrl) {
+            setImageUrl(cachedUrl)
+        }
+    }, [cachedUrl])
+
     const fetchImageUrl = useCallback(async () => {
-        if (!tokenId || loading || attempted) return
+        // 如果已经有URL (比如来自缓存)，不需要重新获取
+        if (imageUrl || !tokenId || loading || attempted) return
 
         setLoading(true)
         setAttempted(true)
         try {
             const result = await getImageUrls(tokenId, sheetName, [cellAddress])
             if (result.success && result.data?.imageUrls?.[cellAddress]) {
-                setImageUrl(result.data.imageUrls[cellAddress])
+                const url = result.data.imageUrls[cellAddress]
+                setImageUrl(url)
+                onImageLoad?.(sheetName, cellAddress, url)
             } else {
                 setError('无法获取图片')
             }
@@ -135,14 +151,14 @@ function LazyImageCell({
         } finally {
             setLoading(false)
         }
-    }, [tokenId, sheetName, cellAddress, loading, attempted])
+    }, [tokenId, sheetName, cellAddress, loading, attempted, onImageLoad, imageUrl])
 
     // 自动加载
     useEffect(() => {
-        if (autoLoad && tokenId && !attempted && !loading) {
+        if (autoLoad && tokenId && !attempted && !loading && !imageUrl) {
             fetchImageUrl()
         }
-    }, [autoLoad, tokenId, attempted, loading, fetchImageUrl])
+    }, [autoLoad, tokenId, attempted, loading, fetchImageUrl, imageUrl])
 
     // 如果已获取到URL，显示图片
     if (imageUrl) {
@@ -191,7 +207,14 @@ function LazyImageCell({
     )
 }
 
-function ResultCard({ result, index, tokenId, autoLoadImages }: { result: TableSearchResult; index: number; tokenId?: string; autoLoadImages?: boolean }) {
+function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, imageUrlCache }: {
+    result: TableSearchResult;
+    index: number;
+    tokenId?: string;
+    autoLoadImages?: boolean;
+    onImageLoad?: (tableName: string, cellAddress: string, url: string) => void;
+    imageUrlCache?: Record<string, string>;
+}) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
 
@@ -321,6 +344,9 @@ function ResultCard({ result, index, tokenId, autoLoadImages }: { result: TableS
 
                                                     // 如果有cellAddress和tokenId，使用LazyImageCell自动加载
                                                     if (imgObjFull.cellAddress && tokenId) {
+                                                        const cacheKey = `${result.tableName}__${imgObjFull.cellAddress}`
+                                                        const cachedUrl = imageUrlCache?.[cacheKey]
+
                                                         return (
                                                             <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
                                                                 <LazyImageCell
@@ -331,6 +357,8 @@ function ResultCard({ result, index, tokenId, autoLoadImages }: { result: TableS
                                                                     onCopy={(text) => handleCellClick(text, cellKey)}
                                                                     isCopied={isCopied}
                                                                     autoLoad={autoLoadImages}
+                                                                    onImageLoad={onImageLoad}
+                                                                    cachedUrl={cachedUrl}
                                                                 />
                                                             </td>
                                                         )
@@ -401,7 +429,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages }: { result: TableS
     )
 }
 
-export function ResultTable({ results, isSearching, tokenId, autoLoadImages }: ResultTableProps) {
+export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onImageLoad, imageUrlCache }: ResultTableProps) {
     if (isSearching && results.length === 0) {
         return (
             <div className="card p-8">
@@ -427,7 +455,15 @@ export function ResultTable({ results, isSearching, tokenId, autoLoadImages }: R
     return (
         <div>
             {results.map((result, index) => (
-                <ResultCard key={`${result.tableName}-${index}`} result={result} index={index} tokenId={tokenId} autoLoadImages={autoLoadImages} />
+                <ResultCard
+                    key={`${result.tableName}-${index}`}
+                    result={result}
+                    index={index}
+                    tokenId={tokenId}
+                    autoLoadImages={autoLoadImages}
+                    onImageLoad={onImageLoad}
+                    imageUrlCache={imageUrlCache}
+                />
             ))}
         </div>
     )

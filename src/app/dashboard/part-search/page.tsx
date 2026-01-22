@@ -36,7 +36,9 @@ export default function PartSearchPage() {
         searchError,
         performSearch,
         exportToExcel,
-        isExporting
+        isExporting,
+        handleImageLoad,
+        imageUrlCache
     } = usePartSearch()
 
     // 自动加载图片选项
@@ -117,6 +119,8 @@ export default function PartSearchPage() {
                     isSearching={isSearching}
                     tokenId={selectedToken?.id}
                     autoLoadImages={autoLoadImages}
+                    onImageLoad={handleImageLoad}
+                    imageUrlCache={imageUrlCache}
                 />
             </div>
         </div>
