@@ -1,0 +1,624 @@
+/**
+ * WPS智能表格 AirScript - 通用数据查询模板
+ * 
+ * 适用于: WPS智能表格 (Excel-style)
+ * 
+ * 通过webhook调用此脚本，可以：
+ * 1. 获取工作簿中全部工作表列表
+ * 2. 在指定工作表中搜索包含特定值的单元格
+ * 3. 获取指定区域的数据
+ * 
+ * 使用方法：
+ * 1. 将此脚本复制到WPS智能表格的"开发"功能中
+ * 2. 生成脚本令牌(API Token)
+ * 3. 通过HTTP POST请求调用webhook接口
+ * 
+ * ===== 请求示例 =====
+ * 
+ * 获取全部工作表:
+ * POST https://www.kdocs.cn/api/v3/ide/file/:file_id/script/:script_id/sync_task
+ * Header: AirScript-Token: <your_token>
+ * Body: {"Context":{"argv":{"action":"getAll"}}}
+ * 
+ * 搜索内容:
+ * Body: {"Context":{"argv":{
+ *   "action":"search",
+ *   "sheetName":"Sheet1",
+ *   "searchValue":"搜索值",
+ *   "searchColumn": 1
+ * }}}
+ * 
+ * 获取区域数据:
+ * Body: {"Context":{"argv":{
+ *   "action":"getData",
+ *   "sheetName":"Sheet1",
+ *   "range":"A1:E100",
+ *   "hasHeader": true
+ * }}}
+ */
+
+/**
+ * 获取全部工作表信息
+ * @returns {Object} 包含所有工作表名称的对象
+ */
+function getAllSheetsInfo() {
+    console.log("开始获取全部工作表信息...")
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        const sheetsCount = workbook.Sheets.Count
+
+        if (sheetsCount === 0) {
+            return {
+                success: true,
+                sheets: [],
+                message: "当前工作簿没有工作表"
+            }
+        }
+
+        console.log("找到 " + sheetsCount + " 个工作表")
+
+        const sheets = []
+
+        for (let i = 1; i <= sheetsCount; i++) {
+            const sheet = workbook.Sheets.Item(i)
+            const usedRange = sheet.UsedRange
+
+            // 获取列信息（从第一行解析表头）
+            const columns = []
+            if (usedRange) {
+                const startCol = usedRange.Column
+                const colCount = usedRange.Columns.Count
+                const headerRow = usedRange.Row  // 通常是第1行
+
+                for (let col = 0; col < colCount; col++) {
+                    const headerCell = sheet.Cells(headerRow, startCol + col)
+                    const headerValue = headerCell.Value
+                    // 使用表头值作为列名，如果为空则使用列字母
+                    const colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+                    columns.push({
+                        name: colName,
+                        type: "string",  // 智能表格没有明确的类型定义
+                        columnIndex: startCol + col,
+                        columnLetter: columnToLetter(startCol + col)
+                    })
+                }
+            }
+
+            sheets.push({
+                name: sheet.Name,
+                index: i,
+                usedRange: usedRange ? usedRange.Address() : "",
+                rowCount: usedRange ? usedRange.Rows.Count : 0,
+                columnCount: usedRange ? usedRange.Columns.Count : 0,
+                columns: columns  // 添加列信息
+            })
+        }
+
+        console.log("工作表信息获取完成")
+
+        return {
+            success: true,
+            sheets: sheets
+        }
+
+    } catch (error) {
+        console.error("获取工作表信息失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "获取工作表信息时发生错误"
+        }
+    }
+}
+
+/**
+ * 在工作表中搜索内容
+ * @param {string} sheetName - 工作表名称
+ * @param {string} searchValue - 搜索值
+ * @param {number} searchColumn - 限定搜索的列号(可选，不指定则搜索整表)
+ * @param {number} maxResults - 最大返回结果数(默认100)
+ * @returns {Object} 包含匹配结果的对象
+ */
+function searchInSheet(sheetName, searchValue, searchColumn, maxResults) {
+    console.log("开始搜索: 表=" + sheetName + ", 值=" + searchValue + ", 列=" + searchColumn)
+
+    // 参数验证
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    if (!searchValue && searchValue !== 0) {
+        return {
+            success: false,
+            error: "缺少参数: searchValue",
+            message: "请提供搜索值"
+        }
+    }
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            // 列出可用的工作表
+            const availableSheets = []
+            for (let i = 1; i <= workbook.Sheets.Count; i++) {
+                availableSheets.push(workbook.Sheets.Item(i).Name)
+            }
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName,
+                availableSheets: availableSheets
+            }
+        }
+
+        // 确定搜索范围
+        let searchRange
+        if (searchColumn && searchColumn > 0) {
+            // 搜索指定列
+            searchRange = sheet.Columns(searchColumn)
+        } else {
+            // 搜索整个已使用区域
+            searchRange = sheet.UsedRange
+        }
+
+        if (!searchRange) {
+            return {
+                success: true,
+                sheetName: sheetName,
+                searchValue: searchValue,
+                totalCount: 0,
+                results: [],
+                message: "工作表为空"
+            }
+        }
+
+        // 使用Find方法搜索
+        const results = []
+        const limit = Math.min(Math.max(1, maxResults || 100), 500)
+        let foundCell = searchRange.Find(String(searchValue), null, "etValues", "etPart") // LookIn="etValues", LookAt="etPart"(部分匹配)
+
+        if (foundCell) {
+            const firstAddress = foundCell.Address()
+
+            do {
+                // 获取该行的所有数据
+                const row = foundCell.Row
+                const rowData = {}
+                const usedRange = sheet.UsedRange
+                const startCol = usedRange.Column
+                const endCol = startCol + usedRange.Columns.Count - 1
+
+                for (let col = startCol; col <= endCol; col++) {
+                    const cellValue = sheet.Cells(row, col).Value
+                    const colLetter = columnToLetter(col)
+                    rowData[colLetter] = cellValue
+                }
+
+                results.push({
+                    row: row,
+                    column: foundCell.Column,
+                    address: foundCell.Address(),
+                    value: foundCell.Value,
+                    rowData: rowData
+                })
+
+                if (results.length >= limit) {
+                    break
+                }
+
+                foundCell = searchRange.Find(String(searchValue), foundCell, "etValues", "etPart")
+            } while (foundCell && foundCell.Address() !== firstAddress)
+        }
+
+        console.log("搜索完成，共找到 " + results.length + " 个匹配项")
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            searchValue: searchValue,
+            searchColumn: searchColumn || "all",
+            totalCount: results.length,
+            results: results
+        }
+
+    } catch (error) {
+        console.error("搜索失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "搜索时发生错误"
+        }
+    }
+}
+
+/**
+ * 获取指定区域的数据
+ * @param {string} sheetName - 工作表名称
+ * @param {string} rangeAddress - 区域地址(如 "A1:E100")，不指定则使用UsedRange
+ * @param {boolean} hasHeader - 第一行是否为表头(默认true)
+ * @returns {Object} 包含数据的对象
+ */
+function getRangeData(sheetName, rangeAddress, hasHeader) {
+    console.log("获取区域数据: 表=" + sheetName + ", 区域=" + rangeAddress)
+
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            const availableSheets = []
+            for (let i = 1; i <= workbook.Sheets.Count; i++) {
+                availableSheets.push(workbook.Sheets.Item(i).Name)
+            }
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName,
+                availableSheets: availableSheets
+            }
+        }
+
+        // 确定数据范围
+        let dataRange
+        if (rangeAddress) {
+            dataRange = sheet.Range(rangeAddress)
+        } else {
+            dataRange = sheet.UsedRange
+        }
+
+        if (!dataRange) {
+            return {
+                success: true,
+                sheetName: sheetName,
+                columns: [],
+                rows: [],
+                message: "指定区域为空"
+            }
+        }
+
+        const rowCount = dataRange.Rows.Count
+        const colCount = dataRange.Columns.Count
+        const startRow = dataRange.Row
+        const startCol = dataRange.Column
+
+        console.log("区域大小: " + rowCount + " 行 x " + colCount + " 列")
+
+        // 限制返回数据量
+        const maxRows = Math.min(rowCount, 1000)
+
+        // 获取表头
+        const columns = []
+        const useHeader = hasHeader !== false
+
+        if (useHeader && rowCount > 0) {
+            for (let col = 0; col < colCount; col++) {
+                const headerValue = sheet.Cells(startRow, startCol + col).Value
+                columns.push(headerValue || ("列" + (col + 1)))
+            }
+        } else {
+            for (let col = 0; col < colCount; col++) {
+                columns.push(columnToLetter(startCol + col))
+            }
+        }
+
+        // 获取数据行
+        const rows = []
+        const dataStartRow = useHeader ? 1 : 0
+
+        for (let row = dataStartRow; row < maxRows; row++) {
+            const rowData = {}
+            for (let col = 0; col < colCount; col++) {
+                const cellValue = sheet.Cells(startRow + row, startCol + col).Value
+                rowData[columns[col]] = cellValue
+            }
+            rows.push(rowData)
+        }
+
+        console.log("获取到 " + rows.length + " 行数据")
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            range: dataRange.Address(),
+            columns: columns,
+            rowCount: rows.length,
+            rows: rows
+        }
+
+    } catch (error) {
+        console.error("获取数据失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "获取数据时发生错误"
+        }
+    }
+}
+
+/**
+ * 列号转字母
+ * @param {number} colNum - 列号(1-based)
+ * @returns {string} 列字母
+ */
+function columnToLetter(colNum) {
+    let letter = ""
+    let temp
+    while (colNum > 0) {
+        temp = (colNum - 1) % 26
+        letter = String.fromCharCode(temp + 65) + letter
+        colNum = Math.floor((colNum - temp - 1) / 26)
+    }
+    return letter
+}
+/**
+ * 多条件 AND 搜索记录（智能表格版本 - 优化版）
+ * 使用 Excel Find 方法加速搜索，而不是逐行遍历
+ * @param {string} sheetName - 工作表名称
+ * @param {Array} criteria - 条件数组，每个条件为 {columnName, searchValue, op}
+ * @returns {Object} 包含匹配记录的对象
+ * 
+ * 支持的操作符:
+ * - Contains: 包含（默认）
+ * - Equals: 精确匹配
+ */
+function searchMultiCriteria(sheetName, criteria) {
+    console.log("开始多条件搜索: 表=" + sheetName + ", 条件数=" + (criteria ? criteria.length : 0))
+
+    // 参数验证
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    if (!criteria || !Array.isArray(criteria) || criteria.length === 0) {
+        return {
+            success: false,
+            error: "缺少参数: criteria",
+            message: "请提供至少一个搜索条件"
+        }
+    }
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            const availableSheets = []
+            for (let i = 1; i <= workbook.Sheets.Count; i++) {
+                availableSheets.push(workbook.Sheets.Item(i).Name)
+            }
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName,
+                availableSheets: availableSheets
+            }
+        }
+
+        const usedRange = sheet.UsedRange
+        if (!usedRange) {
+            return {
+                success: true,
+                sheetName: sheetName,
+                totalCount: 0,
+                records: [],
+                message: "工作表为空"
+            }
+        }
+
+        const startRow = usedRange.Row
+        const startCol = usedRange.Column
+        const rowCount = usedRange.Rows.Count
+        const colCount = usedRange.Columns.Count
+
+        // 获取表头（第一行）建立列名到列号的映射
+        const columnMap = {}
+        const headerRow = startRow
+        for (let col = 0; col < colCount; col++) {
+            const headerValue = sheet.Cells(headerRow, startCol + col).Value
+            const colName = headerValue ? String(headerValue) : columnToLetter(startCol + col)
+            columnMap[colName] = startCol + col
+        }
+
+        // 获取所有表头名称
+        const allColumns = Object.keys(columnMap)
+
+        // 验证条件中的列名并收集有效条件
+        const validCriteria = []
+        const criteriaDescriptions = []
+        for (const crit of criteria) {
+            const columnName = crit.columnName
+            if (!columnName) continue
+
+            if (!columnMap[columnName]) {
+                return {
+                    success: false,
+                    error: "未找到列: " + columnName,
+                    message: "请检查列名称是否正确",
+                    sheetName: sheetName,
+                    availableColumns: allColumns
+                }
+            }
+
+            const opType = crit.op || "Contains"
+            const searchValue = crit.searchValue || ""
+            validCriteria.push({
+                columnName: columnName,
+                colIndex: columnMap[columnName],
+                searchValue: searchValue,
+                opType: opType
+            })
+            criteriaDescriptions.push(columnName + " " + opType + " '" + searchValue + "'")
+        }
+
+        if (validCriteria.length === 0) {
+            return {
+                success: false,
+                error: "没有有效的搜索条件",
+                message: "请提供至少一个有效的搜索条件"
+            }
+        }
+
+        console.log("搜索条件: " + criteriaDescriptions.join(" AND "))
+
+        // 使用 Find 方法优化搜索
+        // 策略：用第一个条件的 Find 快速定位候选行，再验证其他条件
+        const records = []
+        const MAX_RECORDS = 100
+        let truncated = false
+        const processedRows = {}  // 记录已处理的行号，避免重复
+
+        const firstCrit = validCriteria[0]
+        const searchCol = sheet.Columns(firstCrit.colIndex)
+
+        // WPS AirScript: "etWhole" (完整匹配), "etPart" (部分匹配)
+        const lookAt = firstCrit.opType === "Equals" ? "etWhole" : "etPart"
+
+        // 使用 Find 搜索第一个条件
+        let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
+
+        if (foundCell) {
+            const firstAddress = foundCell.Address()
+
+            do {
+                const row = foundCell.Row
+
+                // 跳过表头行和已处理的行
+                if (row === headerRow || processedRows[row]) {
+                    foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+                    if (!foundCell || foundCell.Address() === firstAddress) break
+                    continue
+                }
+
+                processedRows[row] = true
+
+                // 检查是否满足其他条件
+                let matchAll = true
+                for (let i = 1; i < validCriteria.length; i++) {
+                    const crit = validCriteria[i]
+                    const cellValue = sheet.Cells(row, crit.colIndex).Value
+                    const cellStr = cellValue ? String(cellValue) : ""
+
+                    let match = false
+                    if (crit.opType === "Equals") {
+                        match = cellStr === crit.searchValue
+                    } else {
+                        match = cellStr.indexOf(crit.searchValue) !== -1
+                    }
+
+                    if (!match) {
+                        matchAll = false
+                        break
+                    }
+                }
+
+                if (matchAll) {
+                    // 获取整行数据
+                    const rowData = {}
+                    for (const colName of allColumns) {
+                        const colIndex = columnMap[colName]
+                        rowData[colName] = sheet.Cells(row, colIndex).Value
+                    }
+                    records.push(rowData)
+
+                    if (records.length >= MAX_RECORDS) {
+                        truncated = true
+                        console.log("已达到最大记录限制 " + MAX_RECORDS + " 条，停止搜索")
+                        break
+                    }
+                }
+
+                // 继续查找下一个匹配
+                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+
+            } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+        }
+
+        console.log("多条件搜索完成，共找到 " + records.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            criteriaCount: validCriteria.length,
+            criteriaDescription: criteriaDescriptions.join(" AND "),
+            totalCount: records.length,
+            truncated: truncated,
+            maxRecords: MAX_RECORDS,
+            records: records
+        }
+
+    } catch (error) {
+        console.error("多条件搜索失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "搜索时发生错误"
+        }
+    }
+}
+
+// ========== 主执行逻辑 ==========
+console.log("=== AirScript 智能表格数据API ===")
+
+// 获取传入的参数
+var argv = Context.argv || {}
+var action = argv.action || "getAll"
+
+console.log("执行操作: " + action)
+console.log("参数: " + JSON.stringify(argv))
+
+var result
+
+if (action === "getAll") {
+    result = getAllSheetsInfo()
+} else if (action === "search") {
+    result = searchInSheet(argv.sheetName, argv.searchValue, argv.searchColumn, argv.maxResults)
+} else if (action === "searchMulti") {
+    // 多条件 AND 搜索
+    result = searchMultiCriteria(argv.sheetName, argv.criteria)
+} else if (action === "getData") {
+    result = getRangeData(argv.sheetName, argv.range, argv.hasHeader)
+} else {
+    result = {
+        success: false,
+        error: "未知操作: " + action,
+        message: "支持的操作: getAll, search, searchMulti, getData"
+    }
+}
+
+console.log("操作完成: " + (result.success ? "成功" : "失败"))
+
+// 通过 console.log 输出 JSON 结果（因为 webhook 调用时 result 可能为 Undefined）
+// 使用特殊标记便于后端解析
+var jsonResult = JSON.stringify(result)
+console.log("__RESULT_JSON_START__")
+// 分块输出以避免单行过长 - 使用较小的块大小避免WPS日志截断
+var chunkSize = 500
+for (var i = 0; i < jsonResult.length; i += chunkSize) {
+    console.log("__CHUNK_" + Math.floor(i / chunkSize) + "__:" + jsonResult.substring(i, i + chunkSize))
+}
+console.log("__RESULT_JSON_END__")
+
+// 最后一行表达式作为返回值（可能不被捕获，但保留以兼容直接运行）
+JSON.stringify(result)
