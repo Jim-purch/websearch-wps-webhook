@@ -379,6 +379,19 @@ function columnToLetter(colNum) {
 }
 
 /**
+ * 清理搜索值：去除回车、空格、"-"、"."，以及最开始的"0"，再转小写
+ * @param {string} value - 原始值
+ * @returns {string} 清理后的值
+ */
+function cleanSearchValue(value) {
+    if (value === null || value === undefined) return ""
+    return String(value)
+        .replace(/[\r\n\s\-\.]/g, '')
+        .replace(/^0+/, '')
+        .toLowerCase()
+}
+
+/**
  * 获取工作表中所有单元格图片的URL映射
  * @param {Object} sheet - 工作表对象
  * @returns {Object} 单元格地址到图片URL的映射 {address: url}
@@ -587,14 +600,17 @@ function searchMultiCriteria(sheetName, criteria) {
         const firstCrit = validCriteria[0]
         const searchCol = sheet.Columns(firstCrit.colIndex)
 
-        // WPS AirScript: "etWhole" (完整匹配), "etPart" (部分匹配)
-        const lookAt = firstCrit.opType === "Equals" ? "etWhole" : "etPart"
+        // 注意：Find 方法无法直接使用清理后的值搜索，所以使用 etPart (部分匹配)
+        // 然后在二次验证时使用清理后的值进行精确匹配
+        // 这样可以确保即使数据中包含特殊字符也能匹配到
+        const lookAt = "etPart"  // 始终使用部分匹配，精确匹配逻辑在后面的验证中处理
 
         // 使用 Find 搜索第一个条件
         let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
 
         if (foundCell) {
             const firstAddress = foundCell.Address()
+            const firstCritSearchValueClean = cleanSearchValue(firstCrit.searchValue)
 
             do {
                 const row = foundCell.Row
@@ -608,18 +624,34 @@ function searchMultiCriteria(sheetName, criteria) {
 
                 processedRows[row] = true
 
-                // 检查是否满足其他条件
+                // 对第一个条件也进行清理后的精确验证
+                const firstCellValue = sheet.Cells(row, firstCrit.colIndex).Value
+                const firstCellValueClean = cleanSearchValue(firstCellValue)
+                let firstCritMatch = false
+                if (firstCrit.opType === "Equals") {
+                    firstCritMatch = firstCellValueClean === firstCritSearchValueClean
+                } else {
+                    firstCritMatch = firstCellValueClean.indexOf(firstCritSearchValueClean) !== -1
+                }
+                if (!firstCritMatch) {
+                    foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+                    if (!foundCell || foundCell.Address() === firstAddress) break
+                    continue
+                }
+
+                // 检查是否满足其他条件（对单元格值和搜索值都进行清理后再比较）
                 let matchAll = true
                 for (let i = 1; i < validCriteria.length; i++) {
                     const crit = validCriteria[i]
                     const cellValue = sheet.Cells(row, crit.colIndex).Value
-                    const cellStr = cellValue ? String(cellValue) : ""
+                    const cellStrClean = cleanSearchValue(cellValue)
+                    const searchValueClean = cleanSearchValue(crit.searchValue)
 
                     let match = false
                     if (crit.opType === "Equals") {
-                        match = cellStr === crit.searchValue
+                        match = cellStrClean === searchValueClean
                     } else {
-                        match = cellStr.indexOf(crit.searchValue) !== -1
+                        match = cellStrClean.indexOf(searchValueClean) !== -1
                     }
 
                     if (!match) {
@@ -897,12 +929,13 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
 
     const firstCrit = validCriteria[0]
     const searchCol = sheet.Columns(firstCrit.colIndex)
-    const lookAt = firstCrit.opType === "Equals" ? "etWhole" : "etPart"
+    const lookAt = "etPart"  // 始终使用部分匹配，精确匹配在后续验证中处理
 
     let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
 
     if (foundCell) {
         const firstAddress = foundCell.Address()
+        const firstCritSearchValueClean = cleanSearchValue(firstCrit.searchValue)
 
         do {
             const row = foundCell.Row
@@ -915,16 +948,32 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
 
             processedRows[row] = true
 
+            // 对第一个条件进行清理后的验证
+            const firstCellValue = sheet.Cells(row, firstCrit.colIndex).Value
+            const firstCellValueClean = cleanSearchValue(firstCellValue)
+            let firstCritMatch = false
+            if (firstCrit.opType === "Equals") {
+                firstCritMatch = firstCellValueClean === firstCritSearchValueClean
+            } else {
+                firstCritMatch = firstCellValueClean.indexOf(firstCritSearchValueClean) !== -1
+            }
+            if (!firstCritMatch) {
+                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
+                if (!foundCell || foundCell.Address() === firstAddress) break
+                continue
+            }
+
             let matchAll = true
             for (let i = 1; i < validCriteria.length; i++) {
                 const crit = validCriteria[i]
                 const cellValue = sheet.Cells(row, crit.colIndex).Value
-                const cellStr = cellValue ? String(cellValue) : ""
+                const cellStrClean = cleanSearchValue(cellValue)
+                const searchValueClean = cleanSearchValue(crit.searchValue)
 
                 if (crit.opType === "Equals") {
-                    if (cellStr !== crit.searchValue) { matchAll = false; break; }
+                    if (cellStrClean !== searchValueClean) { matchAll = false; break; }
                 } else {
-                    if (cellStr.indexOf(crit.searchValue) === -1) { matchAll = false; break; }
+                    if (cellStrClean.indexOf(searchValueClean) === -1) { matchAll = false; break; }
                 }
             }
 

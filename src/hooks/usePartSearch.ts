@@ -36,6 +36,46 @@ export interface TableSearchResult {
     originalQueryColumns?: string[]  // 原始查询列名称列表
 }
 
+/**
+ * 清理搜索值：去除回车、空格、"-"、"."，以及最开始的"0"，再转小写
+ * 用于对搜索值和被搜索内容都进行标准化处理后再匹配
+ */
+function cleanValue(value: unknown): string {
+    if (value === null || value === undefined) return ''
+    return String(value)
+        .replace(/[\r\n\s\-\.]/g, '')
+        .replace(/^0+/, '')
+        .toLowerCase()
+}
+
+/**
+ * 检查记录是否满足所有搜索条件（对被搜索内容也进行清理后再匹配）
+ * 用于多维表格的客户端二次过滤
+ */
+function matchesAllCriteria(
+    record: Record<string, unknown>,
+    criteria: WpsSearchCriteria[]
+): boolean {
+    for (const crit of criteria) {
+        // record 可能是 {fields: {...}} 格式（多维表格）或直接的对象（智能表格）
+        const fields = (record.fields && typeof record.fields === 'object')
+            ? record.fields as Record<string, unknown>
+            : record
+
+        const cellValue = fields[crit.columnName]
+        const cellValueClean = cleanValue(cellValue)
+        const searchValueClean = cleanValue(crit.searchValue)
+
+        if (crit.op === 'Equals') {
+            if (cellValueClean !== searchValueClean) return false
+        } else {
+            // Contains
+            if (!cellValueClean.includes(searchValueClean)) return false
+        }
+    }
+    return true
+}
+
 export function usePartSearch() {
     const { tokens, isLoading: isLoadingTokens } = useTokens()
     const { isLoading: isLoadingShared, getUsableSharedTokens } = useSharedTokens()
@@ -270,15 +310,12 @@ export function usePartSearch() {
                 conditionsByTableKey[cond.tableName] = { realTableName, criteria: [] }
             }
             // 清理搜索值：去除回车、空格、"-"、.、大小写以及最开始的"0"
-            const cleanValue = cond.searchValue
-                .replace(/[\r\n\s\-\.]/g, '')
-                .replace(/^0+/, '')
-                .toLowerCase()
-            if (!cleanValue) continue
+            const cleanedSearchValue = cleanValue(cond.searchValue)
+            if (!cleanedSearchValue) continue
 
             conditionsByTableKey[cond.tableName].criteria.push({
                 columnName: cond.columnName,
-                searchValue: cleanValue,
+                searchValue: cleanedSearchValue,
                 op: cond.op
             })
         }
@@ -310,12 +347,26 @@ export function usePartSearch() {
 
                 if (result.success && result.data) {
                     const data = result.data as WpsSearchResult
+                    let records = data.records || []
+
+                    // 多维表格使用 WPS API 筛选，无法在服务端修改匹配逻辑
+                    // 需要在客户端对返回的结果进行二次过滤（对被搜索内容也进行清理后再匹配）
+                    // 判断是否为多维表格：多维表格的记录格式为 {fields: {...}}
+                    const isDbSheet = records.length > 0 &&
+                        records[0].fields &&
+                        typeof records[0].fields === 'object'
+
+                    if (isDbSheet) {
+                        // 对多维表格结果进行客户端二次过滤
+                        records = records.filter(record => matchesAllCriteria(record, criteria))
+                    }
+
                     results.push({
                         tableName: displayTableName,
                         realTableName: realTableName,
                         criteriaDescription: criteriaDesc,
-                        records: data.records || [],
-                        totalCount: data.totalCount || 0,
+                        records: records,
+                        totalCount: records.length,  // 使用过滤后的数量
                         truncated: data.truncated || false,
                         originalTotalCount: data.originalTotalCount,
                         maxRecords: data.maxRecords
@@ -1235,16 +1286,13 @@ export function usePartSearch() {
 
                     originalValues[columnName] = value.trim()
 
-                    // 清理特殊字符
-                    const searchValue = value
-                        .replace(/[\r\n\s\-\.]/g, '')
-                        .replace(/^0+/, '')
-                        .toLowerCase()
+                    // 使用统一的清理函数
+                    const searchValueCleaned = cleanValue(value)
 
-                    if (searchValue) {
+                    if (searchValueCleaned) {
                         criteria.push({
                             columnName,
-                            searchValue,
+                            searchValue: searchValueCleaned,
                             op: matchMode === 'exact' ? 'Equals' : 'Contains'
                         })
                     }
@@ -1273,12 +1321,26 @@ export function usePartSearch() {
                 for (const itemResult of batchRes.results) {
                     if (itemResult.success && itemResult.records) {
                         const item = items.find(i => i.id === itemResult.id)
+                        const itemCriteria = item?.criteria || []
                         const originalValues = item?.originalValues || {}
                         const prefixedOriginalValues: Record<string, string> = {}
                         for (const [key, value] of Object.entries(originalValues)) {
                             prefixedOriginalValues[`原始_${key}`] = value
                         }
-                        const recordsWithId = itemResult.records.map(r => ({
+
+                        // 对多维表格结果进行客户端二次过滤
+                        let filteredRecords = itemResult.records
+                        const isDbSheet = filteredRecords.length > 0 &&
+                            filteredRecords[0].fields &&
+                            typeof filteredRecords[0].fields === 'object'
+
+                        if (isDbSheet) {
+                            filteredRecords = filteredRecords.filter(record =>
+                                matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
+                            )
+                        }
+
+                        const recordsWithId = filteredRecords.map(r => ({
                             ...r,
                             _BatchQueryID: itemResult.id,
                             ...prefixedOriginalValues
