@@ -108,7 +108,8 @@ function matchesAllCriteria(
 
         const cellValue = fields[crit.columnName]
         const cellValueClean = cleanValue(cellValue)
-        const searchValueClean = cleanValue(crit.searchValue)
+        // 优先使用预先计算好的清理值
+        const searchValueClean = crit.searchValueClean || cleanValue(crit.searchValue)
 
         if (crit.op === 'Equals') {
             if (cellValueClean !== searchValueClean) return false
@@ -400,9 +401,11 @@ export function usePartSearch() {
 
             conditionsByTableKey[cond.tableName].criteria.push({
                 columnName: cond.columnName,
-                searchValue: cleanedSearchValue,
+                // 传递原始搜索值给后端用于 Find 搜索，同时传递清理后的值用于匹配验证
+                searchValue: cond.searchValue.trim(),  // 原始值（仅去除首尾空格）
+                searchValueClean: cleanedSearchValue,  // 清理后的值（用于匹配验证）
                 op: cond.op
-            })
+            } as WpsSearchCriteria)
         }
 
         const tableKeys = Object.keys(conditionsByTableKey)
@@ -1231,9 +1234,10 @@ export function usePartSearch() {
                         if (searchValueCleaned) {
                             criteria.push({
                                 columnName: fieldName,
-                                searchValue: searchValueCleaned,
+                                searchValue: cleanVal, // 原始值
+                                searchValueClean: searchValueCleaned, // 清理后的值
                                 op: matchMode === 'exact' ? 'Equals' : 'Contains'
-                            })
+                            } as WpsSearchCriteria)
                         }
                     })
 
@@ -1406,9 +1410,10 @@ export function usePartSearch() {
                     if (searchValueCleaned) {
                         criteria.push({
                             columnName,
-                            searchValue: searchValueCleaned,
+                            searchValue: value.trim(), // 原始值
+                            searchValueClean: searchValueCleaned, // 清理后的值
                             op: matchMode === 'exact' ? 'Equals' : 'Contains'
-                        })
+                        } as WpsSearchCriteria)
                     }
                 }
 

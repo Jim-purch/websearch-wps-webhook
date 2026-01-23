@@ -572,10 +572,13 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
 
             const opType = crit.op || "Contains"
             const searchValue = crit.searchValue || ""
+            // 如果前端提供了清理后的值，直接使用；否则在后端清理
+            const searchValueClean = crit.searchValueClean || cleanSearchValue(searchValue)
             validCriteria.push({
                 columnName: columnName,
                 colIndex: columnMap[columnName],
-                searchValue: searchValue,
+                searchValue: searchValue,  // 原始值，用于 Find 搜索
+                searchValueClean: searchValueClean,  // 清理后的值，用于匹配验证
                 opType: opType
             })
             criteriaDescriptions.push(columnName + " " + opType + " '" + searchValue + "'")
@@ -597,123 +600,125 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
         const hasImages = Object.keys(imageMap).length > 0
         console.log("图片信息获取完成, 共 " + Object.keys(imageMap).length + " 张图片")
 
-        // 使用 Find 方法优化搜索
-        // 策略：用第一个条件的 Find 快速定位候选行，再验证其他条件
+        // 使用内存遍历替代 Find 方法以支持清洗后的模糊匹配
+        // 原 Find 方法无法处理 "3FE6412332" 匹配 "3FE-64-12332" 的情况
+        console.log("开始内存遍历搜索(优化版)...")
+
         const records = []
         const MAX_RECORDS = 100
         let truncated = false
-        const processedRows = {}  // 记录已处理的行号，避免重复
 
-        const firstCrit = validCriteria[0]
-        const searchCol = sheet.Columns(firstCrit.colIndex)
+        // 确定数据范围（跳过表头）
+        const dataStartRow = headerRow + 1
+        const dataEndRow = startRow + rowCount - 1
 
-        // 注意：Find 方法无法直接使用清理后的值搜索，所以使用 etPart (部分匹配)
-        // 然后在二次验证时使用清理后的值进行精确匹配
-        // 这样可以确保即使数据中包含特殊字符也能匹配到
-        const lookAt = "etPart"  // 始终使用部分匹配，精确匹配逻辑在后面的验证中处理
+        if (dataStartRow <= dataEndRow) {
+            const firstCrit = validCriteria[0]
+            const firstColIndex = firstCrit.colIndex
+            const firstColLetter = columnToLetter(firstColIndex)
 
-        // 使用 Find 搜索第一个条件
-        let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
+            // 获取第一列的数据到内存
+            // 注意：如果数据量极大，这可能会消耗较多内存。但在WPS JS环境中通常支持数万行。
+            const rangeAddress = `${firstColLetter}${dataStartRow}:${firstColLetter}${dataEndRow}`
+            let colValues = sheet.Range(rangeAddress).Value
 
-        if (foundCell) {
-            const firstAddress = foundCell.Address()
-            const firstCritSearchValueClean = cleanSearchValue(firstCrit.searchValue)
+            // 确保是二维数组格式 (以防Range只包含一个单元格)
+            if (!Array.isArray(colValues)) {
+                colValues = [[colValues]]
+            } else if (colValues.length > 0 && !Array.isArray(colValues[0])) {
+                // 防御性处理：有些环境 Range.Value 可能是 [v1, v2] 而不是 [[v1], [v2]]
+                // 通常 JSA 返回 2D 数组，但处理一下更安全
+                // 这里实际上通常不会发生，除非是一行多列，但我们是取一列多行
+            }
 
-            do {
-                const row = foundCell.Row
+            // 遍历内存中的第一列数据
+            for (let i = 0; i < colValues.length; i++) {
+                // 安全获取单元格值
+                const rowVal = colValues[i]
+                const cellVal = Array.isArray(rowVal) ? rowVal[0] : rowVal
 
-                // 跳过表头行和已处理的行
-                if (row === headerRow || processedRows[row]) {
-                    foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-                    if (!foundCell || foundCell.Address() === firstAddress) break
-                    continue
-                }
+                const currentRow = dataStartRow + i
 
-                processedRows[row] = true
+                // 检查第一个条件
+                const cellValClean = cleanSearchValue(cellVal)
+                const critValClean = firstCrit.searchValueClean
 
-                // 对第一个条件也进行清理后的精确验证
-                const firstCellValue = sheet.Cells(row, firstCrit.colIndex).Value
-                const firstCellValueClean = cleanSearchValue(firstCellValue)
-                let firstCritMatch = false
+                let match = false
                 if (firstCrit.opType === "Equals") {
-                    firstCritMatch = firstCellValueClean === firstCritSearchValueClean
+                    match = cellValClean === critValClean
                 } else {
-                    firstCritMatch = firstCellValueClean.indexOf(firstCritSearchValueClean) !== -1
-                }
-                if (!firstCritMatch) {
-                    foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-                    if (!foundCell || foundCell.Address() === firstAddress) break
-                    continue
-                }
-
-                // 检查是否满足其他条件（对单元格值和搜索值都进行清理后再比较）
-                let matchAll = true
-                for (let i = 1; i < validCriteria.length; i++) {
-                    const crit = validCriteria[i]
-                    const cellValue = sheet.Cells(row, crit.colIndex).Value
-                    const cellStrClean = cleanSearchValue(cellValue)
-                    const searchValueClean = cleanSearchValue(crit.searchValue)
-
-                    let match = false
-                    if (crit.opType === "Equals") {
-                        match = cellStrClean === searchValueClean
+                    // Contains
+                    if (critValClean === "") {
+                        match = true
                     } else {
-                        match = cellStrClean.indexOf(searchValueClean) !== -1
-                    }
-
-                    if (!match) {
-                        matchAll = false
-                        break
+                        match = cellValClean.indexOf(critValClean) !== -1
                     }
                 }
 
-                if (matchAll) {
-                    // 获取整行数据，并处理图片信息
-                    const rowData = {}
-                    for (const colName of outputColumns) {
-                        const colIndex = columnMap[colName]
-                        const cell = sheet.Cells(row, colIndex)
-                        let cellValue = cell.Value
+                if (match) {
+                    // 第一个条件匹配，检查其他条件
+                    // 此时再去具体行读取其他列数据进行验证s
+                    let matchAll = true
 
-                        // 获取单元格地址（去掉$符号）
-                        const cellAddr = cell.Address().replace(/\$/g, '')
+                    if (validCriteria.length > 1) {
+                        for (let j = 1; j < validCriteria.length; j++) {
+                            const crit = validCriteria[j]
+                            const val = sheet.Cells(currentRow, crit.colIndex).Value
+                            const valClean = cleanSearchValue(val)
 
-                        // 检查是否有对应的图片URL
-                        if (hasImages && imageMap[cellAddr]) {
-                            // 将图片URL作为特殊对象返回
-                            rowData[colName] = {
-                                _type: 'image',
-                                value: cellValue,
-                                imageUrl: imageMap[cellAddr]
-                            }
-                        } else {
-                            // 检查是否为DISPIMG公式（作为后备方案）
-                            const dispImg = parseDispImgFormula(cellValue)
-                            if (dispImg) {
-                                rowData[colName] = {
-                                    _type: 'dispimg',
-                                    value: cellValue,
-                                    imageId: dispImg.imageId,
-                                    cellAddress: cellAddr  // 添加单元格地址，供前端调用getImageUrl
-                                }
+                            if (crit.opType === "Equals") {
+                                if (valClean !== crit.searchValueClean) { matchAll = false; break }
                             } else {
-                                rowData[colName] = cellValue
+                                // Contains
+                                if (crit.searchValueClean !== "" && valClean.indexOf(crit.searchValueClean) === -1) { matchAll = false; break }
                             }
                         }
                     }
-                    records.push(rowData)
 
-                    if (records.length >= MAX_RECORDS) {
-                        truncated = true
-                        console.log("已达到最大记录限制 " + MAX_RECORDS + " 条，停止搜索")
-                        break
+                    if (matchAll) {
+                        // 所有条件匹配，收集整行数据
+                        const rowData = {}
+                        for (const colName of outputColumns) {
+                            const idx = columnMap[colName]
+                            const cell = sheet.Cells(currentRow, idx)
+                            const cellValue = cell.Value
+
+                            // 只有在需要图片时才获取地址，减少开销
+                            let cellAddr = null
+                            if (hasImages || parseDispImgFormula(cellValue)) {
+                                cellAddr = cell.Address().replace(/\$/g, '')
+                            }
+
+                            if (hasImages && cellAddr && imageMap[cellAddr]) {
+                                rowData[colName] = {
+                                    _type: 'image',
+                                    value: cellValue,
+                                    imageUrl: imageMap[cellAddr]
+                                }
+                            } else {
+                                const dispImg = parseDispImgFormula(cellValue)
+                                if (dispImg) {
+                                    rowData[colName] = {
+                                        _type: 'dispimg',
+                                        value: cellValue,
+                                        imageId: dispImg.imageId,
+                                        cellAddress: cellAddr
+                                    }
+                                } else {
+                                    rowData[colName] = cellValue
+                                }
+                            }
+                        }
+                        records.push(rowData)
+
+                        if (records.length >= MAX_RECORDS) {
+                            truncated = true
+                            console.log("已达到最大记录限制 " + MAX_RECORDS + " 条，停止搜索")
+                            break
+                        }
                     }
                 }
-
-                // 继续查找下一个匹配
-                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-
-            } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+            }
         }
 
         console.log("多条件搜索完成，共找到 " + records.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
@@ -917,10 +922,14 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
         const columnName = crit.columnName
         if (!columnName || !columnMap[columnName]) continue
 
+        const searchValue = crit.searchValue || ""
+        // 如果前端提供了清理后的值，直接使用；否则在后端清理
+        const searchValueClean = crit.searchValueClean || cleanSearchValue(searchValue)
         validCriteria.push({
             columnName: columnName,
             colIndex: columnMap[columnName],
-            searchValue: crit.searchValue || "",
+            searchValue: searchValue,  // 原始值，用于 Find 搜索
+            searchValueClean: searchValueClean,  // 清理后的值，用于匹配验证
             opType: crit.op || "Contains"
         })
     }
@@ -929,87 +938,96 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
         return { success: false, error: "条件无效", records: [] }
     }
 
-    // 搜索逻辑 (Copy-Paste adapted from searchMultiCriteria to avoid function call overhead context issues in AirScript sometimes)
+    // 搜索逻辑 (内存遍历优化版)
     const records = []
-    const MAX_RECORDS = 50 // 批量搜索时，单次查询限制更严格一些，防止总包过大
-    const processedRows = {}
+    const MAX_RECORDS = 50 // 批量搜索时，单次查询限制更严格一些
 
-    const firstCrit = validCriteria[0]
-    const searchCol = sheet.Columns(firstCrit.colIndex)
-    const lookAt = "etPart"  // 始终使用部分匹配，精确匹配在后续验证中处理
+    // 确定数据范围
+    // 注意：searchMultiCriteriaInternal 接收的 headerRow 应该是准确的
+    const usedRange = sheet.UsedRange; // 重新获取可能更安全，或者假定没变
+    if (!usedRange) return { success: true, records: [] };
 
-    let foundCell = searchCol.Find(String(firstCrit.searchValue), null, "etValues", lookAt)
+    // 我们假设 sheet 未变化，直接使用参数中的 headerRow 判断数据起始
+    // 但为了安全，计算 rowCount
+    const rowCount = usedRange.Rows.Count
+    const startRow = usedRange.Row
+    const dataStartRow = headerRow + 1
+    const dataEndRow = startRow + rowCount - 1
 
-    if (foundCell) {
-        const firstAddress = foundCell.Address()
-        const firstCritSearchValueClean = cleanSearchValue(firstCrit.searchValue)
+    if (dataStartRow <= dataEndRow) {
+        const firstCrit = validCriteria[0]
+        const firstColIndex = firstCrit.colIndex
 
-        do {
-            const row = foundCell.Row
+        // 获取第一列数据
+        const firstColLetter = columnToLetter(firstColIndex)
+        const rangeAddress = `${firstColLetter}${dataStartRow}:${firstColLetter}${dataEndRow}`
+        let colValues = sheet.Range(rangeAddress).Value
 
-            if (row === headerRow || processedRows[row]) {
-                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-                if (!foundCell || foundCell.Address() === firstAddress) break
-                continue
-            }
+        if (!Array.isArray(colValues)) {
+            colValues = [[colValues]]
+        }
 
-            processedRows[row] = true
+        for (let i = 0; i < colValues.length; i++) {
+            const rowVal = colValues[i]
+            const cellVal = Array.isArray(rowVal) ? rowVal[0] : rowVal
+            const currentRow = dataStartRow + i
 
-            // 对第一个条件进行清理后的验证
-            const firstCellValue = sheet.Cells(row, firstCrit.colIndex).Value
-            const firstCellValueClean = cleanSearchValue(firstCellValue)
-            let firstCritMatch = false
+            const cellValClean = cleanSearchValue(cellVal)
+            const critValClean = firstCrit.searchValueClean
+
+            let match = false
             if (firstCrit.opType === "Equals") {
-                firstCritMatch = firstCellValueClean === firstCritSearchValueClean
+                match = cellValClean === critValClean
             } else {
-                firstCritMatch = firstCellValueClean.indexOf(firstCritSearchValueClean) !== -1
-            }
-            if (!firstCritMatch) {
-                foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-                if (!foundCell || foundCell.Address() === firstAddress) break
-                continue
+                if (critValClean === "") match = true
+                else match = cellValClean.indexOf(critValClean) !== -1
             }
 
-            let matchAll = true
-            for (let i = 1; i < validCriteria.length; i++) {
-                const crit = validCriteria[i]
-                const cellValue = sheet.Cells(row, crit.colIndex).Value
-                const cellStrClean = cleanSearchValue(cellValue)
-                const searchValueClean = cleanSearchValue(crit.searchValue)
+            if (match) {
+                let matchAll = true
 
-                if (crit.opType === "Equals") {
-                    if (cellStrClean !== searchValueClean) { matchAll = false; break; }
-                } else {
-                    if (cellStrClean.indexOf(searchValueClean) === -1) { matchAll = false; break; }
-                }
-            }
+                if (validCriteria.length > 1) {
+                    for (let j = 1; j < validCriteria.length; j++) {
+                        const crit = validCriteria[j]
+                        const val = sheet.Cells(currentRow, crit.colIndex).Value
+                        const valClean = cleanSearchValue(val)
 
-            if (matchAll) {
-                const rowData = {}
-                for (const colName of allColumns) {
-                    const colIndex = columnMap[colName]
-                    const cell = sheet.Cells(row, colIndex)
-                    let cellValue = cell.Value
-                    const cellAddr = cell.Address().replace(/\$/g, '')
-
-                    if (hasImages && imageMap[cellAddr]) {
-                        rowData[colName] = { _type: 'image', value: cellValue, imageUrl: imageMap[cellAddr] }
-                    } else {
-                        const dispImg = parseDispImgFormula(cellValue)
-                        if (dispImg) {
-                            rowData[colName] = { _type: 'dispimg', value: cellValue, imageId: dispImg.imageId, cellAddress: cellAddr }
+                        if (crit.opType === "Equals") {
+                            if (valClean !== crit.searchValueClean) { matchAll = false; break }
                         } else {
-                            rowData[colName] = cellValue
+                            if (crit.searchValueClean !== "" && valClean.indexOf(crit.searchValueClean) === -1) { matchAll = false; break }
                         }
                     }
                 }
-                records.push(rowData)
-                if (records.length >= MAX_RECORDS) break
+
+                if (matchAll) {
+                    const rowData = {}
+                    for (const colName of allColumns) {
+                        const colIndex = columnMap[colName]
+                        const cell = sheet.Cells(currentRow, colIndex)
+                        let cellValue = cell.Value
+
+                        let cellAddr = null
+                        if (hasImages || parseDispImgFormula(cellValue)) {
+                            cellAddr = cell.Address().replace(/\$/g, '')
+                        }
+
+                        if (hasImages && cellAddr && imageMap[cellAddr]) {
+                            rowData[colName] = { _type: 'image', value: cellValue, imageUrl: imageMap[cellAddr] }
+                        } else {
+                            const dispImg = parseDispImgFormula(cellValue)
+                            if (dispImg) {
+                                rowData[colName] = { _type: 'dispimg', value: cellValue, imageId: dispImg.imageId, cellAddress: cellAddr }
+                            } else {
+                                rowData[colName] = cellValue
+                            }
+                        }
+                    }
+                    records.push(rowData)
+                    if (records.length >= MAX_RECORDS) break
+                }
             }
-
-            foundCell = searchCol.Find(String(firstCrit.searchValue), foundCell, "etValues", lookAt)
-
-        } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+        }
     }
 
     return {
