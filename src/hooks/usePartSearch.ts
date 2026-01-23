@@ -580,6 +580,14 @@ export function usePartSearch() {
                                 if (imgResult.success && imgResult.data?.imageUrls) {
                                     Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
                                     console.log(`导出: 成功获取 ${Object.values(imgResult.data.imageUrls).filter(Boolean).length} 个新图片URL`)
+
+                                    // 将新获取的图片URL更新到缓存中，以便前端可以立即显示
+                                    const tableName = result.realTableName || result.tableName
+                                    for (const [address, url] of Object.entries(imgResult.data.imageUrls)) {
+                                        if (url) {
+                                            handleImageLoad(tableName, address, url)
+                                        }
+                                    }
                                 }
                             } catch (e) {
                                 console.error('导出: 获取图片URL失败', e)
@@ -706,7 +714,7 @@ export function usePartSearch() {
         } finally {
             setIsExporting(false)
         }
-    }, [searchResults])
+    }, [searchResults, selectedToken, imageUrlCache, handleImageLoad])
 
     // 导出单个结果到 Excel
     const exportSingleResult = useCallback(async (result: TableSearchResult) => {
@@ -836,6 +844,14 @@ export function usePartSearch() {
                     const imgResult = await getImageUrls(selectedToken.id, result.realTableName || result.tableName, dispImgCellAddressesToFetch)
                     if (imgResult.success && imgResult.data?.imageUrls) {
                         Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
+
+                        // 将新获取的图片URL更新到缓存中，以便前端可以立即显示
+                        const tableName = result.realTableName || result.tableName
+                        for (const [address, url] of Object.entries(imgResult.data.imageUrls)) {
+                            if (url) {
+                                handleImageLoad(tableName, address, url)
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error('导出: 获取图片URL失败', e)
@@ -946,7 +962,7 @@ export function usePartSearch() {
             console.error('Export single result error:', err)
             setSearchError(err instanceof Error ? err.message : '导出发生错误')
         }
-    }, [selectedToken, imageUrlCache])
+    }, [selectedToken, imageUrlCache, handleImageLoad])
 
     // 下载批量查询模板 (多 Sheet 模式)
     const downloadBatchTemplate = useCallback(async () => {
