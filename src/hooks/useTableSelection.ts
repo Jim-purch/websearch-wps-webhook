@@ -26,6 +26,8 @@ export interface UseTableSelectionReturn {
     handleMouseUp: () => void
     // 判断单元格是否被选中
     isCellSelected: (row: number, col: number) => boolean
+    // 全选列
+    selectColumn: (col: number, rowCount: number) => void
     // 清除选择
     clearSelection: () => void
     // 复制选中的数据
@@ -98,6 +100,15 @@ export function useTableSelection(options: UseTableSelectionOptions = {}): UseTa
     const clearSelection = useCallback(() => {
         setSelection(null)
         selectionStartRef.current = null
+    }, [])
+
+    // 全选列
+    const selectColumn = useCallback((col: number, rowCount: number) => {
+        if (rowCount <= 0) return
+        setSelection({
+            start: { row: 0, col },
+            end: { row: rowCount - 1, col }
+        })
     }, [])
 
     // 复制选中的数据
@@ -208,6 +219,7 @@ export function useTableSelection(options: UseTableSelectionOptions = {}): UseTa
         handleMouseEnter,
         handleMouseUp,
         isCellSelected,
+        selectColumn,
         clearSelection,
         copySelection,
         containerProps

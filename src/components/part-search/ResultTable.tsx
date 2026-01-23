@@ -265,6 +265,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         handleMouseEnter,
         handleMouseUp,
         isCellSelected,
+        selectColumn,
         clearSelection,
         copySelection,
         containerProps
@@ -421,10 +422,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                         <table className="w-full border-collapse text-sm">
                             <thead>
                                 <tr>
-                                    {displayColumns.map(col => (
+                                    {displayColumns.map((col, colIdx) => (
                                         <th
                                             key={col}
-                                            className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap"
+                                            className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
+                                            onClick={() => selectColumn(colIdx, rows.length)}
+                                            title="点击全选此列"
                                         >
                                             {col === '_BatchQueryID' ? 'QueryID' : col}
                                         </th>
