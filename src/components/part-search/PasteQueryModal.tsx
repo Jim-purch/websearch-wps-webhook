@@ -21,6 +21,7 @@ interface PasteQueryModalProps {
     columns: string[]
     onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
     isSearching: boolean
+    batchProgress?: string
     initialData?: PasteQueryData
     onDataChange?: (tableKey: string, data: PasteQueryData) => void
 }
@@ -32,6 +33,7 @@ export function PasteQueryModal({
     columns,
     onSearch,
     isSearching,
+    batchProgress,
     initialData,
     onDataChange
 }: PasteQueryModalProps) {
@@ -395,7 +397,7 @@ export function PasteQueryModal({
                             {isSearching ? (
                                 <span className="flex items-center gap-2 justify-center">
                                     <span className="spinner w-4 h-4"></span>
-                                    查询中...
+                                    {batchProgress || '查询中...'}
                                 </span>
                             ) : (
                                 <span className="flex items-center gap-2 justify-center">

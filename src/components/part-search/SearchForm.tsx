@@ -402,9 +402,11 @@ export function SearchForm({
                         setPasteModalTableKey(null)
                     }}
                     isSearching={isBatchSearching}
+                    batchProgress={batchProgress}
                     initialData={pasteData[pasteModalTableKey]}
                     onDataChange={handlePasteDataChange}
                 />
+
             )}
         </div >
     )
