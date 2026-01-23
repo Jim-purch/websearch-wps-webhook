@@ -84,6 +84,7 @@ export default function PartSearchPage() {
                         onSelectAll={selectAllTables}
                         onDeselectAll={deselectAllTables}
                         onLoadColumns={loadColumnsForSelected}
+                        columnsData={columnsData}
                     />
                 )}
 

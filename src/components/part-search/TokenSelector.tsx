@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Token } from '@/types'
 
 // 扩展Token类型以支持分享信息
@@ -18,6 +18,13 @@ interface TokenSelectorProps {
 
 export function TokenSelector({ tokens, selectedToken, isLoading, onSelect }: TokenSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
+
+    // 当选择Token后自动收起步骤1
+    useEffect(() => {
+        if (selectedToken) {
+            setIsOpen(false)
+        }
+    }, [selectedToken])
 
     return (
         <div className="card">

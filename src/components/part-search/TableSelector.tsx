@@ -2,7 +2,7 @@
 
 import type { WpsTable } from '@/lib/wps'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface TableSelectorProps {
     tables: WpsTable[]
@@ -13,6 +13,7 @@ interface TableSelectorProps {
     onSelectAll: () => void
     onDeselectAll: () => void
     onLoadColumns: () => void
+    columnsData?: Record<string, unknown[]> // 添加列数据用于判断是否已加载
 }
 
 export function TableSelector({
@@ -23,9 +24,18 @@ export function TableSelector({
     onToggle,
     onSelectAll,
     onDeselectAll,
-    onLoadColumns
+    onLoadColumns,
+    columnsData = {}
 }: TableSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
+
+    // 当加载列信息后自动收起步骤2
+    useEffect(() => {
+        // 当columnsData从空变为有数据时，表示用户刚刚点击了"加载列信息"
+        if (Object.keys(columnsData).length > 0) {
+            setIsOpen(false)
+        }
+    }, [columnsData])
 
     return (
         <div className="card">
