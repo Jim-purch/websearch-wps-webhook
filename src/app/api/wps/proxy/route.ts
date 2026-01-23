@@ -96,19 +96,37 @@ export async function POST(request: NextRequest) {
                         return item.criteria ? item.criteria.map((c: any) => c.searchValue).join('&') : ''
                     }).filter((v: string) => v)
                     valuesStr = allValues.join(', ')
-                    if (valuesStr.length > 500) valuesStr = valuesStr.substring(0, 500) + '...'
                 }
 
-                await WpsLogger.log('batch', {
+                const logPayload: Record<string, any> = {
                     '用户名': userName,
                     '邮箱': userEmail,
                     '操作时间': timeStr,
                     '使用token名称': tokenName,
                     '选择数据表': argv.sheetName,
                     '选择字段名称': fieldsStr,
-                    '搜索值': valuesStr,
                     '对应的记录值': `Sheet: ${argv.sheetName}, 批量查询数量: ${count}`
-                })
+                }
+
+                // 处理搜索值过长的情况，分字段存储
+                const CHUNK_SIZE = 2000
+                if (!valuesStr) {
+                    logPayload['搜索值'] = ''
+                } else if (valuesStr.length <= CHUNK_SIZE) {
+                    logPayload['搜索值'] = valuesStr
+                } else {
+                    let currentVal = valuesStr
+                    let idx = 0
+                    while (currentVal.length > 0) {
+                        const chunk = currentVal.substring(0, CHUNK_SIZE)
+                        currentVal = currentVal.substring(CHUNK_SIZE)
+                        const key = idx === 0 ? '搜索值' : `搜索值${idx}`
+                        logPayload[key] = chunk
+                        idx++
+                    }
+                }
+
+                await WpsLogger.log('batch', logPayload)
             }
         } catch (logErr) {
             console.error('WPS Search Log Error:', logErr)
