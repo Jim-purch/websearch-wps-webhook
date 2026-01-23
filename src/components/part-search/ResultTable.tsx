@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { TableSearchResult } from '@/hooks/usePartSearch'
 import { useTableSelection } from '@/hooks/useTableSelection'
 
@@ -43,6 +44,12 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
     const [showPreview, setShowPreview] = useState(false)
     const [imgError, setImgError] = useState(false)
     const [retryCount, setRetryCount] = useState(0)
+    const [mounted, setMounted] = useState(false)
+
+    // 确保在客户端渲染后才使用 Portal
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     if (imgError) {
         return (
@@ -61,6 +68,34 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
         )
     }
 
+    const previewModal = showPreview && mounted ? createPortal(
+        <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70"
+            onClick={() => setShowPreview(false)}
+        >
+            <div className="relative max-w-[90vw] max-h-[90vh]">
+                <img
+                    src={src}
+                    alt="大图预览"
+                    className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                />
+                <button
+                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 flex items-center justify-center"
+                    onClick={(e) => { e.stopPropagation(); setShowPreview(false) }}
+                >
+                    ✕
+                </button>
+                <button
+                    className="absolute bottom-2 right-2 px-3 py-1 rounded bg-[#eab308] text-black text-sm hover:bg-[#ca9a06]"
+                    onClick={(e) => { e.stopPropagation(); onCopy() }}
+                >
+                    📋 复制链接
+                </button>
+            </div>
+        </div>,
+        document.body
+    ) : null
+
     return (
         <>
             <img
@@ -73,35 +108,11 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
                 onError={() => setImgError(true)}
                 title="点击查看大图"
             />
-            {showPreview && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-                    onClick={() => setShowPreview(false)}
-                >
-                    <div className="relative max-w-[90vw] max-h-[90vh]">
-                        <img
-                            src={src}
-                            alt="大图预览"
-                            className="max-w-full max-h-[90vh] object-contain rounded-lg"
-                        />
-                        <button
-                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 flex items-center justify-center"
-                            onClick={(e) => { e.stopPropagation(); setShowPreview(false) }}
-                        >
-                            ✕
-                        </button>
-                        <button
-                            className="absolute bottom-2 right-2 px-3 py-1 rounded bg-[#eab308] text-black text-sm hover:bg-[#ca9a06]"
-                            onClick={(e) => { e.stopPropagation(); onCopy() }}
-                        >
-                            📋 复制链接
-                        </button>
-                    </div>
-                </div>
-            )}
+            {previewModal}
         </>
     )
 }
+
 
 
 import { getImageUrls } from '@/lib/wps'
