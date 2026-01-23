@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { WpsLogger } from '@/lib/wps-logger'
 
 /**
  * WPS Webhook 代理 API
@@ -28,10 +29,10 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // 从数据库获取 Token 信息
+        // 从数据库获取 Token 信息 (提前获取以用于日志)
         const { data: token, error: tokenError } = await supabase
             .from('tokens')
-            .select('webhook_url, token_value')
+            .select('name, webhook_url, token_value')
             .eq('id', tokenId)
             .single()
 
@@ -48,6 +49,74 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             )
         }
+
+        // ==========================================
+        // 日志记录逻辑 (不阻塞主线程失败，但需等待完成以保证Serverless环境执行)
+        // ==========================================
+        try {
+            const action = argv.action
+            const userName = user.user_metadata?.display_name || '未设置'
+            const userEmail = user.email || '未知'
+            const timeStr = new Date().toLocaleString('zh-CN')
+            const tokenName = token.name || '未命名Token'
+
+            if (action === 'searchMulti') {
+                const criteria = argv.criteria || []
+                let criteriaStr = ''
+                let fieldsStr = ''
+                let valuesStr = ''
+
+                if (Array.isArray(criteria)) {
+                    criteriaStr = criteria.map((c: any) => `${c.columnName} ${c.op} ${c.searchValue}`).join('; ')
+                    fieldsStr = criteria.map((c: any) => c.columnName).join(', ')
+                    valuesStr = criteria.map((c: any) => c.searchValue).join(', ')
+                }
+
+                await WpsLogger.log('search', {
+                    '用户名': userName,
+                    '邮箱': userEmail,
+                    '操作时间': timeStr,
+                    '使用token名称': tokenName,
+                    '选择数据表': argv.sheetName,
+                    '选择字段名称': fieldsStr,
+                    '搜索值': valuesStr,
+                    '对应的记录值': `Sheet: ${argv.sheetName}, 查询: ${criteriaStr}`
+                })
+            } else if (action === 'searchBatch') {
+                const batchCriteria = argv.batchCriteria || []
+                const count = Array.isArray(batchCriteria) ? batchCriteria.length : 0
+
+                // 提取字段名和搜索值摘要
+                let fieldsStr = ''
+                let valuesStr = ''
+                if (count > 0 && batchCriteria[0].criteria) {
+                    fieldsStr = batchCriteria[0].criteria.map((c: any) => c.columnName).join(', ')
+                    // 收集所有搜索值
+                    const allValues = batchCriteria.map((item: any) => {
+                        return item.criteria ? item.criteria.map((c: any) => c.searchValue).join('&') : ''
+                    }).filter((v: string) => v)
+                    valuesStr = allValues.join(', ')
+                    if (valuesStr.length > 500) valuesStr = valuesStr.substring(0, 500) + '...'
+                }
+
+                await WpsLogger.log('batch', {
+                    '用户名': userName,
+                    '邮箱': userEmail,
+                    '操作时间': timeStr,
+                    '使用token名称': tokenName,
+                    '选择数据表': argv.sheetName,
+                    '选择字段名称': fieldsStr,
+                    '搜索值': valuesStr,
+                    '对应的记录值': `Sheet: ${argv.sheetName}, 批量查询数量: ${count}`
+                })
+            }
+        } catch (logErr) {
+            console.error('WPS Search Log Error:', logErr)
+            // 日志失败不影响主流程
+        }
+        // ==========================================
+
+
 
         // 代理请求到 WPS
         const wpsResponse = await fetch(token.webhook_url, {
@@ -85,3 +154,4 @@ export async function POST(request: NextRequest) {
         )
     }
 }
+

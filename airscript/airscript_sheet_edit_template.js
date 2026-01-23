@@ -228,7 +228,7 @@ function appendRow(sheetName, rowData) {
 
             const colIndex = columnMap[colName]
             const value = rowData[colName]
-            
+
             // 写入单元格
             sheet.Cells(nextRow, colIndex).Value = value
             writtenCells++
@@ -329,7 +329,7 @@ function appendRows(sheetName, rows) {
 
                 const colIndex = columnMap[colName]
                 const value = rowData[colName]
-                
+
                 // 写入单元格
                 sheet.Cells(currentRow, colIndex).Value = value
                 writtenCells++
@@ -447,7 +447,7 @@ function insertRow(sheetName, rowIndex, rowData) {
 
             const colIndex = columnMap[colName]
             const value = rowData[colName]
-            
+
             // 写入单元格
             sheet.Cells(rowIndex, colIndex).Value = value
             writtenCells++
@@ -689,7 +689,7 @@ function updateRow(sheetName, rowIndex, rowData) {
 
             const colIndex = columnMap[colName]
             const value = rowData[colName]
-            
+
             // 写入单元格
             sheet.Cells(rowIndex, colIndex).Value = value
             writtenCells++
@@ -713,6 +713,116 @@ function updateRow(sheetName, rowIndex, rowData) {
             success: false,
             error: String(error),
             message: "更新行时发生错误"
+        }
+    }
+}
+
+/**
+ * 智能追加数据（支持自动分表）
+ * @param {string} baseName - 表名基础名称（如"登录记录"）
+ * @param {Object} rowData - 行数据对象
+ * @param {number} rowLimit - 单表行数限制
+ * @returns {Object} 操作结果
+ */
+function smartAppend(baseName, rowData, rowLimit) {
+    console.log("开始智能追加: 基础名=" + baseName + ", 限制=" + rowLimit)
+
+    if (!baseName) {
+        return { success: false, error: "缺少参数: sheetBaseName" }
+    }
+
+    rowLimit = rowLimit || 2000
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let currentSheet = null
+        let currentIndex = 1
+
+        // 查找当前应该使用的表格
+        while (true) {
+            let sheetName = baseName + "-" + currentIndex
+            let nextSheetName = baseName + "-" + (currentIndex + 1)
+            let sheet
+
+            try {
+                sheet = workbook.Sheets.Item(sheetName)
+            } catch (e) {
+                // 当前序号表不存在
+                if (currentIndex === 1) {
+                    // 如果连-1都不存在，尝试创建
+                    console.log("表格 " + sheetName + " 不存在，尝试创建...")
+                    try {
+                        sheet = workbook.Sheets.Add(null, workbook.Sheets.Item(workbook.Sheets.Count))
+                        sheet.Name = sheetName
+
+                        // 写入表头（根据rowData的key）
+                        let col = 1
+                        for (let key in rowData) {
+                            sheet.Cells(1, col).Value = key
+                            col++
+                        }
+                        currentSheet = sheet
+                        break
+                    } catch (createErr) {
+                        return { success: false, error: "创建表格失败: " + createErr }
+                    }
+                } else {
+                    // 上一张满了，这张不存在，需要创建新表
+                    console.log("需要创建新表: " + sheetName)
+                    // 获取上一张表作为模板（为了复制表头）
+                    let prevSheet = workbook.Sheets.Item(baseName + "-" + (currentIndex - 1))
+
+                    try {
+                        sheet = workbook.Sheets.Add(null, workbook.Sheets.Item(workbook.Sheets.Count))
+                        sheet.Name = sheetName
+
+                        // 复制表头
+                        prevSheet.Rows("1:1").Copy(sheet.Rows("1:1"))
+                        currentSheet = sheet
+                        break
+                    } catch (createErr) {
+                        return { success: false, error: "创建新表失败: " + createErr }
+                    }
+                }
+            }
+
+            // 表格存在，检查是否已满
+            let usedRange = sheet.UsedRange
+            let rowCount = usedRange.Row + usedRange.Rows.Count - 1 // 减去空行? UserRange包含数据区域
+            // 更准确的行数获取方式：
+            // 如果只有一行表头，rowCount应该是1（假设UsedRange从A1开始）
+
+            // 简单判断：如果 UsedRange.Rows.Count >= rowLimit
+            if (usedRange.Rows.Count >= rowLimit) {
+                // 检查下一张表是否存在
+                try {
+                    workbook.Sheets.Item(nextSheetName)
+                    // 下一张表存在，继续循环
+                    currentIndex++
+                    continue
+                } catch (e) {
+                    // 下一张表不存在，说明当前表满了且是最后一张，需要在下一次循环(或者这里)创建下一张
+                    // 这里直接让 currentIndex++，下一次循环开头会发现不存在并创建
+                    currentIndex++
+                    continue
+                }
+            } else {
+                // 未满，使用当前表
+                currentSheet = sheet
+                break
+            }
+        }
+
+        console.log("使用表格: " + currentSheet.Name)
+
+        // 调用 appendRow
+        return appendRow(currentSheet.Name, rowData)
+
+    } catch (error) {
+        console.error("智能追加失败: " + error)
+        return {
+            success: false,
+            error: String(error)
         }
     }
 }
@@ -747,11 +857,14 @@ if (action === "appendRow") {
 } else if (action === "updateRow") {
     // 更新指定行的数据
     result = updateRow(argv.sheetName, argv.rowIndex, argv.rowData)
+} else if (action === "smartAppend") {
+    // 智能追加
+    result = smartAppend(argv.sheetBaseName, argv.rowData, argv.rowLimit)
 } else {
     result = {
         success: false,
         error: "未知操作: " + action,
-        message: "支持的操作: appendRow, appendRows, insertRow, setCellValue, setRangeValues, updateRow"
+        message: "支持的操作: appendRow, appendRows, insertRow, setCellValue, setRangeValues, updateRow, smartAppend"
     }
 }
 

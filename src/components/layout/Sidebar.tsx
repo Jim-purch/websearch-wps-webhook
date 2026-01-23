@@ -16,6 +16,7 @@ const userNavItems = [
 const adminNavItems = [
     { href: '/admin', label: '管理概览', icon: '⚙️' },
     { href: '/admin/users', label: '用户列表', icon: '👥' },
+    { href: '/admin/system-config', label: '系统配置', icon: '🛠️' },
 ]
 
 export function Sidebar() {

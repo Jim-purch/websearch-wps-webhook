@@ -112,11 +112,21 @@ export function useAuth() {
         // 登录成功后记录日志
         if (!error && data?.user) {
             try {
+                // 1. 记录到 Supabase (保持原有逻辑)
                 await supabase.from('login_logs').insert({
                     user_id: data.user.id,
                     ip_address: null, // 客户端无法可靠获取 IP
                     user_agent: typeof window !== 'undefined' ? window.navigator.userAgent : null,
                 })
+
+                // 2. 记录到 WPS (新逻辑)
+                // 异步调用，不等待
+                fetch('/api/auth/log-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                }).catch(e => console.error('WPS Login Log Error:', e))
+
             } catch (logError) {
                 console.error('Failed to log login:', logError)
             }
