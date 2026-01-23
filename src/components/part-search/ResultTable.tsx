@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { TableSearchResult } from '@/hooks/usePartSearch'
+import { useTableSelection } from '@/hooks/useTableSelection'
 
 interface ResultTableProps {
     results: TableSearchResult[]
@@ -102,7 +103,7 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
     )
 }
 
-import { useEffect } from 'react'
+
 import { getImageUrls } from '@/lib/wps'
 
 function LazyImageCell({
@@ -232,6 +233,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
+    const [copyToast, setCopyToast] = useState(false)
 
     const records = result.records || []
 
@@ -255,6 +257,73 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
         : columns
 
+    // 表格选择功能
+    const {
+        selection,
+        isSelecting,
+        handleMouseDown,
+        handleMouseEnter,
+        handleMouseUp,
+        isCellSelected,
+        clearSelection,
+        copySelection,
+        containerProps
+    } = useTableSelection({
+        onCopy: () => {
+            setCopyToast(true)
+            setTimeout(() => setCopyToast(false), 1500)
+        }
+    })
+
+    // 获取单元格值的文本内容
+    const getCellText = useCallback((rowIdx: number, colIdx: number): string => {
+        const row = rows[rowIdx]
+        if (!row) return ''
+        const col = displayColumns[colIdx]
+        if (!col) return ''
+        const val = row[col]
+
+        // 处理图片对象
+        if (val && typeof val === 'object' && '_type' in val) {
+            const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; cellAddress?: string }
+
+            // 优先返回 imageUrl
+            if (imgObj.imageUrl) return imgObj.imageUrl
+
+            // 对于 DISPIMG 格式，检查缓存中是否有已加载的图片URL
+            if (imgObj._type === 'dispimg' && imgObj.cellAddress && imageUrlCache) {
+                const cacheKey = `${result.realTableName || result.tableName}__${imgObj.cellAddress}`
+                const cachedUrl = imageUrlCache[cacheKey]
+                if (cachedUrl) return cachedUrl
+            }
+
+            // 最后才返回 imageId
+            if (imgObj.imageId) return imgObj.imageId
+        }
+
+        // 处理对象
+        if (val && typeof val === 'object') {
+            return JSON.stringify(val)
+        }
+
+        return String(val ?? '')
+    }, [rows, displayColumns, imageUrlCache, result.realTableName, result.tableName])
+
+    // 键盘复制支持 (Ctrl+C / Cmd+C)
+    useEffect(() => {
+        if (collapsed) return
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+                e.preventDefault()
+                copySelection(getCellText)
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [collapsed, selection, copySelection, getCellText])
+
     const handleCellClick = useCallback(async (value: string, cellKey: string) => {
         const success = await copyToClipboard(value)
         if (success) {
@@ -264,9 +333,11 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     }, [])
 
     const handleCopyRow = useCallback(async (row: Record<string, unknown>) => {
-        const text = Object.values(row).map(v => String(v ?? '')).join('\t')
+        const text = displayColumns.map(col => String(row[col] ?? '')).join('\t')
         await copyToClipboard(text)
-    }, [])
+        setCopyToast(true)
+        setTimeout(() => setCopyToast(false), 1500)
+    }, [displayColumns])
 
     if (result.error) {
         return (
@@ -323,15 +394,26 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                 </div>
             </div>
 
+            {/* Copy Toast */}
+            {copyToast && (
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-lg bg-[#22c55e] text-white text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+                    ✓ 已复制到剪贴板
+                </div>
+            )}
+
             {/* Body */}
             {!collapsed && (
-                <div className="p-4 overflow-x-auto">
+                <div
+                    className={`p-4 overflow-x-auto ${isSelecting ? 'select-none' : ''}`}
+                    {...containerProps}
+                >
                     {result.truncated && (
                         <div className="mb-4 p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm">
                             ⚠️ 搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），
                             仅显示前 {result.maxRecords} 条。建议使用更精确的搜索条件缩小范围。
                         </div>
                     )}
+
 
                     {rows.length === 0 ? (
                         <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
@@ -354,11 +436,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                             </thead>
                             <tbody>
                                 {rows.map((row, rowIdx) => (
-                                    <tr key={rowIdx} className="hover:bg-[var(--hover-bg)]">
-                                        {displayColumns.map(col => {
+                                    <tr key={rowIdx} className="transition-colors">
+                                        {displayColumns.map((col, colIdx) => {
                                             const val = row[col]
                                             const cellKey = `${index}-${rowIdx}-${col}`
                                             const isCopied = copiedCell === cellKey
+                                            const isSelected = isCellSelected(rowIdx, colIdx)
 
                                             // 检测是否为图片对象 (来自AirScript)
                                             if (val && typeof val === 'object' && '_type' in val) {
@@ -367,7 +450,16 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                 // 有图片URL - 直接显示图片
                                                 if (imgObj._type === 'image' && imgObj.imageUrl) {
                                                     return (
-                                                        <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                        <td
+                                                            key={col}
+                                                            data-selectable-cell
+                                                            className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
+                                                                ? 'bg-[rgba(102,126,234,0.3)]'
+                                                                : 'hover:bg-[var(--hover-bg)]'
+                                                                }`}
+                                                            onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                            onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                        >
                                                             <ImageWithPreview
                                                                 src={imgObj.imageUrl}
                                                                 onCopy={() => handleCellClick(imgObj.imageUrl!, cellKey)}
@@ -387,7 +479,16 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                         const cachedUrl = imageUrlCache?.[cacheKey]
 
                                                         return (
-                                                            <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                            <td
+                                                                key={col}
+                                                                data-selectable-cell
+                                                                className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
+                                                                    ? 'bg-[rgba(102,126,234,0.3)]'
+                                                                    : 'hover:bg-[var(--hover-bg)]'
+                                                                    }`}
+                                                                onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                                onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                            >
                                                                 <LazyImageCell
                                                                     tokenId={tokenId}
                                                                     sheetName={result.realTableName || result.tableName}
@@ -408,15 +509,19 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                         ? `${imgObj.imageId.slice(0, 8)}...${imgObj.imageId.slice(-6)}`
                                                         : imgObj.imageId
                                                     return (
-                                                        <td key={col} className={`px-3 py-2 border-b border-[var(--border)] ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : ''}`}>
+                                                        <td
+                                                            key={col}
+                                                            data-selectable-cell
+                                                            className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
+                                                                ? 'bg-[rgba(102,126,234,0.3)]'
+                                                                : 'hover:bg-[var(--hover-bg)]'
+                                                                }`}
+                                                            onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                            onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                        >
                                                             <div
-                                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors
-                                                                    ${isCopied
-                                                                        ? 'bg-[rgba(34,197,94,0.3)] text-[#22c55e]'
-                                                                        : 'bg-[rgba(234,179,8,0.15)] text-[#eab308] hover:bg-[rgba(234,179,8,0.3)]'
-                                                                    }`}
-                                                                onClick={() => handleCellClick(imgObj.imageId!, cellKey)}
-                                                                title={`图片ID: ${imgObj.imageId}\n点击复制`}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[rgba(234,179,8,0.15)] text-[#eab308]"
+                                                                title={`图片ID: ${imgObj.imageId}`}
                                                             >
                                                                 <span>🖼️</span>
                                                                 <span className="font-mono">{shortId}</span>
@@ -436,12 +541,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                             return (
                                                 <td
                                                     key={col}
-                                                    onClick={() => handleCellClick(strVal, cellKey)}
+                                                    data-selectable-cell
+                                                    onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                    onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
                                                     className={`
-                                                        px-3 py-2 border-b border-[var(--border)] cursor-pointer transition-colors
-                                                        ${isCopied ? 'bg-[rgba(34,197,94,0.3)]' : 'hover:bg-[rgba(234,179,8,0.2)]'}
+                                                        px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
+                                                        ${isSelected
+                                                            ? 'bg-[rgba(102,126,234,0.3)]'
+                                                            : 'hover:bg-[rgba(234,179,8,0.2)]'
+                                                        }
                                                     `}
-                                                    title="点击复制"
+                                                    title="拖拽选择区域，按 Ctrl+C 复制"
                                                 >
                                                     {strVal}
                                                 </td>

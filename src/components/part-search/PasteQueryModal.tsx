@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useTableSelection } from '@/hooks/useTableSelection'
 
 export interface RowData {
     id: string
@@ -45,6 +46,50 @@ export function PasteQueryModal({
     )
     const tableRef = useRef<HTMLDivElement>(null)
     const [mounted, setMounted] = useState(false)
+    const [copyToast, setCopyToast] = useState(false)
+
+    // 表格选择功能
+    const {
+        selection,
+        isSelecting,
+        handleMouseDown,
+        handleMouseEnter,
+        handleMouseUp,
+        isCellSelected,
+        clearSelection,
+        copySelection,
+        containerProps
+    } = useTableSelection({
+        onCopy: () => {
+            setCopyToast(true)
+            setTimeout(() => setCopyToast(false), 1500)
+        }
+    })
+
+    // 键盘复制支持 (Ctrl+C / Cmd+C)
+    useEffect(() => {
+        if (!isOpen) return
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+                e.preventDefault()
+                // 复制选中的数据
+                copySelection((row, col) => {
+                    if (col === 0) {
+                        // QueryID 列
+                        return rows[row]?.id || ''
+                    } else {
+                        // 数据列
+                        const colName = columns[col - 1]
+                        return rows[row]?.values[colName] || ''
+                    }
+                })
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [isOpen, selection, copySelection, rows, columns])
 
     // 确保在客户端渲染后才使用 Portal
     useEffect(() => {
@@ -200,15 +245,23 @@ export function PasteQueryModal({
                 {/* Instructions */}
                 <div className="px-4 py-3 bg-[rgba(59,130,246,0.1)] border-b border-[var(--border)]">
                     <p className="text-sm text-[var(--text-muted)]">
-                        💡 提示：可直接从 Excel 复制数据后粘贴到下方表格中，数据将自动按列填充。
+                        💡 提示：可从 Excel 复制数据后粘贴到下方表格中 | 支持鼠标框选单元格，按 Ctrl+C 复制选中区域
                     </p>
                 </div>
+
+                {/* Copy Toast */}
+                {copyToast && (
+                    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10000] px-4 py-2 rounded-lg bg-[#22c55e] text-white text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+                        ✓ 已复制到剪贴板
+                    </div>
+                )}
 
                 {/* Table Area */}
                 <div
                     ref={tableRef}
-                    className="flex-1 overflow-auto p-4"
+                    className={`flex-1 overflow-auto p-4 ${isSelecting ? 'select-none' : ''}`}
                     tabIndex={0}
+                    {...containerProps}
                 >
                     <table className="w-full border-collapse">
                         <thead>
@@ -229,22 +282,47 @@ export function PasteQueryModal({
                         </thead>
                         <tbody>
                             {rows.map((row, rowIndex) => (
-                                <tr key={rowIndex} className="hover:bg-[var(--hover-bg)] transition-colors">
-                                    <td className="border border-[var(--border)] px-3 py-1 text-center text-sm text-[var(--text-muted)]">
+                                <tr key={rowIndex} className="transition-colors">
+                                    {/* QueryID 列 - 支持选择 */}
+                                    <td
+                                        data-selectable-cell
+                                        className={`border border-[var(--border)] px-3 py-1 text-center text-sm cursor-cell transition-colors ${isCellSelected(rowIndex, 0)
+                                            ? 'bg-[rgba(102,126,234,0.3)] text-[var(--foreground)]'
+                                            : 'text-[var(--text-muted)] hover:bg-[var(--hover-bg)]'
+                                            }`}
+                                        onMouseDown={(e) => handleMouseDown(rowIndex, 0, e)}
+                                        onMouseEnter={() => handleMouseEnter(rowIndex, 0)}
+                                    >
                                         {row.id}
                                     </td>
-                                    {columns.map((col, colIndex) => (
-                                        <td key={col} className="border border-[var(--border)] p-0">
-                                            <input
-                                                type="text"
-                                                value={row.values[col] || ''}
-                                                onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
-                                                onPaste={(e) => handleCellPaste(e, rowIndex, colIndex)}
-                                                className="w-full px-2 py-1 bg-transparent border-none outline-none focus:bg-[rgba(102,126,234,0.1)] transition-colors text-sm"
-                                                placeholder="..."
-                                            />
-                                        </td>
-                                    ))}
+                                    {/* 数据列 - 支持选择 */}
+                                    {columns.map((col, colIndex) => {
+                                        const cellCol = colIndex + 1 // +1 因为 QueryID 是第 0 列
+                                        const isSelected = isCellSelected(rowIndex, cellCol)
+                                        return (
+                                            <td
+                                                key={col}
+                                                data-selectable-cell
+                                                className={`border border-[var(--border)] p-0 cursor-cell transition-colors ${isSelected ? 'bg-[rgba(102,126,234,0.3)]' : ''
+                                                    }`}
+                                                onMouseDown={(e) => handleMouseDown(rowIndex, cellCol, e)}
+                                                onMouseEnter={() => handleMouseEnter(rowIndex, cellCol)}
+                                            >
+                                                <input
+                                                    type="text"
+                                                    value={row.values[col] || ''}
+                                                    onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
+                                                    onPaste={(e) => handleCellPaste(e, rowIndex, colIndex)}
+                                                    className={`w-full px-2 py-1 border-none outline-none transition-colors text-sm ${isSelected
+                                                        ? 'bg-transparent'
+                                                        : 'bg-transparent focus:bg-[rgba(102,126,234,0.1)]'
+                                                        }`}
+                                                    placeholder="..."
+                                                    onFocus={() => clearSelection()}
+                                                />
+                                            </td>
+                                        )
+                                    })}
                                     <td className="border border-[var(--border)] px-1 py-1 text-center">
                                         <button
                                             onClick={() => removeRow(rowIndex)}
