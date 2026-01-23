@@ -3,6 +3,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
+export interface RowData {
+    id: string
+    values: Record<string, string>
+}
+
+export interface PasteQueryData {
+    rows: RowData[]
+    matchMode: 'fuzzy' | 'exact'
+}
+
 interface PasteQueryModalProps {
     isOpen: boolean
     onClose: () => void
@@ -10,11 +20,8 @@ interface PasteQueryModalProps {
     columns: string[]
     onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
     isSearching: boolean
-}
-
-interface RowData {
-    id: string
-    values: Record<string, string>
+    initialData?: PasteQueryData
+    onDataChange?: (tableKey: string, data: PasteQueryData) => void
 }
 
 export function PasteQueryModal({
@@ -23,10 +30,19 @@ export function PasteQueryModal({
     tableKey,
     columns,
     onSearch,
-    isSearching
+    isSearching,
+    initialData,
+    onDataChange
 }: PasteQueryModalProps) {
-    const [rows, setRows] = useState<RowData[]>([{ id: '1', values: {} }])
-    const [matchMode, setMatchMode] = useState<'fuzzy' | 'exact'>('exact')
+    // 使用 initialData 初始化状态，如果没有则使用默认值
+    const [rows, setRows] = useState<RowData[]>(
+        initialData?.rows && initialData.rows.length > 0
+            ? initialData.rows
+            : [{ id: '1', values: {} }]
+    )
+    const [matchMode, setMatchMode] = useState<'fuzzy' | 'exact'>(
+        initialData?.matchMode || 'exact'
+    )
     const tableRef = useRef<HTMLDivElement>(null)
     const [mounted, setMounted] = useState(false)
 
@@ -35,13 +51,22 @@ export function PasteQueryModal({
         setMounted(true)
     }, [])
 
-    // 重置状态当弹窗打开时
+    // 当 initialData 变化时同步（主要用于切换不同表时）
     useEffect(() => {
-        if (isOpen) {
-            setRows([{ id: '1', values: {} }])
-            setMatchMode('exact')
+        if (isOpen && initialData) {
+            setRows(initialData.rows && initialData.rows.length > 0
+                ? initialData.rows
+                : [{ id: '1', values: {} }])
+            setMatchMode(initialData.matchMode || 'exact')
         }
-    }, [isOpen])
+    }, [isOpen, tableKey]) // 添加 tableKey 作为依赖，确保切换表时能正确加载数据
+
+    // 当数据变化时通知外部组件保存
+    useEffect(() => {
+        if (isOpen && onDataChange) {
+            onDataChange(tableKey, { rows, matchMode })
+        }
+    }, [rows, matchMode, isOpen, tableKey, onDataChange])
 
     // 处理单元格粘贴事件 - 从当前单元格位置开始粘贴
     const handleCellPaste = useCallback((e: React.ClipboardEvent, startRowIndex: number, startColIndex: number) => {

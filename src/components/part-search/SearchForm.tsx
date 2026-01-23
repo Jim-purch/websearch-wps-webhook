@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import type { SearchCondition } from '@/hooks/usePartSearch'
-import { PasteQueryModal } from './PasteQueryModal'
+import { PasteQueryModal, type PasteQueryData } from './PasteQueryModal'
 
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
@@ -56,6 +56,16 @@ export function SearchForm({
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
     const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
     const [pasteModalTableKey, setPasteModalTableKey] = useState<string | null>(null)
+    // 保存每个表的粘贴查询数据
+    const [pasteData, setPasteData] = useState<Record<string, PasteQueryData>>({})
+
+    // 处理粘贴数据变化
+    const handlePasteDataChange = useCallback((tableKey: string, data: PasteQueryData) => {
+        setPasteData(prev => ({
+            ...prev,
+            [tableKey]: data
+        }))
+    }, [])
 
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({
@@ -390,6 +400,8 @@ export function SearchForm({
                         setPasteModalTableKey(null)
                     }}
                     isSearching={isBatchSearching}
+                    initialData={pasteData[pasteModalTableKey]}
+                    onDataChange={handlePasteDataChange}
                 />
             )}
         </div >
