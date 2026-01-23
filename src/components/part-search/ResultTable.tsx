@@ -552,6 +552,67 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                             }
                                             const strVal = String(displayVal ?? '')
 
+                                            // 检测是否为 URL
+                                            const urlPattern = /^https?:\/\/[^\s]+$/i
+                                            const isUrl = urlPattern.test(strVal.trim())
+
+                                            // 检测是否为图片 URL
+                                            const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i
+                                            const isImageUrl = isUrl && imageExtensions.test(strVal.trim())
+
+                                            // 如果是图片 URL 且开启了自动加载图片，则显示图片
+                                            if (isImageUrl && autoLoadImages) {
+                                                return (
+                                                    <td
+                                                        key={col}
+                                                        data-selectable-cell
+                                                        className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
+                                                            ? 'bg-[rgba(102,126,234,0.3)]'
+                                                            : 'hover:bg-[var(--hover-bg)]'
+                                                            }`}
+                                                        onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                        onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                    >
+                                                        <ImageWithPreview
+                                                            src={strVal.trim()}
+                                                            onCopy={() => handleCellClick(strVal.trim(), cellKey)}
+                                                            isCopied={isCopied}
+                                                        />
+                                                    </td>
+                                                )
+                                            }
+
+                                            // 如果是普通 URL（非图片或未开启自动加载图片），显示为超链接
+                                            if (isUrl) {
+                                                return (
+                                                    <td
+                                                        key={col}
+                                                        data-selectable-cell
+                                                        onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                        onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                        className={`
+                                                            px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
+                                                            ${isSelected
+                                                                ? 'bg-[rgba(102,126,234,0.3)]'
+                                                                : 'hover:bg-[rgba(234,179,8,0.2)]'
+                                                            }
+                                                        `}
+                                                        title="点击打开链接，或拖拽选择区域按 Ctrl+C 复制"
+                                                    >
+                                                        <a
+                                                            href={strVal.trim()}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className={`inline-flex items-center gap-1 text-[#3b82f6] hover:text-[#60a5fa] hover:underline transition-colors ${isCopied ? 'text-[#22c55e]' : ''}`}
+                                                        >
+                                                            <span>🔗</span>
+                                                            <span className="max-w-[200px] truncate">{strVal.trim()}</span>
+                                                        </a>
+                                                    </td>
+                                                )
+                                            }
+
                                             return (
                                                 <td
                                                     key={col}
