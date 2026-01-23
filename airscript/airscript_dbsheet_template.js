@@ -424,6 +424,7 @@ function getTableDetails(sheetName, sampleSize) {
  * 多条件 AND 搜索记录
  * @param {string} sheetName - 数据表名称
  * @param {Array} criteria - 条件数组，每个条件为 {columnName, searchValue, op}
+ * @param {Array} returnColumns - (可选) 指定返回的列名数组
  * @returns {Object} 包含匹配记录的对象
  * 
  * 示例:
@@ -432,7 +433,7 @@ function getTableDetails(sheetName, sampleSize) {
  *   {columnName: "配件级别", searchValue: "F", op: "Equals"}
  * ]
  */
-function searchMultiCriteria(sheetName, criteria) {
+function searchMultiCriteria(sheetName, criteria, returnColumns) {
     console.log("开始多条件搜索: 表=" + sheetName + ", 条件数=" + (criteria ? criteria.length : 0))
 
     // 参数验证
@@ -621,6 +622,34 @@ function searchMultiCriteria(sheetName, criteria) {
             console.log("结果已从 " + allRecords.length + " 条截断为 " + MAX_RECORDS + " 条")
         }
 
+        // 处理列过滤 (returnColumns)
+        if (returnColumns && Array.isArray(returnColumns) && returnColumns.length > 0) {
+            console.log("按需返回列: " + JSON.stringify(returnColumns))
+            const filteredRecords = []
+            for (let i = 0; i < finalRecords.length; i++) {
+                const rec = finalRecords[i]
+                const originalFields = rec.fields || {}
+                const newFields = {}
+
+                for (let j = 0; j < returnColumns.length; j++) {
+                    const col = returnColumns[j]
+                    // 多维表格字段名作为Key
+                    if (originalFields[col] !== undefined) {
+                        newFields[col] = originalFields[col]
+                    }
+                }
+
+                // 重建记录对象，只包含必要的 id, recordId 和 筛选后的 fields
+                filteredRecords.push({
+                    id: rec.id,
+                    recordId: rec.recordId,
+                    fields: newFields,
+                    // 如果需要 createsBy 等元数据，可在此添加，但为了精简通常只需 fields
+                })
+            }
+            finalRecords = filteredRecords
+        }
+
         console.log("多条件搜索完成，共找到 " + allRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
 
         return {
@@ -645,6 +674,181 @@ function searchMultiCriteria(sheetName, criteria) {
     }
 }
 
+/**
+ * 批量搜索 (支持多行查询)
+ * @param {string} sheetName - 数据表名称
+ * @param {Array} batchCriteria - 批量查询条件数组，每个元素为 {id: string, criteria: Array, returnColumns: Array}
+ * @returns {Object} 包含所有查询结果的对象
+ */
+function searchBatch(sheetName, batchCriteria) {
+    console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
+
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供数据表名称"
+        }
+    }
+
+    if (!batchCriteria || !Array.isArray(batchCriteria) || batchCriteria.length === 0) {
+        return {
+            success: false,
+            error: "缺少参数: batchCriteria",
+            message: "请提供批量查询条件"
+        }
+    }
+
+    try {
+        // 1. 获取表信息 (只获取一次)
+        const sheets = Application.Sheet.GetSheets()
+        const targetSheet = sheets.find(s => s.name === sheetName)
+
+        if (!targetSheet) {
+            return {
+                success: false,
+                error: "未找到数据表: " + sheetName,
+                availableSheets: sheets.map(s => s.name)
+            }
+        }
+        const sheetId = targetSheet.id
+
+        // 2. 获取列信息 (只获取一次)
+        const availableColumns = []
+        try {
+            const fieldDescriptors = Application.Sheets(sheetName).FieldDescriptors
+            const fieldCount = fieldDescriptors.Count
+            for (let i = 1; i <= fieldCount; i++) {
+                availableColumns.push(fieldDescriptors.Item(i).Name)
+            }
+        } catch (e) { console.log("获取列信息警告: " + e) }
+
+        const batchResults = []
+        let totalMatchCount = 0
+        const validOps = ["Equals", "NotEqu", "Greater", "GreaterEqu", "Less", "LessEqu",
+            "BeginWith", "EndWith", "Contains", "NotContains", "Intersected",
+            "Empty", "NotEmpty"]
+
+        // 3. 循环处理
+        for (let i = 0; i < batchCriteria.length; i++) {
+            const queryItem = batchCriteria[i]
+            const queryId = queryItem.id || ("q_" + i)
+            const criteria = queryItem.criteria
+            const returnColumns = queryItem.returnColumns
+
+            // 构建 Filter
+            const filter = { "mode": "AND", "criteria": [] }
+            let criteriaValid = true
+
+            if (criteria && Array.isArray(criteria)) {
+                for (const crit of criteria) {
+                    const colName = crit.columnName
+                    const opType = crit.op || "Contains"
+                    const val = crit.searchValue
+
+                    if (!colName) continue
+                    if (!validOps.includes(opType)) {
+                        batchResults.push({ id: queryId, success: false, error: "无效操作符: " + opType });
+                        criteriaValid = false; break;
+                    }
+                    if (availableColumns.length > 0 && !availableColumns.includes(colName)) {
+                        batchResults.push({ id: queryId, success: false, error: "列不存在: " + colName });
+                        criteriaValid = false; break;
+                    }
+
+                    if (opType === "Empty" || opType === "NotEmpty") {
+                        filter.criteria.push({ "field": colName, "op": opType })
+                    } else {
+                        if (!val && val !== 0) continue
+                        filter.criteria.push({ "field": colName, "op": opType, "values": [String(val)] })
+                    }
+                }
+            } else {
+                batchResults.push({ id: queryId, success: false, error: "条件格式错误" });
+                criteriaValid = false;
+            }
+
+            if (!criteriaValid) continue;
+            if (filter.criteria.length === 0) {
+                batchResults.push({ id: queryId, success: false, error: "无有效条件" });
+                continue;
+            }
+
+            // 执行查询
+            var MAX_RECORDS = 50 // 批量搜索单次限制
+            let allRecords = []
+            let offset = null
+            let truncated = false
+
+            try {
+                do {
+                    const pageResult = Application.Record.GetRecords({
+                        SheetId: sheetId,
+                        Offset: offset,
+                        Filter: filter
+                    })
+                    if (!pageResult || !pageResult.records) break
+                    allRecords = allRecords.concat(pageResult.records)
+                    offset = pageResult.offset
+                    if (allRecords.length >= MAX_RECORDS) {
+                        truncated = true;
+                        allRecords = allRecords.slice(0, MAX_RECORDS);
+                        break;
+                    }
+                } while (offset)
+            } catch (qErr) {
+                batchResults.push({ id: queryId, success: false, error: "查询异常: " + qErr });
+                continue;
+            }
+
+            // 过滤列
+            if (returnColumns && Array.isArray(returnColumns) && returnColumns.length > 0) {
+                const filteredRecs = []
+                for (const rec of allRecords) {
+                    const newFields = {}
+                    for (const c of returnColumns) {
+                        if (rec.fields[c] !== undefined) newFields[c] = rec.fields[c]
+                    }
+                    filteredRecs.push({ id: rec.id, recordId: rec.recordId, fields: newFields })
+                }
+                allRecords = filteredRecs
+            }
+
+            batchResults.push({
+                id: queryId,
+                success: true,
+                totalCount: allRecords.length,
+                truncated: truncated,
+                records: JSON.parse(JSON.stringify(allRecords))
+            })
+            totalMatchCount += allRecords.length
+
+            // Log 进度 (每10条)
+            if ((i + 1) % 10 === 0) {
+                console.log("已处理 " + (i + 1) + "/" + batchCriteria.length + " 个查询")
+            }
+        }
+
+        console.log("批量搜索完成，总匹配记录: " + totalMatchCount)
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            totalQueries: batchCriteria.length,
+            totalMatches: totalMatchCount,
+            results: batchResults
+        }
+
+    } catch (e) {
+        console.error("批量搜索失败: " + e)
+        return {
+            success: false,
+            error: String(e),
+            message: "批量搜索执行失败"
+        }
+    }
+}
+
 // ========== 主执行逻辑 ==========
 console.log("=== AirScript 多维表格数据API ===")
 
@@ -663,14 +867,17 @@ if (action === "getAll") {
     result = searchByColumn(argv.sheetName, argv.columnName, argv.searchValue, argv.op)
 } else if (action === "searchMulti") {
     // 多条件 AND 搜索
-    result = searchMultiCriteria(argv.sheetName, argv.criteria)
+    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns)
 } else if (action === "details") {
     result = getTableDetails(argv.sheetName, argv.sampleSize)
+} else if (action === "searchBatch") {
+    // 批量搜索
+    result = searchBatch(argv.sheetName, argv.batchCriteria)
 } else {
     result = {
         success: false,
         error: "未知操作: " + action,
-        message: "支持的操作: getAll, search, searchMulti, details"
+        message: "支持的操作: getAll, search, searchMulti, details, searchBatch"
     }
 }
 
