@@ -464,13 +464,10 @@ function parseDispImgFormula(value) {
  * 使用 Excel Find 方法加速搜索，而不是逐行遍历
  * @param {string} sheetName - 工作表名称
  * @param {Array} criteria - 条件数组，每个条件为 {columnName, searchValue, op}
+ * @param {Array} returnColumns - (可选) 指定返回的列名数组，如果为空则返回所有列
  * @returns {Object} 包含匹配记录的对象
- * 
- * 支持的操作符:
- * - Contains: 包含（默认）
- * - Equals: 精确匹配
  */
-function searchMultiCriteria(sheetName, criteria) {
+function searchMultiCriteria(sheetName, criteria, returnColumns) {
     console.log("开始多条件搜索: 表=" + sheetName + ", 条件数=" + (criteria ? criteria.length : 0))
 
     // 参数验证
@@ -545,6 +542,16 @@ function searchMultiCriteria(sheetName, criteria) {
 
         // 获取所有表头名称
         const allColumns = Object.keys(columnMap)
+
+        // 确定要返回的列
+        let outputColumns = allColumns
+        if (returnColumns && Array.isArray(returnColumns) && returnColumns.length > 0) {
+            // 过滤只返回存在的列
+            const validReturnCols = returnColumns.filter(c => columnMap[c])
+            if (validReturnCols.length > 0) {
+                outputColumns = validReturnCols
+            }
+        }
 
         // 验证条件中的列名并收集有效条件
         const validCriteria = []
@@ -663,7 +670,7 @@ function searchMultiCriteria(sheetName, criteria) {
                 if (matchAll) {
                     // 获取整行数据，并处理图片信息
                     const rowData = {}
-                    for (const colName of allColumns) {
+                    for (const colName of outputColumns) {
                         const colIndex = columnMap[colName]
                         const cell = sheet.Cells(row, colIndex)
                         let cellValue = cell.Value
@@ -750,7 +757,7 @@ if (action === "getAll") {
     result = searchInSheet(argv.sheetName, argv.searchValue, argv.searchColumn, argv.maxResults)
 } else if (action === "searchMulti") {
     // 多条件 AND 搜索
-    result = searchMultiCriteria(argv.sheetName, argv.criteria)
+    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns)
 } else if (action === "getData") {
     result = getRangeData(argv.sheetName, argv.range, argv.hasHeader)
 } else if (action === "getImageUrl") {

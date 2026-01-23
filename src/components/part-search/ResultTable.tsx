@@ -264,9 +264,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
 
     const originalQueryColumns = result.originalQueryColumns || []
 
-    const displayColumns = hasBatchQueryID
-        ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
-        : columns
+    // 优先使用 displayColumns (来自 Step 3 的配置顺序)，如果没有则回退到默认逻辑
+    // 如果有 displayColumns，只显示其中的列
+    const displayColumns = result.displayColumns && result.displayColumns.length > 0
+        ? (hasBatchQueryID
+            ? ['_BatchQueryID', ...result.displayColumns]
+            : result.displayColumns
+        )
+        : (hasBatchQueryID
+            ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
+            : columns
+        )
 
     // 表格选择功能
     const {

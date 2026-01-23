@@ -23,6 +23,11 @@ export interface SearchCondition {
     op: 'Contains' | 'Equals'
 }
 
+export interface ColumnConfig {
+    name: string
+    fetch: boolean
+}
+
 export interface TableSearchResult {
     tableName: string
     realTableName?: string  // 真实表名（用于图片加载等API调用）
@@ -34,6 +39,7 @@ export interface TableSearchResult {
     maxRecords?: number
     error?: string
     originalQueryColumns?: string[]  // 原始查询列名称列表
+    displayColumns?: string[] // 显示列顺序（基于用户配置）
 }
 
 const BATCH_SIZE = 50
@@ -61,9 +67,9 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
         ...existing,
         records: mergedRecords,
         totalCount: existing.totalCount + newResult.totalCount,
-        // 如果出错，保留之前的错误或新的错误
         error: newResult.error || existing.error,
         originalQueryColumns: mergedCols,
+        displayColumns: newResult.displayColumns || existing.displayColumns, // 保留显示列配置
         // 更新描述
         criteriaDescription: `批量查询 (已加载 ${mergedRecords.length} 条数据)`
     }
@@ -129,7 +135,9 @@ export function usePartSearch() {
 
     // 列数据 {tableName: columns[]}
     const [columnsData, setColumnsData] = useState<Record<string, WpsColumn[]>>({})
-    const [selectedColumns, setSelectedColumns] = useState<Record<string, string[]>>({})
+    const [selectedColumns, setSelectedColumns] = useState<Record<string, string[]>>({}) // 用于搜索条件选择
+    // 列配置 {tableName: ColumnConfig[]} - 用于排序和是否获取
+    const [columnConfigs, setColumnConfigs] = useState<Record<string, ColumnConfig[]>>({})
 
     // 搜索结果
     // 搜索结果
@@ -247,17 +255,50 @@ export function usePartSearch() {
         const newColumnsData: Record<string, WpsColumn[]> = {}
         const newSelectedColumns: Record<string, string[]> = {}
 
-        for (const tableName of selectedTableNames) {
-            const table = tables.find(t => t.name === tableName)
-            if (table && table.columns && table.columns.length > 0) {
-                newColumnsData[tableName] = table.columns
-                newSelectedColumns[tableName] = []
+        // 我们不完全重置 columnConfigs，而是合并更新，以保留用户的排序和Fetch设置
+        // 但如果表从未加载过，需要初始化
+        setColumnConfigs(prevConfigs => {
+            const nextConfigs = { ...prevConfigs }
+            let hasChanges = false
+
+            for (const tableName of selectedTableNames) {
+                const table = tables.find(t => t.name === tableName)
+                if (table && table.columns && table.columns.length > 0) {
+                    newColumnsData[tableName] = table.columns
+                    newSelectedColumns[tableName] = selectedColumns[tableName] || [] // 保留已选的搜索列
+
+                    // 初始化列配置（如果不存在）
+                    if (!nextConfigs[tableName] || nextConfigs[tableName].length === 0) {
+                        nextConfigs[tableName] = table.columns.map(col => ({
+                            name: col.name,
+                            fetch: true // 默认获取
+                        }))
+                        hasChanges = true
+                    } else {
+                        // 如果已存在，检查是否有新列需要添加（例如表结构变更），或者已删除的列需要移除
+                        // 这里暂时简化：假设表结构变更不频繁，主要关注初始化
+                        // 如果需要同步后端列变更：
+                        const existingNames = new Set(nextConfigs[tableName].map(c => c.name))
+                        const newCols = table.columns.filter(c => !existingNames.has(c.name))
+                        if (newCols.length > 0) {
+                            nextConfigs[tableName] = [
+                                ...nextConfigs[tableName],
+                                ...newCols.map(c => ({ name: c.name, fetch: true }))
+                            ]
+                            hasChanges = true
+                        }
+                    }
+                }
             }
-        }
+            return hasChanges ? nextConfigs : prevConfigs
+        })
 
         setColumnsData(newColumnsData)
-        setSelectedColumns(newSelectedColumns)
-    }, [selectedTableNames, tables])
+        setSelectedColumns(prev => {
+            // 合并新旧选择，防止重置
+            return { ...newSelectedColumns, ...prev }
+        })
+    }, [selectedTableNames, tables, selectedColumns])
 
     // 切换列选择
     const toggleColumn = useCallback((tableName: string, columnName: string) => {
@@ -310,6 +351,11 @@ export function usePartSearch() {
         setSelectedColumns(prev => ({
             ...prev,
             [newKey]: []
+        }))
+        // 复制列配置
+        setColumnConfigs(prev => ({
+            ...prev,
+            [newKey]: prev[tableKey] ? [...prev[tableKey]] : columns.map(c => ({ name: c.name, fetch: true }))
         }))
     }, [columnsData])
 
@@ -377,11 +423,20 @@ export function usePartSearch() {
                 ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
                 : realTableName
 
+            // 获取列配置
+            const currentConfig = columnConfigs[tableKey] || []
+            // 筛选出需要获取的列 (fetch === true)
+            const returnColumns = currentConfig.filter(c => c.fetch).map(c => c.name)
+            // 显示列顺序 (所有配置的列，不管是否fetch，但通常只有fetch的才会显示数据)
+            // 实际上 ResultTable 应该只显示 fetch=true 的列，并且按照 config 的顺序
+            const displayColumns = returnColumns
+
             try {
                 const result = await searchMultiCriteria(
                     selectedToken.id,
                     realTableName,
-                    criteria
+                    criteria,
+                    returnColumns.length > 0 ? returnColumns : undefined // 如果没配置，默认全部
                 )
 
                 if (result.success && result.data) {
@@ -408,7 +463,8 @@ export function usePartSearch() {
                         totalCount: records.length,  // 使用过滤后的数量
                         truncated: data.truncated || false,
                         originalTotalCount: data.originalTotalCount,
-                        maxRecords: data.maxRecords
+                        maxRecords: data.maxRecords,
+                        displayColumns: displayColumns // 传递显示列配置
                     })
                 } else {
                     results.push({
@@ -435,7 +491,7 @@ export function usePartSearch() {
         }
 
         return results
-    }, [selectedToken])
+    }, [selectedToken, columnConfigs])
 
     // 执行搜索
     const performSearch = useCallback(async (conditions: SearchCondition[]) => {
@@ -1505,6 +1561,10 @@ export function usePartSearch() {
         batchProgress,
         downloadBatchTemplate,
         performBatchSearch,
-        performPasteSearch
+        performPasteSearch,
+
+        // 列配置
+        columnConfigs,
+        setColumnConfigs
     }
 }

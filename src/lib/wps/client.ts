@@ -113,12 +113,14 @@ export async function getTableList(
 export async function searchMultiCriteria(
     tokenId: string,
     sheetName: string,
-    criteria: WpsSearchCriteria[]
+    criteria: WpsSearchCriteria[],
+    returnColumns?: string[] // 新增参数：指定返回列
 ): Promise<ParsedWpsResult<WpsSearchResult>> {
     const result = await callWpsProxy<WpsSearchResult>(tokenId, {
         action: 'searchMulti',
         sheetName,
-        criteria
+        criteria,
+        returnColumns // 传递给后端
     })
 
     return result

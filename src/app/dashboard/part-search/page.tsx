@@ -44,7 +44,9 @@ export default function PartSearchPage() {
         batchProgress,
         downloadBatchTemplate,
         performBatchSearch,
-        performPasteSearch
+        performPasteSearch,
+        columnConfigs,
+        setColumnConfigs
     } = usePartSearch()
 
     // 自动加载图片选项
@@ -94,7 +96,14 @@ export default function PartSearchPage() {
                     <ColumnSelector
                         columnsData={columnsData}
                         selectedColumns={selectedColumns}
+                        columnConfigs={columnConfigs}
                         onToggle={toggleColumn}
+                        onConfigChange={(tableKey, newConfig) => {
+                            setColumnConfigs(prev => ({
+                                ...prev,
+                                [tableKey]: newConfig
+                            }))
+                        }}
                         onSelectAll={selectAllColumns}
                         onDeselectAll={deselectAllColumns}
                         onDuplicate={duplicateTable}
