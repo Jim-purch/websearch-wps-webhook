@@ -41,6 +41,7 @@ export default function PartSearchPage() {
         handleImageLoad,
         imageUrlCache,
         isBatchSearching,
+        batchProgress,
         downloadBatchTemplate,
         performBatchSearch,
         performPasteSearch
@@ -115,6 +116,7 @@ export default function PartSearchPage() {
                         onBatchSearch={performBatchSearch}
                         isBatchSearching={isBatchSearching}
                         onPasteSearch={performPasteSearch}
+                        batchProgress={batchProgress}
                     />
                 )}
 

@@ -36,10 +36,48 @@ export interface TableSearchResult {
     originalQueryColumns?: string[]  // 原始查询列名称列表
 }
 
+const BATCH_SIZE = 50
+
+/**
+ * 合并批量查询结果
+ */
+function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResult): TableSearchResult[] {
+    const index = prev.findIndex(p => p.tableName === newResult.tableName)
+    if (index === -1) {
+        return [...prev, newResult]
+    }
+    const existing = prev[index]
+
+    // 合并记录
+    const mergedRecords = [...existing.records, ...newResult.records]
+
+    // 合并原始查询列
+    const mergedCols = Array.from(new Set([
+        ...(existing.originalQueryColumns || []),
+        ...(newResult.originalQueryColumns || [])
+    ]))
+
+    const mergedResult: TableSearchResult = {
+        ...existing,
+        records: mergedRecords,
+        totalCount: existing.totalCount + newResult.totalCount,
+        // 如果出错，保留之前的错误或新的错误
+        error: newResult.error || existing.error,
+        originalQueryColumns: mergedCols,
+        // 更新描述
+        criteriaDescription: `批量查询 (已加载 ${mergedRecords.length} 条数据)`
+    }
+
+    const next = [...prev]
+    next[index] = mergedResult
+    return next
+}
+
 /**
  * 清理搜索值：去除回车、空格、"-"、"."，以及最开始的"0"，再转小写
  * 用于对搜索值和被搜索内容都进行标准化处理后再匹配
  */
+
 function cleanValue(value: unknown): string {
     if (value === null || value === undefined) return ''
     return String(value)
@@ -101,6 +139,7 @@ export function usePartSearch() {
 
     // 批量搜索状态
     const [isBatchSearching, setIsBatchSearching] = useState(false)
+    const [batchProgress, setBatchProgress] = useState<string>('')
 
     // 导出状态
     const [isExporting, setIsExporting] = useState(false)
@@ -1033,7 +1072,7 @@ export function usePartSearch() {
         }
     }, [selectedColumns])
 
-    // 执行批量搜索 (解析 多 Sheet Excel -> 调用 API -> 聚合结果)
+    // 执行批量搜索 (解析 多 Sheet Excel -> 分批调用 API -> 增量更新结果)
     const performBatchSearch = useCallback(async (file: File, matchMode: 'fuzzy' | 'exact' = 'exact') => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
             setSearchError('Token 配置不完整')
@@ -1041,6 +1080,7 @@ export function usePartSearch() {
         }
 
         setIsBatchSearching(true)
+        setBatchProgress('正在解析文件...')
         setSearchError(null)
         setSearchResults([]) // 清空旧结果
 
@@ -1055,27 +1095,18 @@ export function usePartSearch() {
             workbook.eachSheet((worksheet, sheetId) => {
                 const sheetName = worksheet.name
 
-                // 尝试找到匹配的 tableKey
-                // 策略：selectedColumns 中的 key 处理后 == sheetName
+                // 1. 匹配表名 (Table Key)
                 let matchedTableKey: string | null = null
-
                 for (const tableKey of Object.keys(selectedColumns)) {
-                    // 模拟生成时的逻辑来匹配
                     const generatedName = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 31)
-                    // 简单匹配：如果 sheetName 等于生成的 safeName
-                    // 注意：如果生成时因为重复加了后缀，这里可能匹配不到。
-                    // 这是一个潜在的 limitation，但对于正常使用应该够了。
-                    // 稍微放宽：如果 tableKey 包含 sheetName (或反之)
                     if (generatedName === sheetName) {
                         matchedTableKey = tableKey
                         break
                     }
                 }
-
-                // 如果没找到精确匹配，尝试前缀匹配
                 if (!matchedTableKey) {
                     for (const tableKey of Object.keys(selectedColumns)) {
-                        const safeKeyStart = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 20) // 前20个字符匹配
+                        const safeKeyStart = tableKey.replace(/[:\\/?*[\]]/g, '_').substring(0, 20)
                         if (sheetName.startsWith(safeKeyStart)) {
                             matchedTableKey = tableKey
                             break
@@ -1090,8 +1121,7 @@ export function usePartSearch() {
 
                 const tableKey = matchedTableKey
 
-                // 解析表头
-                // Row 1 is headers
+                // 2. 解析表头
                 const headerRow = worksheet.getRow(1)
                 const colIndexToField: Record<number, string> = {}
 
@@ -1104,10 +1134,9 @@ export function usePartSearch() {
                     }
                 })
 
-                // 如果只有 Query_ID 或没有不仅是 ID 的列，跳过
                 if (Object.keys(colIndexToField).length <= 1) return
 
-                // 读取数据
+                // 3. 读取数据行
                 const realTableName = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
                 if (!batchRequests[tableKey]) {
                     batchRequests[tableKey] = { realTableName, items: [] }
@@ -1116,10 +1145,8 @@ export function usePartSearch() {
                 worksheet.eachRow((row, rowNumber) => {
                     if (rowNumber === 1) return
 
-                    const rowIdCell = row.getCell(1) // 假设第一列是 Query_ID? 不一定，要查 map
-                    // 找到 Query_ID 所在的列号
+                    // 获取 QueryID
                     const idColNum = parseInt(Object.keys(colIndexToField).find(k => colIndexToField[parseInt(k)] === 'Query_ID') || '0')
-
                     const rowId = idColNum ? (row.getCell(idColNum).value?.toString() || `row_${rowNumber}`) : `row_${rowNumber}`
 
                     const criteria: WpsSearchCriteria[] = []
@@ -1129,8 +1156,6 @@ export function usePartSearch() {
                         const fieldName = colIndexToField[colNumber]
                         if (!fieldName || fieldName === 'Query_ID') return
 
-                        // 优先使用 ExcelJS 的 .text 属性获取格式化后的文本 (支持 Rich Text)
-                        // 如果 .text 不存在（防止版本差异），回退到 value 处理
                         let val = ''
                         const unsafeCell = cell as any
                         if ('text' in unsafeCell) {
@@ -1139,28 +1164,21 @@ export function usePartSearch() {
                             val = cell.value?.toString() || ''
                         }
 
-                        // 清理 Excel 单元格数据：去除回车换行符
                         let cleanVal = val.replace(/[\r\n]+/g, '').trim()
-
                         if (cleanVal === '') return
 
-                        // 保存原始值
                         originalValues[fieldName] = cleanVal
 
-                        // 根据查询模式决定操作符
-                        let op: 'Contains' | 'Equals' = matchMode === 'exact' ? 'Equals' : 'Contains'
+                        // 清理搜索值
+                        const searchValueCleaned = cleanValue(cleanVal)
 
-                        // 清理特殊字符：去除回车、空格、"-"、.、大小写以及最开始的"0"
-                        let searchValue = cleanVal
-                            .replace(/[\r\n\s\-\.]/g, '')
-                            .replace(/^0+/, '')
-                            .toLowerCase()
-
-                        criteria.push({
-                            columnName: fieldName,
-                            searchValue,
-                            op
-                        })
+                        if (searchValueCleaned) {
+                            criteria.push({
+                                columnName: fieldName,
+                                searchValue: searchValueCleaned,
+                                op: matchMode === 'exact' ? 'Equals' : 'Contains'
+                            })
+                        }
                     })
 
                     if (criteria.length > 0) {
@@ -1173,93 +1191,118 @@ export function usePartSearch() {
                 })
             })
 
-            // 3. 执行查询
             const tableKeys = Object.keys(batchRequests)
             if (tableKeys.length === 0) {
                 setSearchError('未解析到有效的查询数据，请检查上传文件和当前选中的表是否匹配')
-                return
             }
 
-            const allResults: TableSearchResult[] = []
+            // 计算总条数 (所有表的总和)
+            const totalItemsCount = tableKeys.reduce((sum, key) => sum + batchRequests[key].items.length, 0)
+            let processedItemsCount = 0
 
-            await Promise.all(tableKeys.map(async (tableKey) => {
+            // 4. 执行分批查询
+            for (let i = 0; i < tableKeys.length; i++) {
+                const tableKey = tableKeys[i]
                 const { realTableName, items } = batchRequests[tableKey]
-                if (items.length === 0) return
+                if (items.length === 0) continue
 
                 const displayTableName = tableKey.includes('__copy_')
                     ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
                     : realTableName
 
-                const originalQueryColumns = items.length > 0
-                    ? Array.from(new Set(items.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`))))
-                    : []
+                // 将 items 分批
+                const chunkedItems = []
+                for (let j = 0; j < items.length; j += BATCH_SIZE) {
+                    chunkedItems.push(items.slice(j, j + BATCH_SIZE))
+                }
 
-                try {
-                    const res = await searchBatch(selectedToken.id, realTableName, items)
+                for (let chunkIdx = 0; chunkIdx < chunkedItems.length; chunkIdx++) {
+                    const chunk = chunkedItems[chunkIdx]
+                    const currentBatchSize = chunk.length
 
-                    if (res.success && res.data) {
-                        const batchRes = res.data as WpsBatchSearchResult
-                        const allRecords: Record<string, unknown>[] = []
+                    // 更新进度
+                    setBatchProgress(`查询中(${processedItemsCount + currentBatchSize}/${totalItemsCount})`)
 
-                        for (const itemResult of batchRes.results) {
-                            if (itemResult.success && itemResult.records) {
-                                const item = items.find(i => i.id === itemResult.id)
-                                const originalValues = item?.originalValues || {}
-                                const prefixedOriginalValues: Record<string, string> = {}
-                                for (const [key, value] of Object.entries(originalValues)) {
-                                    prefixedOriginalValues[`原始_${key}`] = value
+                    try {
+                        const originalQueryColumns = Array.from(new Set(chunk.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`))))
+
+                        const res = await searchBatch(selectedToken.id, realTableName, chunk)
+
+                        let newResult: TableSearchResult
+
+                        if (res.success && res.data) {
+                            const batchRes = res.data as WpsBatchSearchResult
+                            const allRecords: Record<string, unknown>[] = []
+
+                            for (const itemResult of batchRes.results) {
+                                if (itemResult.success && itemResult.records) {
+                                    const item = chunk.find(i => i.id === itemResult.id)
+                                    const originalValues = item?.originalValues || {}
+                                    const prefixedOriginalValues: Record<string, string> = {}
+                                    for (const [key, value] of Object.entries(originalValues)) {
+                                        prefixedOriginalValues[`原始_${key}`] = value
+                                    }
+                                    const recordsWithId = itemResult.records.map(r => ({
+                                        ...r,
+                                        _BatchQueryID: itemResult.id,
+                                        ...prefixedOriginalValues
+                                    }))
+                                    allRecords.push(...recordsWithId)
                                 }
-                                const recordsWithId = itemResult.records.map(r => ({
-                                    ...r,
-                                    _BatchQueryID: itemResult.id,
-                                    ...prefixedOriginalValues
-                                }))
-                                allRecords.push(...recordsWithId)
+                            }
+
+                            newResult = {
+                                tableName: displayTableName,
+                                realTableName: realTableName,
+                                criteriaDescription: `批量查询`, // 会在 merge 中更新
+                                records: allRecords,
+                                totalCount: allRecords.length,
+                                truncated: false,
+                                error: undefined,
+                                originalQueryColumns
+                            }
+                        } else {
+                            newResult = {
+                                tableName: displayTableName,
+                                realTableName: realTableName,
+                                criteriaDescription: '批量查询失败',
+                                records: [],
+                                totalCount: 0,
+                                truncated: false,
+                                error: res.error || 'API 调用失败'
                             }
                         }
 
-                        allResults.push({
-                            tableName: displayTableName,
-                            realTableName: realTableName,
-                            criteriaDescription: `批量查询 (${batchRes.totalQueries} 条数据)`,
-                            records: allRecords,
-                            totalCount: batchRes.totalMatches,
-                            truncated: false,
-                            error: undefined,
-                            originalQueryColumns
-                        })
+                        // 增量更新 State
+                        setSearchResults(prev => mergeBatchResults(prev, newResult))
 
-                    } else {
-                        allResults.push({
+                    } catch (err) {
+                        const errorResult: TableSearchResult = {
                             tableName: displayTableName,
                             realTableName: realTableName,
-                            criteriaDescription: '批量查询失败',
+                            criteriaDescription: '批量查询异常',
                             records: [],
                             totalCount: 0,
                             truncated: false,
-                            error: res.error || 'API 调用失败'
-                        })
+                            error: err instanceof Error ? err.message : '未知错误'
+                        }
+                        setSearchResults(prev => mergeBatchResults(prev, errorResult))
+                    } finally {
+                        processedItemsCount += currentBatchSize
+                        // 更新进度
+                        setBatchProgress(`查询中(${Math.min(processedItemsCount, totalItemsCount)}/${totalItemsCount})`)
                     }
-                } catch (err) {
-                    allResults.push({
-                        tableName: displayTableName,
-                        realTableName: realTableName,
-                        criteriaDescription: '批量查询异常',
-                        records: [],
-                        totalCount: 0,
-                        truncated: false,
-                        error: err instanceof Error ? err.message : '未知错误'
-                    })
                 }
-            }))
+            }
 
-            setSearchResults(allResults)
+            setBatchProgress('')
 
         } catch (err) {
             console.error('Batch search error:', err)
             setSearchError(err instanceof Error ? err.message : '批量搜索发生错误')
         } finally {
             setIsBatchSearching(false)
+            setBatchProgress('')
         }
     }, [selectedToken, selectedColumns])
 
@@ -1280,6 +1323,7 @@ export function usePartSearch() {
         }
 
         setIsBatchSearching(true)
+        setBatchProgress('准备查询...')
         setSearchError(null)
         setSearchResults([])
 
@@ -1292,8 +1336,8 @@ export function usePartSearch() {
                 ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
                 : realTableName
 
-            // 构建批量查询请求
-            const items = data.map(row => {
+            // 构建所有查询项
+            const allItems = data.map(row => {
                 const criteria: WpsSearchCriteria[] = []
                 const originalValues: Record<string, string> = {}
 
@@ -1301,8 +1345,6 @@ export function usePartSearch() {
                     if (!value || !value.trim()) continue
 
                     originalValues[columnName] = value.trim()
-
-                    // 使用统一的清理函数
                     const searchValueCleaned = cleanValue(value)
 
                     if (searchValueCleaned) {
@@ -1317,80 +1359,107 @@ export function usePartSearch() {
                 return { id: row.id, criteria, originalValues }
             }).filter(item => item.criteria.length > 0)
 
-            if (items.length === 0) {
+            if (allItems.length === 0) {
                 setSearchError('没有有效的查询条件')
                 setIsBatchSearching(false)
                 return
             }
 
-            // 获取原始查询列名
-            const originalQueryColumns = Array.from(
-                new Set(items.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`)))
-            )
+            // 分批处理
+            const chunkedItems = []
+            for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+                chunkedItems.push(allItems.slice(i, i + BATCH_SIZE))
+            }
 
-            const res = await searchBatch(selectedToken.id, realTableName, items)
+            let processedCount = 0
+            const totalCount = allItems.length
 
-            if (res.success && res.data) {
-                const batchRes = res.data as WpsBatchSearchResult
-                const allRecords: Record<string, unknown>[] = []
+            for (let chunkIdx = 0; chunkIdx < chunkedItems.length; chunkIdx++) {
+                const chunk = chunkedItems[chunkIdx]
+                const currentBatchSize = chunk.length
 
-                for (const itemResult of batchRes.results) {
-                    if (itemResult.success && itemResult.records) {
-                        const item = items.find(i => i.id === itemResult.id)
-                        const itemCriteria = item?.criteria || []
-                        const originalValues = item?.originalValues || {}
-                        const prefixedOriginalValues: Record<string, string> = {}
-                        for (const [key, value] of Object.entries(originalValues)) {
-                            prefixedOriginalValues[`原始_${key}`] = value
+                // 更新进度
+                setBatchProgress(`查询中(${processedCount + currentBatchSize}/${totalCount})`)
+
+                const originalQueryColumns = Array.from(
+                    new Set(chunk.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`)))
+                )
+
+                const res = await searchBatch(selectedToken.id, realTableName, chunk)
+
+                let newResult: TableSearchResult
+
+                if (res.success && res.data) {
+                    const batchRes = res.data as WpsBatchSearchResult
+                    const allRecords: Record<string, unknown>[] = []
+
+                    for (const itemResult of batchRes.results) {
+                        if (itemResult.success && itemResult.records) {
+                            const item = chunk.find(i => i.id === itemResult.id)
+                            const itemCriteria = item?.criteria || []
+                            const originalValues = item?.originalValues || {}
+                            const prefixedOriginalValues: Record<string, string> = {}
+                            for (const [key, value] of Object.entries(originalValues)) {
+                                prefixedOriginalValues[`原始_${key}`] = value
+                            }
+
+                            // 客户端二次过滤
+                            let filteredRecords = itemResult.records
+                            const isDbSheet = filteredRecords.length > 0 &&
+                                filteredRecords[0].fields &&
+                                typeof filteredRecords[0].fields === 'object'
+
+                            if (isDbSheet) {
+                                filteredRecords = filteredRecords.filter(record =>
+                                    matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
+                                )
+                            }
+
+                            const recordsWithId = filteredRecords.map(r => ({
+                                ...r,
+                                _BatchQueryID: itemResult.id,
+                                ...prefixedOriginalValues
+                            }))
+                            allRecords.push(...recordsWithId)
                         }
+                    }
 
-                        // 对多维表格结果进行客户端二次过滤
-                        let filteredRecords = itemResult.records
-                        const isDbSheet = filteredRecords.length > 0 &&
-                            filteredRecords[0].fields &&
-                            typeof filteredRecords[0].fields === 'object'
-
-                        if (isDbSheet) {
-                            filteredRecords = filteredRecords.filter(record =>
-                                matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
-                            )
-                        }
-
-                        const recordsWithId = filteredRecords.map(r => ({
-                            ...r,
-                            _BatchQueryID: itemResult.id,
-                            ...prefixedOriginalValues
-                        }))
-                        allRecords.push(...recordsWithId)
+                    newResult = {
+                        tableName: displayTableName,
+                        realTableName: realTableName,
+                        criteriaDescription: `粘贴查询`, // 会在 merge 中更新
+                        records: allRecords,
+                        totalCount: allRecords.length,
+                        truncated: false,
+                        error: undefined,
+                        originalQueryColumns
+                    }
+                } else {
+                    newResult = {
+                        tableName: displayTableName,
+                        realTableName: realTableName,
+                        criteriaDescription: '粘贴查询失败',
+                        records: [],
+                        totalCount: 0,
+                        truncated: false,
+                        error: res.error || 'API 调用失败'
                     }
                 }
 
-                setSearchResults([{
-                    tableName: displayTableName,
-                    realTableName: realTableName,
-                    criteriaDescription: `粘贴查询 (${batchRes.totalQueries} 条数据)`,
-                    records: allRecords,
-                    totalCount: batchRes.totalMatches,
-                    truncated: false,
-                    error: undefined,
-                    originalQueryColumns
-                }])
-            } else {
-                setSearchResults([{
-                    tableName: displayTableName,
-                    realTableName: realTableName,
-                    criteriaDescription: '粘贴查询失败',
-                    records: [],
-                    totalCount: 0,
-                    truncated: false,
-                    error: res.error || 'API 调用失败'
-                }])
+                // 增量更新 SearchResults
+                setSearchResults(prev => mergeBatchResults(prev, newResult))
+
+                processedCount += currentBatchSize
+                setBatchProgress(`查询中(${Math.min(processedCount, totalCount)}/${totalCount})`)
             }
+
+            setBatchProgress('')
         } catch (err) {
             console.error('Paste search error:', err)
             setSearchError(err instanceof Error ? err.message : '粘贴查询发生错误')
         } finally {
             setIsBatchSearching(false)
+            setBatchProgress('')
         }
     }, [selectedToken])
 
@@ -1433,6 +1502,7 @@ export function usePartSearch() {
 
         // Batch Search
         isBatchSearching,
+        batchProgress,
         downloadBatchTemplate,
         performBatchSearch,
         performPasteSearch

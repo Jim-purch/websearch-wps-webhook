@@ -16,9 +16,10 @@ interface SearchFormProps {
     onDownloadTemplate?: () => void
     onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact') => void
     isBatchSearching?: boolean
-    // Paste Search Props
     onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
+    batchProgress?: string
 }
+
 
 interface InputState {
     value: string
@@ -36,7 +37,8 @@ export function SearchForm({
     onDownloadTemplate,
     onBatchSearch,
     isBatchSearching = false,
-    onPasteSearch
+    onPasteSearch,
+    batchProgress
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -276,7 +278,7 @@ export function SearchForm({
                                     {isBatchSearching ? (
                                         <span className="flex items-center gap-2">
                                             <span className="spinner w-4 h-4 border-white/30 border-t-white"></span>
-                                            查询中...
+                                            {batchProgress || '查询中...'}
                                         </span>
                                     ) : (
                                         <span className="flex items-center gap-2">
