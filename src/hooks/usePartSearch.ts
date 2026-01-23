@@ -1196,6 +1196,126 @@ export function usePartSearch() {
         }
     }, [selectedToken, selectedColumns])
 
+    // 执行粘贴查询 (从粘贴的数据进行批量搜索)
+    const performPasteSearch = useCallback(async (
+        tableKey: string,
+        data: Array<{ id: string; values: Record<string, string> }>,
+        matchMode: 'fuzzy' | 'exact' = 'exact'
+    ) => {
+        if (!selectedToken?.id || !selectedToken?.webhook_url) {
+            setSearchError('Token 配置不完整')
+            return
+        }
+
+        if (data.length === 0) {
+            setSearchError('没有要查询的数据')
+            return
+        }
+
+        setIsBatchSearching(true)
+        setSearchError(null)
+        setSearchResults([])
+
+        try {
+            const realTableName = tableKey.includes('__copy_')
+                ? tableKey.split('__copy_')[0]
+                : tableKey
+
+            const displayTableName = tableKey.includes('__copy_')
+                ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
+                : realTableName
+
+            // 构建批量查询请求
+            const items = data.map(row => {
+                const criteria: WpsSearchCriteria[] = []
+                const originalValues: Record<string, string> = {}
+
+                for (const [columnName, value] of Object.entries(row.values)) {
+                    if (!value || !value.trim()) continue
+
+                    originalValues[columnName] = value.trim()
+
+                    // 清理特殊字符
+                    const searchValue = value
+                        .replace(/[\r\n\s\-\.]/g, '')
+                        .replace(/^0+/, '')
+                        .toLowerCase()
+
+                    if (searchValue) {
+                        criteria.push({
+                            columnName,
+                            searchValue,
+                            op: matchMode === 'exact' ? 'Equals' : 'Contains'
+                        })
+                    }
+                }
+
+                return { id: row.id, criteria, originalValues }
+            }).filter(item => item.criteria.length > 0)
+
+            if (items.length === 0) {
+                setSearchError('没有有效的查询条件')
+                setIsBatchSearching(false)
+                return
+            }
+
+            // 获取原始查询列名
+            const originalQueryColumns = Array.from(
+                new Set(items.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`)))
+            )
+
+            const res = await searchBatch(selectedToken.id, realTableName, items)
+
+            if (res.success && res.data) {
+                const batchRes = res.data as WpsBatchSearchResult
+                const allRecords: Record<string, unknown>[] = []
+
+                for (const itemResult of batchRes.results) {
+                    if (itemResult.success && itemResult.records) {
+                        const item = items.find(i => i.id === itemResult.id)
+                        const originalValues = item?.originalValues || {}
+                        const prefixedOriginalValues: Record<string, string> = {}
+                        for (const [key, value] of Object.entries(originalValues)) {
+                            prefixedOriginalValues[`原始_${key}`] = value
+                        }
+                        const recordsWithId = itemResult.records.map(r => ({
+                            ...r,
+                            _BatchQueryID: itemResult.id,
+                            ...prefixedOriginalValues
+                        }))
+                        allRecords.push(...recordsWithId)
+                    }
+                }
+
+                setSearchResults([{
+                    tableName: displayTableName,
+                    realTableName: realTableName,
+                    criteriaDescription: `粘贴查询 (${batchRes.totalQueries} 条数据)`,
+                    records: allRecords,
+                    totalCount: batchRes.totalMatches,
+                    truncated: false,
+                    error: undefined,
+                    originalQueryColumns
+                }])
+            } else {
+                setSearchResults([{
+                    tableName: displayTableName,
+                    realTableName: realTableName,
+                    criteriaDescription: '粘贴查询失败',
+                    records: [],
+                    totalCount: 0,
+                    truncated: false,
+                    error: res.error || 'API 调用失败'
+                }])
+            }
+        } catch (err) {
+            console.error('Paste search error:', err)
+            setSearchError(err instanceof Error ? err.message : '粘贴查询发生错误')
+        } finally {
+            setIsBatchSearching(false)
+        }
+    }, [selectedToken])
+
     return {
         // Token
         tokens: allTokens,
@@ -1236,6 +1356,7 @@ export function usePartSearch() {
         // Batch Search
         isBatchSearching,
         downloadBatchTemplate,
-        performBatchSearch
+        performBatchSearch,
+        performPasteSearch
     }
 }

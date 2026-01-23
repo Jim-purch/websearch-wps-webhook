@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import type { SearchCondition } from '@/hooks/usePartSearch'
+import { PasteQueryModal } from './PasteQueryModal'
 
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
@@ -15,6 +16,8 @@ interface SearchFormProps {
     onDownloadTemplate?: () => void
     onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact') => void
     isBatchSearching?: boolean
+    // Paste Search Props
+    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
 }
 
 interface InputState {
@@ -32,7 +35,8 @@ export function SearchForm({
     onAutoLoadImagesChange,
     onDownloadTemplate,
     onBatchSearch,
-    isBatchSearching = false
+    isBatchSearching = false,
+    onPasteSearch
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -51,6 +55,7 @@ export function SearchForm({
     const [isOpen, setIsOpen] = useState(true)
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
     const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
+    const [pasteModalTableKey, setPasteModalTableKey] = useState<string | null>(null)
 
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({
@@ -144,7 +149,21 @@ export function SearchForm({
                                         key={tableKey}
                                         className="rounded-lg border border-[var(--border)] overflow-hidden"
                                     >
-                                        <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)]">
+                                        <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)] flex items-center gap-3">
+                                            {onPasteSearch && columns.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setPasteModalTableKey(tableKey)
+                                                    }}
+                                                    className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white font-medium hover:from-[#7c3aed] hover:to-[#8b5cf6] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#8b5cf6]/30"
+                                                    title="粘贴 Excel 数据进行批量查询"
+                                                >
+                                                    <span>📋</span>
+                                                    粘贴列查询
+                                                </button>
+                                            )}
                                             <span className="text-[#eab308] font-medium flex items-center gap-2">
                                                 <span>📊</span>
                                                 {displayName}
@@ -313,22 +332,20 @@ export function SearchForm({
                                     <button
                                         type="button"
                                         onClick={() => setBatchMatchMode('exact')}
-                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${
-                                            batchMatchMode === 'exact'
-                                                ? 'bg-[#667eea] text-white font-medium'
-                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
-                                        }`}
+                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'exact'
+                                            ? 'bg-[#667eea] text-white font-medium'
+                                            : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                            }`}
                                     >
                                         精确查询
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setBatchMatchMode('fuzzy')}
-                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${
-                                            batchMatchMode === 'fuzzy'
-                                                ? 'bg-[#667eea] text-white font-medium'
-                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
-                                        }`}
+                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'fuzzy'
+                                            ? 'bg-[#667eea] text-white font-medium'
+                                            : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                            }`}
                                     >
                                         模糊查询
                                     </button>
@@ -359,6 +376,21 @@ export function SearchForm({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* 粘贴查询弹窗 */}
+            {pasteModalTableKey && onPasteSearch && (
+                <PasteQueryModal
+                    isOpen={true}
+                    onClose={() => setPasteModalTableKey(null)}
+                    tableKey={pasteModalTableKey}
+                    columns={selectedColumns[pasteModalTableKey] || []}
+                    onSearch={(data, matchMode) => {
+                        onPasteSearch(pasteModalTableKey, data, matchMode)
+                        setPasteModalTableKey(null)
+                    }}
+                    isSearching={isBatchSearching}
+                />
             )}
         </div >
     )

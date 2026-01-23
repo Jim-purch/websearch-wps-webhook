@@ -42,7 +42,8 @@ export default function PartSearchPage() {
         imageUrlCache,
         isBatchSearching,
         downloadBatchTemplate,
-        performBatchSearch
+        performBatchSearch,
+        performPasteSearch
     } = usePartSearch()
 
     // 自动加载图片选项
@@ -112,6 +113,7 @@ export default function PartSearchPage() {
                         onDownloadTemplate={downloadBatchTemplate}
                         onBatchSearch={performBatchSearch}
                         isBatchSearching={isBatchSearching}
+                        onPasteSearch={performPasteSearch}
                     />
                 )}
 
