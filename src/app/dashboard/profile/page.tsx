@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { useTokens } from '@/hooks/useTokens'
-import type { CreateTokenInput } from '@/types'
+import { useSharedTokens } from '@/hooks/useSharedTokens'
+import type { CreateTokenInput, UpdateTokenInput } from '@/types'
 
 export default function ProfilePage() {
     const { user, refreshUser } = useAuth()
@@ -14,15 +15,24 @@ export default function ProfilePage() {
     const supabase = createClient()
 
     // Token Logic
-    const { tokens, isLoading: isLoadingTokens, createToken, deleteToken, toggleTokenActive } = useTokens()
+    const { tokens, isLoading: isLoadingTokens, createToken, updateToken, deleteToken, toggleTokenActive } = useTokens()
+    const { fetchSharedTokens } = useSharedTokens()
     const [showNewTokenForm, setShowNewTokenForm] = useState(false)
+    const [editingToken, setEditingToken] = useState<string | null>(null)
     const [newToken, setNewToken] = useState<CreateTokenInput>({
         name: '',
         token_value: '',
         description: '',
         webhook_url: '',
     })
+    const [editToken, setEditToken] = useState<UpdateTokenInput>({
+        name: '',
+        token_value: '',
+        description: '',
+        webhook_url: '',
+    })
     const [isSubmittingToken, setIsSubmittingToken] = useState(false)
+    const [isEditingToken, setIsEditingToken] = useState(false)
     const [tokenError, setTokenError] = useState('')
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
@@ -71,6 +81,47 @@ export default function ProfilePage() {
             setNewToken({ name: '', token_value: '', description: '', webhook_url: '' })
         }
         setIsSubmittingToken(false)
+    }
+
+    const handleEditToken = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!editingToken || !editToken.name) {
+            setTokenError('请填写必填字段')
+            return
+        }
+
+        setIsEditingToken(true)
+        setTokenError('')
+
+        const { error } = await updateToken(editingToken, editToken)
+        if (error) {
+            setTokenError(error)
+        } else {
+            setEditingToken(null)
+            setEditToken({ name: '', token_value: '', description: '', webhook_url: '' })
+            await fetchSharedTokens()
+        }
+        setIsEditingToken(false)
+    }
+
+    const startEditingToken = (tokenId: string) => {
+        const token = tokens.find(t => t.id === tokenId)
+        if (!token) return
+
+        setEditingToken(tokenId)
+        setEditToken({
+            name: token.name,
+            token_value: token.token_value,
+            description: token.description || '',
+            webhook_url: token.webhook_url || '',
+        })
+        setTokenError('')
+    }
+
+    const cancelEditingToken = () => {
+        setEditingToken(null)
+        setEditToken({ name: '', token_value: '', description: '', webhook_url: '' })
+        setTokenError('')
     }
 
     const handleDeleteToken = async (id: string) => {
@@ -245,49 +296,119 @@ export default function ProfilePage() {
                         <ul className="file-list">
                             {tokens.map((token) => (
                                 <li key={token.id} className="file-item hover:bg-[var(--hover-bg)]">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-1">
-                                            <span className="text-xl">🔑</span>
-                                            <span className="font-medium">{token.name}</span>
-                                            <span className={`badge ${token.is_active ? 'badge-success' : 'badge-warning'}`}>
-                                                {token.is_active ? '活跃' : '已停用'}
-                                            </span>
+                                    {editingToken === token.id ? (
+                                        <div className="w-full p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <h4 className="font-medium mb-3">编辑 Token</h4>
+                                            {tokenError && <div className="alert alert-error mb-3">{tokenError}</div>}
+                                            <form onSubmit={handleEditToken} className="space-y-3">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="label text-sm">名称 *</label>
+                                                        <input
+                                                            type="text"
+                                                            value={editToken.name}
+                                                            onChange={(e) => setEditToken({ ...editToken, name: e.target.value })}
+                                                            className="input py-1.5 px-3 text-sm"
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="label text-sm">Webhook URL</label>
+                                                        <input
+                                                            type="text"
+                                                            value={editToken.webhook_url || ''}
+                                                            onChange={(e) => setEditToken({ ...editToken, webhook_url: e.target.value })}
+                                                            className="input py-1.5 px-3 text-sm"
+                                                            placeholder="https://..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="label text-sm">Token 值 *</label>
+                                                    <textarea
+                                                        value={editToken.token_value}
+                                                        onChange={(e) => setEditToken({ ...editToken, token_value: e.target.value })}
+                                                        className="input min-h-[80px] py-1.5 px-3 text-sm"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="label text-sm">描述</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editToken.description || ''}
+                                                        onChange={(e) => setEditToken({ ...editToken, description: e.target.value })}
+                                                        className="input py-1.5 px-3 text-sm"
+                                                        placeholder="可选描述"
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button type="submit" disabled={isEditingToken} className="btn-primary text-sm py-1.5 px-3">
+                                                        {isEditingToken ? '保存中...' : '保存'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={cancelEditingToken}
+                                                        className="btn-secondary text-sm py-1.5 px-3"
+                                                    >
+                                                        取消
+                                                    </button>
+                                                </div>
+                                            </form>
                                         </div>
-                                        {token.description && (
-                                            <p className="text-sm text-[var(--text-muted)] ml-8">{token.description}</p>
-                                        )}
-                                        {token.webhook_url && (
-                                            <p className="text-xs text-[var(--text-muted)] ml-8 mt-1 font-mono bg-[var(--background)] inline-block px-1 rounded">
-                                                🔗 {token.webhook_url}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            onClick={() => toggleTokenActive(token.id)}
-                                            className={`toggle ${token.is_active ? 'active' : ''}`}
-                                            title={token.is_active ? '停用' : '启用'}
-                                        />
-
-                                        {deleteConfirm === token.id ? (
-                                            <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-200">
-                                                <button onClick={() => handleDeleteToken(token.id)} className="btn-danger text-xs py-1 px-2">
-                                                    确认
-                                                </button>
-                                                <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1 px-2">
-                                                    取消
-                                                </button>
+                                    ) : (
+                                        <>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-1">
+                                                    <span className="text-xl">🔑</span>
+                                                    <span className="font-medium">{token.name}</span>
+                                                    <span className={`badge ${token.is_active ? 'badge-success' : 'badge-warning'}`}>
+                                                        {token.is_active ? '活跃' : '已停用'}
+                                                    </span>
+                                                </div>
+                                                {token.description && (
+                                                    <p className="text-sm text-[var(--text-muted)] ml-8">{token.description}</p>
+                                                )}
+                                                {token.webhook_url && (
+                                                    <p className="text-xs text-[var(--text-muted)] ml-8 mt-1 font-mono bg-[var(--background)] inline-block px-1 rounded">
+                                                        🔗 {token.webhook_url}
+                                                    </p>
+                                                )}
                                             </div>
-                                        ) : (
-                                            <button
-                                                onClick={() => setDeleteConfirm(token.id)}
-                                                className="p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                                                title="删除"
-                                            >
-                                                🗑️
-                                            </button>
-                                        )}
-                                    </div>
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={() => toggleTokenActive(token.id)}
+                                                    className={`toggle ${token.is_active ? 'active' : ''}`}
+                                                    title={token.is_active ? '停用' : '启用'}
+                                                />
+                                                <button
+                                                    onClick={() => startEditingToken(token.id)}
+                                                    className="p-2 text-[var(--text-muted)] hover:text-blue-500 transition-colors"
+                                                    title="编辑"
+                                                >
+                                                    ✏️
+                                                </button>
+                                                {deleteConfirm === token.id ? (
+                                                    <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-200">
+                                                        <button onClick={() => handleDeleteToken(token.id)} className="btn-danger text-xs py-1 px-2">
+                                                            确认
+                                                        </button>
+                                                        <button onClick={() => setDeleteConfirm(null)} className="btn-secondary text-xs py-1 px-2">
+                                                            取消
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setDeleteConfirm(token.id)}
+                                                        className="p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                                                        title="删除"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
                                 </li>
                             ))}
                         </ul>
