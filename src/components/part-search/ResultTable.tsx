@@ -245,6 +245,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
     const [copyToast, setCopyToast] = useState(false)
+    const [mounted, setMounted] = useState(false)
+
+    // 确保在客户端渲染后才使用 Portal
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     const records = result.records || []
 
@@ -414,11 +420,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                 </div>
             </div>
 
-            {/* Copy Toast */}
-            {copyToast && (
+            {/* Copy Toast - 使用 Portal 渲染到 body 确保在整个网页顶部中央显示 */}
+            {copyToast && mounted && createPortal(
                 <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-lg bg-[#22c55e] text-white text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
                     ✓ 已复制到剪贴板
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Body */}
