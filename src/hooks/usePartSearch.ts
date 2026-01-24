@@ -332,6 +332,27 @@ export function usePartSearch() {
         setSelectedColumns(newSelectedColumns)
     }, [columnsData])
 
+    // 全选获取/全不获取
+    const fetchAllColumns = useCallback(() => {
+        setColumnConfigs(prev => {
+            const newConfigs: Record<string, ColumnConfig[]> = {}
+            for (const [tableKey, configs] of Object.entries(prev)) {
+                newConfigs[tableKey] = configs.map(c => ({ ...c, fetch: true }))
+            }
+            return newConfigs
+        })
+    }, [])
+
+    const unfetchAllColumns = useCallback(() => {
+        setColumnConfigs(prev => {
+            const newConfigs: Record<string, ColumnConfig[]> = {}
+            for (const [tableKey, configs] of Object.entries(prev)) {
+                newConfigs[tableKey] = configs.map(c => ({ ...c, fetch: false }))
+            }
+            return newConfigs
+        })
+    }, [])
+
     // 复制表（用于同一表的不同列搜索）
     const duplicateTable = useCallback((tableKey: string) => {
         // 从 key 中提取真实表名
@@ -1547,6 +1568,8 @@ export function usePartSearch() {
         toggleColumn,
         selectAllColumns,
         deselectAllColumns,
+        fetchAllColumns,
+        unfetchAllColumns,
         duplicateTable,
         removeTableCopy,
 

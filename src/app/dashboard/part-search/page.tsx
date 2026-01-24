@@ -29,6 +29,8 @@ export default function PartSearchPage() {
         toggleColumn,
         selectAllColumns,
         deselectAllColumns,
+        fetchAllColumns,
+        unfetchAllColumns,
         duplicateTable,
         removeTableCopy,
         searchResults,
@@ -106,6 +108,8 @@ export default function PartSearchPage() {
                         }}
                         onSelectAll={selectAllColumns}
                         onDeselectAll={deselectAllColumns}
+                        onFetchAll={fetchAllColumns}
+                        onUnfetchAll={unfetchAllColumns}
                         onDuplicate={duplicateTable}
                         onRemove={removeTableCopy}
                     />

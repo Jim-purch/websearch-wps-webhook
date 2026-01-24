@@ -12,6 +12,8 @@ interface ColumnSelectorProps {
     onConfigChange: (tableName: string, newConfig: ColumnConfig[]) => void
     onSelectAll: () => void
     onDeselectAll: () => void
+    onFetchAll?: () => void
+    onUnfetchAll?: () => void
     onDuplicate?: (tableKey: string) => void
     onRemove?: (tableKey: string) => void
 }
@@ -24,6 +26,8 @@ export function ColumnSelector({
     onConfigChange,
     onSelectAll,
     onDeselectAll,
+    onFetchAll,
+    onUnfetchAll,
     onDuplicate,
     onRemove
 }: ColumnSelectorProps) {
@@ -230,6 +234,24 @@ export function ColumnSelector({
                         >
                             全不选
                         </button>
+                        {onFetchAll && (
+                            <button
+                                type="button"
+                                onClick={onFetchAll}
+                                className="btn-secondary text-sm py-2 px-4"
+                            >
+                                全获取
+                            </button>
+                        )}
+                        {onUnfetchAll && (
+                            <button
+                                type="button"
+                                onClick={onUnfetchAll}
+                                className="btn-secondary text-sm py-2 px-4"
+                            >
+                                全不获取
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
