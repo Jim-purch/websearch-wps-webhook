@@ -12,7 +12,7 @@ export default function DashboardPage() {
     const totalTokens = tokens.length
 
     return (
-        <div className="max-w-6xl">
+        <div className="max-w-7xl mx-auto">
             {/* 欢迎区域 */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold mb-2">

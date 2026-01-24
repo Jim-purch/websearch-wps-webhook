@@ -73,7 +73,7 @@ export default function SystemConfigPage() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto py-8">
+        <div className="max-w-7xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-2xl font-bold mb-2">系统配置</h1>
                 <p className="text-[var(--text-muted)]">管理系统级配置和集成</p>

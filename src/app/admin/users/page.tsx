@@ -132,7 +132,7 @@ export default function UsersPage() {
     }
 
     return (
-        <div className="max-w-6xl">
+        <div className="max-w-7xl mx-auto">
             <div className="flex flex-col gap-6 mb-6">
                 <div className="flex items-center justify-between">
                     <div>

@@ -7,7 +7,7 @@ export default function AdminPage() {
     const { user } = useAuth()
 
     return (
-        <div className="max-w-6xl">
+        <div className="max-w-7xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold mb-2">管理员控制台</h1>
                 <p className="text-[var(--text-muted)]">

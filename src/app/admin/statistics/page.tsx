@@ -144,7 +144,7 @@ export default function StatisticsPage() {
 
     if (isLoading) {
         return (
-            <div className="max-w-6xl">
+            <div className="max-w-7xl mx-auto">
                 <div className="p-8 text-center">
                     <div className="spinner mx-auto mb-4" />
                     <p className="text-[var(--text-muted)]">加载统计数据...</p>
@@ -154,7 +154,7 @@ export default function StatisticsPage() {
     }
 
     return (
-        <div className="max-w-6xl">
+        <div className="max-w-7xl mx-auto">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold">系统统计</h1>
                 <p className="text-[var(--text-muted)]">查看系统使用情况和统计数据</p>
