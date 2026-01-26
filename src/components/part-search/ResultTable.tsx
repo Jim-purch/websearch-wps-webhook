@@ -605,14 +605,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                         data-selectable-cell
                                                         onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                         onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                        onDoubleClick={() => handleCellClick(strVal.trim(), cellKey)}
                                                         className={`
                                                             px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
                                                             ${isSelected
                                                                 ? 'bg-[rgba(102,126,234,0.3)]'
-                                                                : 'hover:bg-[rgba(234,179,8,0.2)]'
+                                                                : isCopied
+                                                                    ? 'bg-[rgba(34,197,94,0.2)]'
+                                                                    : 'hover:bg-[rgba(234,179,8,0.2)]'
                                                             }
                                                         `}
-                                                        title="点击打开链接，或拖拽选择区域按 Ctrl+C 复制"
+                                                        title="双击复制链接，单击打开链接，或拖拽选择区域按 Ctrl+C 复制"
                                                     >
                                                         <a
                                                             href={strVal.trim()}
@@ -634,14 +637,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                     data-selectable-cell
                                                     onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                     onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                    onDoubleClick={() => handleCellClick(strVal, cellKey)}
                                                     className={`
                                                         px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
                                                         ${isSelected
                                                             ? 'bg-[rgba(102,126,234,0.3)]'
-                                                            : 'hover:bg-[rgba(234,179,8,0.2)]'
+                                                            : isCopied
+                                                                ? 'bg-[rgba(34,197,94,0.2)]'
+                                                                : 'hover:bg-[rgba(234,179,8,0.2)]'
                                                         }
                                                     `}
-                                                    title="拖拽选择区域，按 Ctrl+C 复制"
+                                                    title="双击复制内容，或拖拽选择区域按 Ctrl+C 复制"
                                                 >
                                                     {strVal}
                                                 </td>
