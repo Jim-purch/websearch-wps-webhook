@@ -1593,6 +1593,11 @@ export function usePartSearch() {
 
         // 列配置
         columnConfigs,
-        setColumnConfigs
+        setColumnConfigs,
+
+        // 预设加载支持
+        setSelectedTableNames,
+        setColumnsData,
+        setSelectedColumns
     }
 }

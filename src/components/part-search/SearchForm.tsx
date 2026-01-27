@@ -18,6 +18,8 @@ interface SearchFormProps {
     isBatchSearching?: boolean
     onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
     batchProgress?: string
+    // Preset Props
+    onSavePreset?: () => void
 }
 
 
@@ -38,7 +40,8 @@ export function SearchForm({
     onBatchSearch,
     isBatchSearching = false,
     onPasteSearch,
-    batchProgress
+    batchProgress,
+    onSavePreset
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -139,9 +142,25 @@ export function SearchForm({
                     <span className="text-xl">🔍</span>
                     步骤 4: 搜索条件
                 </h3>
-                <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
-                    ▼
-                </span>
+                <div className="flex items-center gap-3">
+                    {onSavePreset && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onSavePreset()
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-[#10b981] to-[#34d399] text-white font-medium hover:from-[#059669] hover:to-[#10b981] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#10b981]/30"
+                            title="保存当前搜索配置为预设"
+                        >
+                            <span>💾</span>
+                            保存搜索预设
+                        </button>
+                    )}
+                    <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                        ▼
+                    </span>
+                </div>
             </div>
 
             {isOpen && (

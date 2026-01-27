@@ -125,3 +125,34 @@ export interface SystemStatistics {
     weekLogins: number
     monthLogins: number
 }
+
+// 搜索预设
+export interface SearchPreset {
+    id: string
+    user_id: string
+    token_id: string
+    name: string
+    selected_table_names: string[]
+    columns_data: Record<string, unknown[]>
+    selected_columns: Record<string, string[]>
+    column_configs: Record<string, { name: string; fetch: boolean }[]>
+    created_at: string
+    updated_at: string
+}
+
+export interface CreatePresetInput {
+    token_id: string
+    name: string
+    selected_table_names: string[]
+    columns_data: Record<string, unknown[]>
+    selected_columns: Record<string, string[]>
+    column_configs: Record<string, { name: string; fetch: boolean }[]>
+}
+
+export interface UpdatePresetInput {
+    name?: string
+    selected_table_names?: string[]
+    columns_data?: Record<string, unknown[]>
+    selected_columns?: Record<string, string[]>
+    column_configs?: Record<string, { name: string; fetch: boolean }[]>
+}

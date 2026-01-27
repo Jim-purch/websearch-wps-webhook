@@ -1,14 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { usePartSearch } from '@/hooks/usePartSearch'
+import { useSearchPresets } from '@/hooks/useSearchPresets'
 import {
     TokenSelector,
     TableSelector,
     ColumnSelector,
     SearchForm,
-    ResultTable
+    ResultTable,
+    SavePresetModal,
+    PresetBar
 } from '@/components/part-search'
+import type { SearchPreset } from '@/types'
+import type { WpsColumn } from '@/lib/wps'
 
 export default function PartSearchPage() {
     const {
@@ -48,22 +53,154 @@ export default function PartSearchPage() {
         performBatchSearch,
         performPasteSearch,
         columnConfigs,
-        setColumnConfigs
+        setColumnConfigs,
+        // 预设加载支持
+        setSelectedTableNames,
+        setColumnsData,
+        setSelectedColumns
     } = usePartSearch()
+
+    const {
+        presets,
+        isLoading: isLoadingPresets,
+        fetchPresets,
+        createPreset,
+        updatePreset,
+        deletePreset,
+        clearPresets
+    } = useSearchPresets()
 
     // 自动加载图片选项
     const [autoLoadImages, setAutoLoadImages] = useState(false)
 
+    // 预设相关状态
+    const [activePresetId, setActivePresetId] = useState<string | null>(null)
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
+    const [editingPreset, setEditingPreset] = useState<SearchPreset | null>(null)
+
+    // 当 Token 变化时，加载该 Token 的预设
+    useEffect(() => {
+        if (selectedToken?.id) {
+            fetchPresets(selectedToken.id)
+            setActivePresetId(null)
+        } else {
+            clearPresets()
+            setActivePresetId(null)
+        }
+    }, [selectedToken?.id, fetchPresets, clearPresets])
+
     // 检查是否已选择列
     const hasSelectedColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
+
+    // 计算当前配置摘要
+    const selectedTablesCount = Object.keys(columnsData).length
+    const selectedColumnsCount = Object.values(selectedColumns).reduce(
+        (sum, cols) => sum + cols.length, 0
+    )
+
+    // 保存预设
+    const handleSavePreset = useCallback(async (name: string) => {
+        if (!selectedToken?.id) {
+            return { error: '请先选择 Token' }
+        }
+
+        const result = await createPreset({
+            token_id: selectedToken.id,
+            name,
+            selected_table_names: Array.from(selectedTableNames),
+            columns_data: columnsData as Record<string, unknown[]>,
+            selected_columns: selectedColumns,
+            column_configs: columnConfigs
+        })
+
+        if (result.data) {
+            setActivePresetId(result.data.id)
+        }
+
+        return { error: result.error }
+    }, [selectedToken?.id, selectedTableNames, columnsData, selectedColumns, columnConfigs, createPreset])
+
+    // 更新预设名称
+    const handleUpdatePresetName = useCallback(async (id: string, name: string) => {
+        const result = await updatePreset(id, { name })
+        return { error: result.error }
+    }, [updatePreset])
+
+    // 更新预设配置（覆盖保存）
+    const handleUpdatePresetConfig = useCallback(async (id: string) => {
+        const result = await updatePreset(id, {
+            selected_table_names: Array.from(selectedTableNames),
+            columns_data: columnsData as Record<string, unknown[]>,
+            selected_columns: selectedColumns,
+            column_configs: columnConfigs
+        })
+        return { error: result.error }
+    }, [selectedTableNames, columnsData, selectedColumns, columnConfigs, updatePreset])
+
+    // 加载预设
+    const handleLoadPreset = useCallback((preset: SearchPreset) => {
+        // 设置选中的表名
+        setSelectedTableNames(new Set(preset.selected_table_names))
+
+        // 设置列数据
+        setColumnsData(preset.columns_data as Record<string, WpsColumn[]>)
+
+        // 设置选中的搜索列
+        setSelectedColumns(preset.selected_columns)
+
+        // 设置列配置
+        setColumnConfigs(preset.column_configs)
+
+        // 设置当前活动预设
+        setActivePresetId(preset.id)
+    }, [setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
+
+    // 编辑预设
+    const handleEditPreset = useCallback((preset: SearchPreset) => {
+        setEditingPreset(preset)
+        setIsSaveModalOpen(true)
+    }, [])
+
+    // 删除预设
+    const handleDeletePreset = useCallback(async (presetId: string) => {
+        await deletePreset(presetId)
+        if (activePresetId === presetId) {
+            setActivePresetId(null)
+        }
+    }, [deletePreset, activePresetId])
+
+    // 打开保存弹窗
+    const openSaveModal = useCallback(() => {
+        setEditingPreset(null)
+        setIsSaveModalOpen(true)
+    }, [])
+
+    // 关闭保存弹窗
+    const closeSaveModal = useCallback(() => {
+        setIsSaveModalOpen(false)
+        setEditingPreset(null)
+    }, [])
 
     return (
         <div className="w-full">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold mb-2">
-                    <span className="mr-2">📦</span>
-                    件号快速查找
-                </h1>
+                <div className="flex flex-wrap items-center gap-4 mb-2">
+                    <h1 className="text-3xl font-bold flex items-center gap-2">
+                        <span>📦</span>
+                        件号快速查找
+                    </h1>
+                    {/* 预设栏 */}
+                    {selectedToken && (
+                        <PresetBar
+                            presets={presets}
+                            activePresetId={activePresetId}
+                            isLoading={isLoadingPresets}
+                            onLoadPreset={handleLoadPreset}
+                            onEditPreset={handleEditPreset}
+                            onDeletePreset={handleDeletePreset}
+                        />
+                    )}
+                </div>
                 <p className="text-[var(--text-muted)]">
                     在 WPS 多维表格 / 智能表格中搜索件号和配件信息
                 </p>
@@ -130,6 +267,7 @@ export default function PartSearchPage() {
                         isBatchSearching={isBatchSearching}
                         onPasteSearch={performPasteSearch}
                         batchProgress={batchProgress}
+                        onSavePreset={openSaveModal}
                     />
                 )}
 
@@ -155,6 +293,19 @@ export default function PartSearchPage() {
                     onExportSingle={exportSingleResult}
                 />
             </div>
+
+            {/* 保存预设弹窗 */}
+            <SavePresetModal
+                isOpen={isSaveModalOpen}
+                onClose={closeSaveModal}
+                onSave={handleSavePreset}
+                onUpdateConfig={handleUpdatePresetConfig}
+                onUpdateName={handleUpdatePresetName}
+                editingPreset={editingPreset}
+                existingPresets={presets}
+                selectedTablesCount={selectedTablesCount}
+                selectedColumnsCount={selectedColumnsCount}
+            />
         </div>
     )
 }
