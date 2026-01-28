@@ -42,7 +42,7 @@ export interface TableSearchResult {
     displayColumns?: string[] // 显示列顺序（基于用户配置）
 }
 
-const BATCH_SIZE = 50
+const BATCH_SIZE = 20
 
 /**
  * 合并批量查询结果

@@ -1,6 +1,6 @@
 {
     "name": "jim-wps-mcp-server",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "description": "MCP Server for WPS Webhook Integration - 让 AI 应用直接查询 WPS 文档数据",
     "type": "module",
     "main": "dist/index.js",

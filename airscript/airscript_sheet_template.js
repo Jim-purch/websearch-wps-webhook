@@ -940,7 +940,7 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
 
     // 搜索逻辑 (内存遍历优化版)
     const records = []
-    const MAX_RECORDS = 50 // 批量搜索时，单次查询限制更严格一些
+    const MAX_RECORDS = 20 // 批量搜索时，单次查询限制更严格一些
 
     // 确定数据范围
     // 注意：searchMultiCriteriaInternal 接收的 headerRow 应该是准确的

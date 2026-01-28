@@ -775,7 +775,7 @@ function searchBatch(sheetName, batchCriteria) {
             }
 
             // 执行查询
-            var MAX_RECORDS = 50 // 批量搜索单次限制
+            var MAX_RECORDS = 20 // 批量搜索单次限制
             let allRecords = []
             let offset = null
             let truncated = false
