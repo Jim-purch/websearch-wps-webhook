@@ -365,7 +365,9 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         setTimeout(() => setCopyToast(false), 1500)
     }, [displayColumns])
 
-    if (result.error) {
+    // 如果有错误且没有记录，才显示完全失败的状态
+    // 如果有记录但有错误（比如批量搜索中途失败），则显示记录并提示错误
+    if (result.error && records.length === 0) {
         return (
             <div className="card mb-4 overflow-hidden">
                 <div className="p-4 bg-[rgba(239,68,68,0.1)] border-b border-[var(--border)]">
@@ -402,6 +404,7 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                     <span className="text-sm text-[var(--text-muted)] bg-[var(--card-bg)] px-3 py-1 rounded-full">
                         {result.totalCount} 条结果
                         {result.truncated && ' (已截断)'}
+                        {result.error && ' (部分失败)'}
                     </span>
                     {onExportSingle && (
                         <button
@@ -434,6 +437,12 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                     className={`p-4 overflow-x-auto ${isSelecting ? 'select-none' : ''}`}
                     {...containerProps}
                 >
+                    {result.error && (
+                        <div className="mb-4 p-3 rounded-lg bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#ef4444] text-sm flex items-center gap-2">
+                            <span>❌</span>
+                            <span>部分搜索失败: {result.error}</span>
+                        </div>
+                    )}
                     {result.truncated && (
                         <div className="mb-4 p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm">
                             ⚠️ 搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），
