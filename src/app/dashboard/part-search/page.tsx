@@ -137,8 +137,21 @@ export default function PartSearchPage() {
         return { error: result.error }
     }, [selectedTableNames, columnsData, selectedColumns, columnConfigs, updatePreset])
 
-    // 加载预设
+    // 加载预设（支持切换取消）
     const handleLoadPreset = useCallback((preset: SearchPreset) => {
+        // 如果点击的是当前激活的预设，则取消激活
+        if (activePresetId === preset.id) {
+            // 清空列数据
+            setColumnsData({})
+            // 清空选中的搜索列
+            setSelectedColumns({})
+            // 清空列配置
+            setColumnConfigs({})
+            // 取消活动预设
+            setActivePresetId(null)
+            return
+        }
+
         // 设置选中的表名
         setSelectedTableNames(new Set(preset.selected_table_names))
 
@@ -153,7 +166,7 @@ export default function PartSearchPage() {
 
         // 设置当前活动预设
         setActivePresetId(preset.id)
-    }, [setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
+    }, [activePresetId, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
 
     // 编辑预设
     const handleEditPreset = useCallback((preset: SearchPreset) => {
