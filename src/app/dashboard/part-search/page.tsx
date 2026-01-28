@@ -78,7 +78,9 @@ export default function PartSearchPage() {
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
     const [editingPreset, setEditingPreset] = useState<SearchPreset | null>(null)
     const [forceCollapsedCounter, setForceCollapsedCounter] = useState(0)
-    const [forceExpandedCounter, setForceExpandedCounter] = useState(0)
+    const [forceExpandedCounter, setForceExpandedCounter] = useState(0) // 步骤2展开
+    const [step3ExpandedCounter, setStep3ExpandedCounter] = useState(0) // 步骤3展开
+    const [step4ExpandedCounter, setStep4ExpandedCounter] = useState(0) // 步骤4展开
 
     // 当 Token 变化时，加载该 Token 的预设
     useEffect(() => {
@@ -90,6 +92,21 @@ export default function PartSearchPage() {
             setActivePresetId(null)
         }
     }, [selectedToken?.id, fetchPresets, clearPresets])
+
+    // 当加载列信息后，自动展开步骤3
+    useEffect(() => {
+        if (Object.keys(columnsData).length > 0) {
+            setStep3ExpandedCounter(prev => prev + 1)
+        }
+    }, [columnsData])
+
+    // 当选择搜索列后，自动展开步骤4
+    useEffect(() => {
+        const hasColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
+        if (hasColumns) {
+            setStep4ExpandedCounter(prev => prev + 1)
+        }
+    }, [selectedColumns])
 
     // 检查是否已选择列
     const hasSelectedColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
@@ -273,6 +290,7 @@ export default function PartSearchPage() {
                         onDuplicate={duplicateTable}
                         onRemove={removeTableCopy}
                         forceCollapsed={forceCollapsedCounter}
+                        forceExpanded={step3ExpandedCounter}
                     />
                 )}
 
@@ -292,6 +310,7 @@ export default function PartSearchPage() {
                         onPasteSearch={performPasteSearch}
                         batchProgress={batchProgress}
                         onSavePreset={openSaveModal}
+                        forceExpanded={step4ExpandedCounter}
                     />
                 )}
 

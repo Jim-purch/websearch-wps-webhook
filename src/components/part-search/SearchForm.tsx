@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import type { SearchCondition } from '@/hooks/usePartSearch'
 import { PasteQueryModal, type PasteQueryData } from './PasteQueryModal'
 
@@ -20,6 +20,8 @@ interface SearchFormProps {
     batchProgress?: string
     // Preset Props
     onSavePreset?: () => void
+    // Expand control
+    forceExpanded?: number // 展开计数器，每次变化时强制展开
 }
 
 
@@ -41,7 +43,8 @@ export function SearchForm({
     isBatchSearching = false,
     onPasteSearch,
     batchProgress,
-    onSavePreset
+    onSavePreset,
+    forceExpanded
 }: SearchFormProps) {
     // ... existing logic ...
 
@@ -71,6 +74,13 @@ export function SearchForm({
             [tableKey]: data
         }))
     }, [])
+
+    // 当外部强制展开时（计数器大于0表示需要展开）
+    useEffect(() => {
+        if (forceExpanded && forceExpanded > 0) {
+            setIsOpen(true)
+        }
+    }, [forceExpanded])
 
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({

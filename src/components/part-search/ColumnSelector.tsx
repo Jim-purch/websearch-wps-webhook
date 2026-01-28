@@ -17,6 +17,7 @@ interface ColumnSelectorProps {
     onDuplicate?: (tableKey: string) => void
     onRemove?: (tableKey: string) => void
     forceCollapsed?: number // 收起计数器，每次变化时强制收起
+    forceExpanded?: number // 展开计数器，每次变化时强制展开
 }
 
 export function ColumnSelector({
@@ -31,7 +32,8 @@ export function ColumnSelector({
     onUnfetchAll,
     onDuplicate,
     onRemove,
-    forceCollapsed
+    forceCollapsed,
+    forceExpanded
 }: ColumnSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
     const tableKeys = Object.keys(columnsData)
@@ -44,6 +46,13 @@ export function ColumnSelector({
             setIsOpen(false)
         }
     }, [forceCollapsed])
+
+    // 当外部强制展开时（计数器大于0表示需要展开）
+    useEffect(() => {
+        if (forceExpanded && forceExpanded > 0) {
+            setIsOpen(true)
+        }
+    }, [forceExpanded])
 
     if (tableKeys.length === 0) {
         return null
