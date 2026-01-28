@@ -6,7 +6,9 @@ import { z } from 'zod'
 import type { WpsClient, WpsSearchCriteria } from './wps-client.js'
 
 // Zod schemas for tool inputs
-export const GetTableListSchema = z.object({})
+export const GetTableListSchema = z.object({
+    tokenName: z.string().optional().describe('Token名称，用于指定使用哪个配置（如果有多个）')
+})
 
 export const SearchCriteriaSchema = z.object({
     columnName: z.string().describe('列名'),
@@ -15,6 +17,7 @@ export const SearchCriteriaSchema = z.object({
 })
 
 export const SearchSchema = z.object({
+    tokenName: z.string().optional().describe('Token名称，用于指定使用哪个配置（如果有多个）'),
     sheetName: z.string().describe('表名/工作表名'),
     criteria: z.array(SearchCriteriaSchema).describe('搜索条件数组，多个条件为 AND 关系'),
     returnColumns: z.array(z.string()).optional().describe('可选，指定返回的列名数组')
@@ -26,14 +29,18 @@ export const BatchSearchCriteriaSchema = z.object({
 })
 
 export const BatchSearchSchema = z.object({
+    tokenName: z.string().optional().describe('Token名称，用于指定使用哪个配置（如果有多个）'),
     sheetName: z.string().describe('表名/工作表名'),
     batchCriteria: z.array(BatchSearchCriteriaSchema).describe('批量查询条件数组')
 })
 
 export const GetImageUrlsSchema = z.object({
+    tokenName: z.string().optional().describe('Token名称，用于指定使用哪个配置（如果有多个）'),
     sheetName: z.string().describe('表名/工作表名'),
     cells: z.array(z.string()).describe('单元格地址数组，如 ["A1", "B2"]')
 })
+
+export const ListConfigsSchema = z.object({})
 
 // Tool definitions
 export const TOOLS = [
@@ -56,11 +63,32 @@ export const TOOLS = [
         name: 'get_image_urls',
         description: '获取指定单元格中图片的临时 URL',
         inputSchema: GetImageUrlsSchema
+    },
+    {
+        name: 'list_configs',
+        description: '获取所有可用的 WPS 配置名称，用于 tokenName 参数',
+        inputSchema: ListConfigsSchema
     }
 ] as const
 
+// Client getter type
+export type ClientGetter = (tokenName?: string) => WpsClient
+
 // Tool handlers
-export async function handleGetTableList(client: WpsClient) {
+export async function handleGetTableList(
+    getClient: ClientGetter,
+    args: z.infer<typeof GetTableListSchema>
+) {
+    let client: WpsClient
+    try {
+        client = getClient(args.tokenName)
+    } catch (err) {
+        return {
+            content: [{ type: 'text' as const, text: `错误: ${err instanceof Error ? err.message : '获取客户端失败'}` }],
+            isError: true
+        }
+    }
+
     const result = await client.getTableList()
 
     if (!result.success) {
@@ -85,9 +113,19 @@ export async function handleGetTableList(client: WpsClient) {
 }
 
 export async function handleSearch(
-    client: WpsClient,
+    getClient: ClientGetter,
     args: z.infer<typeof SearchSchema>
 ) {
+    let client: WpsClient
+    try {
+        client = getClient(args.tokenName)
+    } catch (err) {
+        return {
+            content: [{ type: 'text' as const, text: `错误: ${err instanceof Error ? err.message : '获取客户端失败'}` }],
+            isError: true
+        }
+    }
+
     const criteria: WpsSearchCriteria[] = args.criteria.map(c => ({
         columnName: c.columnName,
         searchValue: c.searchValue,
@@ -154,9 +192,19 @@ export async function handleSearch(
 }
 
 export async function handleBatchSearch(
-    client: WpsClient,
+    getClient: ClientGetter,
     args: z.infer<typeof BatchSearchSchema>
 ) {
+    let client: WpsClient
+    try {
+        client = getClient(args.tokenName)
+    } catch (err) {
+        return {
+            content: [{ type: 'text' as const, text: `错误: ${err instanceof Error ? err.message : '获取客户端失败'}` }],
+            isError: true
+        }
+    }
+
     const batchCriteria = args.batchCriteria.map(item => ({
         id: item.id,
         criteria: item.criteria.map(c => ({
@@ -203,9 +251,19 @@ export async function handleBatchSearch(
 }
 
 export async function handleGetImageUrls(
-    client: WpsClient,
+    getClient: ClientGetter,
     args: z.infer<typeof GetImageUrlsSchema>
 ) {
+    let client: WpsClient
+    try {
+        client = getClient(args.tokenName)
+    } catch (err) {
+        return {
+            content: [{ type: 'text' as const, text: `错误: ${err instanceof Error ? err.message : '获取客户端失败'}` }],
+            isError: true
+        }
+    }
+
     const result = await client.getImageUrls(args.sheetName, args.cells)
 
     if (!result.success) {
@@ -235,6 +293,22 @@ export async function handleGetImageUrls(
     }
 }
 
+export async function handleListConfigs(configs: Array<{ name: string; description?: string }>) {
+    const configList = configs.map(cfg => {
+        if (cfg.description) {
+            return `- **${cfg.name}**: ${cfg.description}`
+        }
+        return `- ${cfg.name}`
+    }).join('\n')
+
+    return {
+        content: [{
+            type: 'text' as const,
+            text: `可用配置 (${configs.length}):\n\n${configList}`
+        }]
+    }
+}
+
 // Helper function
 function formatValue(value: unknown): string {
     if (value === null || value === undefined) return '(空)'
@@ -248,3 +322,4 @@ function formatValue(value: unknown): string {
     }
     return String(value)
 }
+

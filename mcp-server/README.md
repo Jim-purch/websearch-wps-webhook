@@ -6,6 +6,7 @@
 
 | 工具名称 | 描述 |
 |---------|------|
+| `list_configs` | 获取所有可用的 WPS 配置名称和描述 |
 | `get_table_list` | 获取所有表/工作表信息 |
 | `search` | 多条件 AND 搜索 |
 | `batch_search` | 批量搜索 |
@@ -50,11 +51,42 @@ export WPS_TOKEN="your-airscript-token"
 }
 ```
 
+### 多 Webhook 配置 (可选)
+
+如果你需要连接多个 WPS 表格，可以使用 `WPS_CONFIG` 环境变量传入 JSON 数组：
+
+```json
+{
+  "mcpServers": {
+    "wps": {
+      "command": "npx",
+      "args": ["-y", "jim-wps-mcp-server@latest"],
+      "env": {
+        "WPS_CONFIG": "[{\"name\":\"main\",\"description\":\"主数据表\",\"webhookUrl\":\"...\",\"token\":\"...\"},{\"name\":\"backup\",\"description\":\"备份数据\",\"webhookUrl\":\"...\",\"token\":\"...\"}]"
+      }
+    }
+  }
+}
+```
+
+每个配置项支持以下字段：
+- `name` (必填): 配置名称，用于 `tokenName` 参数
+- `webhookUrl` (必填): WPS Webhook URL
+- `token` (必填): AirScript Token
+- `description` (可选): 配置描述，便于 AI 理解该配置的用途
+
+配置完成后，可以通过 `list_configs` 工具查看所有可用配置，通过 `tokenName` 参数指定使用哪个配置（默认为第一个）。
+
 ### HTTP/SSE 模式 (局域网访问)
 
 先启动 HTTP 服务器：
 ```bash
-WPS_WEBHOOK_URL="..." WPS_TOKEN="..." npx wps-mcp-http
+WPS_WEBHOOK_URL="..." WPS_TOKEN="..." npx jim-wps-mcp-http
+```
+
+或者使用多配置：
+```bash
+WPS_CONFIG='[{"name":"main","description":"主数据表","webhookUrl":"...","token":"..."}]' npx jim-wps-mcp-http
 ```
 
 然后配置客户端：
@@ -146,9 +178,16 @@ npm install jim-wps-mcp-server
 
 ## 工具示例
 
-### get_table_list
+### list_configs
 ```json
 {}
+```
+
+### get_table_list
+```json
+{
+  "tokenName": "main"
+}
 ```
 
 ### search
