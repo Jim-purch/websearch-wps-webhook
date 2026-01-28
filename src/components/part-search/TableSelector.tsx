@@ -14,6 +14,8 @@ interface TableSelectorProps {
     onDeselectAll: () => void
     onLoadColumns: () => void
     columnsData?: Record<string, unknown[]> // 添加列数据用于判断是否已加载
+    forceCollapsed?: number // 收起计数器，每次变化时强制收起
+    forceExpanded?: number // 展开计数器，每次变化时强制展开
 }
 
 export function TableSelector({
@@ -25,7 +27,9 @@ export function TableSelector({
     onSelectAll,
     onDeselectAll,
     onLoadColumns,
-    columnsData = {}
+    columnsData = {},
+    forceCollapsed,
+    forceExpanded
 }: TableSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
 
@@ -36,6 +40,20 @@ export function TableSelector({
             setIsOpen(false)
         }
     }, [columnsData])
+
+    // 当外部强制收起时（计数器大于0表示需要收起）
+    useEffect(() => {
+        if (forceCollapsed && forceCollapsed > 0) {
+            setIsOpen(false)
+        }
+    }, [forceCollapsed])
+
+    // 当外部强制展开时（计数器大于0表示需要展开）
+    useEffect(() => {
+        if (forceExpanded && forceExpanded > 0) {
+            setIsOpen(true)
+        }
+    }, [forceExpanded])
 
     return (
         <div className="card">

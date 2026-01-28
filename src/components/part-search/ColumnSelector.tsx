@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { WpsColumn } from '@/lib/wps'
 import type { ColumnConfig } from '@/hooks/usePartSearch'
 
@@ -16,6 +16,7 @@ interface ColumnSelectorProps {
     onUnfetchAll?: () => void
     onDuplicate?: (tableKey: string) => void
     onRemove?: (tableKey: string) => void
+    forceCollapsed?: number // 收起计数器，每次变化时强制收起
 }
 
 export function ColumnSelector({
@@ -29,12 +30,20 @@ export function ColumnSelector({
     onFetchAll,
     onUnfetchAll,
     onDuplicate,
-    onRemove
+    onRemove,
+    forceCollapsed
 }: ColumnSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
     const tableKeys = Object.keys(columnsData)
     // 拖拽相关状态
     const [draggedItem, setDraggedItem] = useState<{ tableName: string, index: number } | null>(null)
+
+    // 当外部强制收起时（计数器大于0表示需要收起）
+    useEffect(() => {
+        if (forceCollapsed && forceCollapsed > 0) {
+            setIsOpen(false)
+        }
+    }, [forceCollapsed])
 
     if (tableKeys.length === 0) {
         return null
@@ -106,14 +115,14 @@ export function ColumnSelector({
                 className="p-4 flex items-center justify-between cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-3 flex-wrap">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                         <span className="text-xl">📋</span>
                         步骤 3: 选择搜索列与结果显示配置
                     </h3>
-                    <p className="text-sm text-[var(--text-muted)] ml-8">
-                        拖动列名排序结果表顺序；点击右侧开关控制是否获取该列数据；点击整体选中作为搜索条件
-                    </p>
+                    <span className="text-xs text-[var(--text-muted)]">
+                        拖动列名排序 | 右侧开关控制获取 | 点击选中为搜索条件
+                    </span>
                 </div>
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                     ▼

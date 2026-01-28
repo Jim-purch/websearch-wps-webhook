@@ -77,6 +77,8 @@ export default function PartSearchPage() {
     const [activePresetId, setActivePresetId] = useState<string | null>(null)
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
     const [editingPreset, setEditingPreset] = useState<SearchPreset | null>(null)
+    const [forceCollapsedCounter, setForceCollapsedCounter] = useState(0)
+    const [forceExpandedCounter, setForceExpandedCounter] = useState(0)
 
     // 当 Token 变化时，加载该 Token 的预设
     useEffect(() => {
@@ -149,6 +151,8 @@ export default function PartSearchPage() {
             setColumnConfigs({})
             // 取消活动预设
             setActivePresetId(null)
+            // 强制展开步骤2，方便用户选择表
+            setForceExpandedCounter(prev => prev + 1)
             return
         }
 
@@ -166,6 +170,9 @@ export default function PartSearchPage() {
 
         // 设置当前活动预设
         setActivePresetId(preset.id)
+
+        // 强制收起步骤1、2、3
+        setForceCollapsedCounter(prev => prev + 1)
     }, [activePresetId, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
 
     // 编辑预设
@@ -226,6 +233,7 @@ export default function PartSearchPage() {
                     selectedToken={selectedToken}
                     isLoading={isLoadingTokens}
                     onSelect={selectToken}
+                    forceCollapsed={forceCollapsedCounter}
                 />
 
                 {/* Step 2: Table Selection */}
@@ -240,6 +248,8 @@ export default function PartSearchPage() {
                         onDeselectAll={deselectAllTables}
                         onLoadColumns={loadColumnsForSelected}
                         columnsData={columnsData}
+                        forceCollapsed={forceCollapsedCounter}
+                        forceExpanded={forceExpandedCounter}
                     />
                 )}
 
@@ -262,6 +272,7 @@ export default function PartSearchPage() {
                         onUnfetchAll={unfetchAllColumns}
                         onDuplicate={duplicateTable}
                         onRemove={removeTableCopy}
+                        forceCollapsed={forceCollapsedCounter}
                     />
                 )}
 

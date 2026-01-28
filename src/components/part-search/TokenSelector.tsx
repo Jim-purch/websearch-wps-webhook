@@ -14,9 +14,10 @@ interface TokenSelectorProps {
     selectedToken: TokenWithShareInfo | null
     isLoading: boolean
     onSelect: (tokenId: string) => void
+    forceCollapsed?: number // 收起计数器，每次变化时强制收起
 }
 
-export function TokenSelector({ tokens, selectedToken, isLoading, onSelect }: TokenSelectorProps) {
+export function TokenSelector({ tokens, selectedToken, isLoading, onSelect, forceCollapsed }: TokenSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
 
     // 当选择Token后自动收起步骤1
@@ -25,6 +26,13 @@ export function TokenSelector({ tokens, selectedToken, isLoading, onSelect }: To
             setIsOpen(false)
         }
     }, [selectedToken])
+
+    // 当外部强制收起时（计数器大于0表示需要收起）
+    useEffect(() => {
+        if (forceCollapsed && forceCollapsed > 0) {
+            setIsOpen(false)
+        }
+    }, [forceCollapsed])
 
     return (
         <div className="card">
