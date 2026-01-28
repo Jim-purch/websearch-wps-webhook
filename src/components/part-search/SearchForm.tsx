@@ -393,19 +393,36 @@ export function SearchForm({
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-3">
                                 <button
                                     type="button"
                                     onClick={onDownloadTemplate}
-                                    className="flex flex-col items-center justify-center gap-3 p-4 rounded-lg bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 border border-[#3b82f6]/20 transition-all group"
+                                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-lg bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 border border-[#3b82f6]/20 transition-all group"
                                 >
                                     <span className="text-2xl group-hover:scale-110 transition-transform">⬇️</span>
-                                    <span className="font-medium text-[#3b82f6]">下载模板</span>
+                                    <span className="font-medium text-sm text-[#3b82f6]">下载模板</span>
                                 </button>
 
-                                <label className="flex flex-col items-center justify-center gap-3 p-4 rounded-lg bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 transition-all cursor-pointer group">
+                                {onPasteSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const activeTables = Object.keys(selectedColumns).filter(key => selectedColumns[key] && selectedColumns[key].length > 0)
+                                            if (activeTables.length > 0) {
+                                                setPasteModalTableKey(activeTables[0])
+                                                setIsBatchModalOpen(false)
+                                            }
+                                        }}
+                                        className="flex flex-col items-center justify-center gap-2 p-3 rounded-lg bg-[#10b981]/10 hover:bg-[#10b981]/20 border border-[#10b981]/20 transition-all group"
+                                    >
+                                        <span className="text-2xl group-hover:scale-110 transition-transform">📋</span>
+                                        <span className="font-medium text-sm text-[#10b981]">粘贴列查询</span>
+                                    </button>
+                                )}
+
+                                <label className="flex flex-col items-center justify-center gap-2 p-3 rounded-lg bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 transition-all cursor-pointer group">
                                     <span className="text-2xl group-hover:scale-110 transition-transform">📂</span>
-                                    <span className="font-medium text-[#8b5cf6]">上传查询</span>
+                                    <span className="font-medium text-sm text-[#8b5cf6]">上传查询</span>
                                     <input
                                         type="file"
                                         accept=".xlsx,.xls"
