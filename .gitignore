@@ -9,6 +9,8 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+mcp-server/node_modules
+mcp-server/dist
 
 # testing
 /coverage

@@ -1,0 +1,56 @@
+{
+    "name": "jim-wps-mcp-server",
+    "version": "1.0.1",
+    "description": "MCP Server for WPS Webhook Integration - 让 AI 应用直接查询 WPS 文档数据",
+    "type": "module",
+    "main": "dist/index.js",
+    "bin": {
+        "jim-wps-mcp-server": "dist/index.js",
+        "jim-wps-mcp-http": "dist/http-server.js"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "start:http": "node dist/http-server.js",
+        "dev": "tsx src/index.ts",
+        "dev:http": "tsx src/http-server.ts",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "wps",
+        "webhook",
+        "ai",
+        "claude",
+        "llm"
+    ],
+    "author": "",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/your-username/wps-mcp-server"
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.1",
+        "dotenv": "^17.2.3",
+        "express": "^4.21.0",
+        "zod": "^3.25.0"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.0",
+        "@types/node": "^22.0.0",
+        "tsx": "^4.0.0",
+        "typescript": "^5.0.0"
+    }
+}
