@@ -68,25 +68,80 @@ WPS_WEBHOOK_URL="..." WPS_TOKEN="..." npx wps-mcp-http
 }
 ```
 
-## 本地安装使用
+## 本地开发
+
+### 安装依赖
 
 ```bash
-npm install jim-wps-mcp-server
+npm install
 ```
 
-### 配置
+### 配置环境变量
 
-复制环境变量模板：
+复制环境变量模板并编辑：
 ```bash
-cp node_modules/jim-wps-mcp-server/.env.example .env
+cp .env.example .env
 ```
 
 编辑 `.env`：
 ```env
 WPS_WEBHOOK_URL=https://airscript.wps.cn/your-webhook-path
 WPS_TOKEN=your-airscript-token
-HTTP_PORT=3001
-HTTP_HOST=0.0.0.0
+HTTP_PORT=3001      # SSE 模式的端口
+HTTP_HOST=0.0.0.0   # SSE 模式的监听地址
+```
+
+### 启动方式
+
+本项目支持两种传输模式，请根据你的使用场景选择：
+
+| 模式 | 命令 | 使用场景 |
+|------|------|----------|
+| **stdio** | `npm start` | 本地 AI 应用（如 Claude Desktop）通过标准输入/输出通信 |
+| **SSE/HTTP** | `npm run start:http` | 局域网访问，通过 HTTP SSE 协议通信 |
+
+#### stdio 模式（本地使用）
+
+```bash
+# 生产模式
+npm start
+
+# 开发模式（支持热重载）
+npm run dev
+```
+
+适用于：Claude Desktop 等本地 MCP 客户端，通过 `command` 配置启动。
+
+#### SSE/HTTP 模式（网络访问）
+
+```bash
+# 生产模式
+npm run start:http
+
+# 开发模式（支持热重载）
+npm run dev:http
+```
+
+启动后会输出：
+```
+WPS MCP Server (SSE) 已启动
+  地址: http://0.0.0.0:3001
+  SSE 端点: http://0.0.0.0:3001/sse
+  健康检查: http://0.0.0.0:3001/health
+```
+
+适用于：需要通过网络访问的场景，MCP 客户端使用 `url` 配置连接。
+
+### 构建
+
+```bash
+npm run build
+```
+
+## 通过 npm 安装使用
+
+```bash
+npm install jim-wps-mcp-server
 ```
 
 ## 工具示例
