@@ -253,6 +253,9 @@ export function usePartSearch() {
 
     // 加载选中表的列信息
     const loadColumnsForSelected = useCallback(() => {
+        // 清空之前的搜索结果
+        setSearchResults([])
+
         const newColumnsData: Record<string, WpsColumn[]> = {}
         const newSelectedColumns: Record<string, string[]> = {}
 
@@ -266,7 +269,7 @@ export function usePartSearch() {
                 const table = tables.find(t => t.name === tableName)
                 if (table && table.columns && table.columns.length > 0) {
                     newColumnsData[tableName] = table.columns
-                    newSelectedColumns[tableName] = selectedColumns[tableName] || [] // 保留已选的搜索列
+                    newSelectedColumns[tableName] = [] // 重置已选的搜索列，以清空步骤4
 
                     // 初始化列配置（如果不存在）
                     if (!nextConfigs[tableName] || nextConfigs[tableName].length === 0) {
@@ -277,8 +280,6 @@ export function usePartSearch() {
                         hasChanges = true
                     } else {
                         // 如果已存在，检查是否有新列需要添加（例如表结构变更），或者已删除的列需要移除
-                        // 这里暂时简化：假设表结构变更不频繁，主要关注初始化
-                        // 如果需要同步后端列变更：
                         const existingNames = new Set(nextConfigs[tableName].map(c => c.name))
                         const newCols = table.columns.filter(c => !existingNames.has(c.name))
                         if (newCols.length > 0) {
@@ -295,11 +296,9 @@ export function usePartSearch() {
         })
 
         setColumnsData(newColumnsData)
-        setSelectedColumns(prev => {
-            // 合并新旧选择，防止重置
-            return { ...newSelectedColumns, ...prev }
-        })
-    }, [selectedTableNames, tables, selectedColumns])
+        // 直接设置新的 selectedColumns，不合并 prev，从而清空步骤4
+        setSelectedColumns(newSelectedColumns)
+    }, [selectedTableNames, tables])
 
     // 切换列选择
     const toggleColumn = useCallback((tableName: string, columnName: string) => {
