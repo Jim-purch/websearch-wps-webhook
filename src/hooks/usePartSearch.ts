@@ -676,34 +676,32 @@ export function usePartSearch() {
                         // 合并图片URL：缓存的 + 新获取的
                         let fetchedImageUrls: Record<string, string | null> = {}
 
-                        // 1. 如果有缓存的URL，先添加
-                        if (dispImgCellAddressesCached.length > 0) {
-                            console.log(`导出: 使用缓存的 ${dispImgCellAddressesCached.length} 个DISPIMG图片URL`)
-                            for (const address of dispImgCellAddressesCached) {
-                                const cacheKey = `${result.realTableName || result.tableName}__${address}`
-                                fetchedImageUrls[address] = imageUrlCache[cacheKey]
-                            }
-                        }
+                        // 2. 始终获取最新的 DISPIMG 图片URL，以确保链接有效并更新UI
+                        // 注意：为了解决"图片加载失败"后导出能修复UI显示的问题，我们这里不使用缓存，强制重新获取
+                        if (dispImgCellAddressesToFetch.length > 0 || dispImgCellAddressesCached.length > 0) {
+                            const allAddressesToFetch = [...dispImgCellAddressesToFetch, ...dispImgCellAddressesCached]
+                            // 去重
+                            const uniqueAddresses = Array.from(new Set(allAddressesToFetch))
 
-                        // 2. 如果有未缓存的DISPIMG单元格，获取图片URL
-                        if (dispImgCellAddressesToFetch.length > 0 && selectedToken) {
-                            console.log(`导出: 获取 ${dispImgCellAddressesToFetch.length} 个未缓存的DISPIMG图片URL...`)
-                            try {
-                                const imgResult = await getImageUrls(selectedToken.id, result.realTableName || result.tableName, dispImgCellAddressesToFetch)
-                                if (imgResult.success && imgResult.data?.imageUrls) {
-                                    Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
-                                    console.log(`导出: 成功获取 ${Object.values(imgResult.data.imageUrls).filter(Boolean).length} 个新图片URL`)
+                            if (uniqueAddresses.length > 0 && selectedToken) {
+                                console.log(`导出: 获取 ${uniqueAddresses.length} 个DISPIMG图片URL (强制刷新)...`)
+                                try {
+                                    const imgResult = await getImageUrls(selectedToken.id, result.realTableName || result.tableName, uniqueAddresses)
+                                    if (imgResult.success && imgResult.data?.imageUrls) {
+                                        Object.assign(fetchedImageUrls, imgResult.data.imageUrls)
+                                        console.log(`导出: 成功获取 ${Object.values(imgResult.data.imageUrls).filter(Boolean).length} 个新图片URL`)
 
-                                    // 将新获取的图片URL更新到缓存中，以便前端可以立即显示
-                                    const tableName = result.realTableName || result.tableName
-                                    for (const [address, url] of Object.entries(imgResult.data.imageUrls)) {
-                                        if (url) {
-                                            handleImageLoad(tableName, address, url)
+                                        // 将新获取的图片URL更新到缓存中，以便前端可以立即显示
+                                        const tableName = result.realTableName || result.tableName
+                                        for (const [address, url] of Object.entries(imgResult.data.imageUrls)) {
+                                            if (url) {
+                                                handleImageLoad(tableName, address, url)
+                                            }
                                         }
                                     }
+                                } catch (e) {
+                                    console.error('导出: 获取图片URL失败', e)
                                 }
-                            } catch (e) {
-                                console.error('导出: 获取图片URL失败', e)
                             }
                         }
 

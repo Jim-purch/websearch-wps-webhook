@@ -40,7 +40,17 @@ function copyToClipboard(text: string): Promise<boolean> {
 const IMAGE_THUMBNAIL_SIZE = { maxWidth: 60, maxHeight: 48 }
 
 // 图片预览组件 - 支持缩略图和灯箱效果
-function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () => void; isCopied: boolean }) {
+function ImageWithPreview({
+    src,
+    onCopy,
+    isCopied,
+    onRetry
+}: {
+    src: string;
+    onCopy: () => void;
+    isCopied: boolean;
+    onRetry?: () => void;
+}) {
     const [showPreview, setShowPreview] = useState(false)
     const [imgError, setImgError] = useState(false)
     const [retryCount, setRetryCount] = useState(0)
@@ -51,6 +61,11 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
         setMounted(true)
     }, [])
 
+    // 当 src 改变时 (例如重新获取了URL)，重置错误状态
+    useEffect(() => {
+        setImgError(false)
+    }, [src])
+
     if (imgError) {
         return (
             <span
@@ -59,7 +74,11 @@ function ImageWithPreview({ src, onCopy, isCopied }: { src: string; onCopy: () =
                 onClick={(e) => {
                     e.stopPropagation()
                     setImgError(false)
-                    setRetryCount(c => c + 1)
+                    if (onRetry) {
+                        onRetry()
+                    } else {
+                        setRetryCount(c => c + 1)
+                    }
                 }}
                 title="图片加载失败，点击重试"
             >
@@ -183,7 +202,19 @@ function LazyImageCell({
 
     // 如果已获取到URL，显示图片
     if (imageUrl) {
-        return <ImageWithPreview src={imageUrl} onCopy={() => onCopy(imageUrl)} isCopied={isCopied} />
+        return (
+            <ImageWithPreview
+                src={imageUrl}
+                onCopy={() => onCopy(imageUrl)}
+                isCopied={isCopied}
+                onRetry={() => {
+                    // 图片加载失败时，清除当前URL并强制重试（触发重新获取URL）
+                    setImageUrl(null)
+                    setAttempted(false)
+                    setForceLoad(true)
+                }}
+            />
+        )
     }
 
     // 错误状态
