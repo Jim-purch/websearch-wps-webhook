@@ -228,6 +228,7 @@ function searchByColumn(sheetName, columnName, searchValue, op) {
         }
 
         // 构建筛选条件
+        // 优化：AirScript 只使用 Contains 模糊匹配，精确/模糊的区分移到客户端进行
         const filter = {
             "mode": "AND",
             "criteria": []
@@ -247,9 +248,10 @@ function searchByColumn(sheetName, columnName, searchValue, op) {
                     message: "请提供搜索值 (除 Empty/NotEmpty 操作外)"
                 }
             }
+            // 统一使用 Contains 模糊匹配
             filter.criteria.push({
                 "field": columnName,
-                "op": opType,
+                "op": "Contains",
                 "values": [String(searchValue)]
             })
         }
@@ -532,6 +534,8 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
             }
 
             // 构建条件
+            // 优化：AirScript 只使用 Contains 模糊匹配，精确/模糊的区分移到客户端进行
+            // 这样可以减少 AirScript 运行时间，避免超时
             if (opType === "Empty" || opType === "NotEmpty") {
                 filter.criteria.push({
                     "field": columnName,
@@ -542,12 +546,13 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                 if (!searchValue && searchValue !== 0) {
                     continue  // 跳过空值条件（除非是 Empty/NotEmpty）
                 }
+                // 统一使用 Contains 模糊匹配
                 filter.criteria.push({
                     "field": columnName,
-                    "op": opType,
+                    "op": "Contains",
                     "values": [String(searchValue)]
                 })
-                criteriaDescriptions.push(columnName + " " + opType + " '" + searchValue + "'")
+                criteriaDescriptions.push(columnName + " Contains '" + searchValue + "'")
             }
         }
 
@@ -756,11 +761,12 @@ function searchBatch(sheetName, batchCriteria) {
                         criteriaValid = false; break;
                     }
 
+                    // 优化：统一使用 Contains 模糊匹配，精确/模糊的区分移到客户端
                     if (opType === "Empty" || opType === "NotEmpty") {
                         filter.criteria.push({ "field": colName, "op": opType })
                     } else {
                         if (!val && val !== 0) continue
-                        filter.criteria.push({ "field": colName, "op": opType, "values": [String(val)] })
+                        filter.criteria.push({ "field": colName, "op": "Contains", "values": [String(val)] })
                     }
                 }
             } else {

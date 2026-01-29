@@ -416,14 +416,16 @@ export function usePartSearch() {
                 conditionsByTableKey[cond.tableName] = { realTableName, criteria: [] }
             }
             // 清理搜索值：去除回车、空格、"-"、.、大小写以及最开始的"0"
+            // WPS 表格内的数据已经是清理过的格式，所以直接用清理后的值进行 Find 查找
             const cleanedSearchValue = cleanValue(cond.searchValue)
             if (!cleanedSearchValue) continue
 
             conditionsByTableKey[cond.tableName].criteria.push({
                 columnName: cond.columnName,
-                // 传递原始搜索值给后端用于 Find 搜索，同时传递清理后的值用于匹配验证
-                searchValue: cond.searchValue.trim(),  // 原始值（仅去除首尾空格）
-                searchValueClean: cleanedSearchValue,  // 清理后的值（用于匹配验证）
+                // 直接使用清理后的值进行搜索，因为 WPS 表格数据已预处理
+                searchValue: cleanedSearchValue,
+                // 同时保留清理后的值用于客户端匹配验证
+                searchValueClean: cleanedSearchValue,
                 op: cond.op
             } as WpsSearchCriteria)
         }
@@ -466,17 +468,10 @@ export function usePartSearch() {
                     const data = result.data as WpsSearchResult
                     let records = data.records || []
 
-                    // 多维表格使用 WPS API 筛选，无法在服务端修改匹配逻辑
-                    // 需要在客户端对返回的结果进行二次过滤（对被搜索内容也进行清理后再匹配）
-                    // 判断是否为多维表格：多维表格的记录格式为 {fields: {...}}
-                    const isDbSheet = records.length > 0 &&
-                        records[0].fields &&
-                        typeof records[0].fields === 'object'
-
-                    if (isDbSheet) {
-                        // 对多维表格结果进行客户端二次过滤
-                        records = records.filter(record => matchesAllCriteria(record, criteria))
-                    }
+                    // 由于 AirScript 端优化后只做模糊匹配（忽略精确/模糊选项），
+                    // 需要在客户端对所有表格类型的结果进行二次过滤
+                    // 对被搜索内容进行清理后再根据用户选择的精确/模糊模式匹配
+                    records = records.filter(record => matchesAllCriteria(record, criteria))
 
                     results.push({
                         tableName: displayTableName,
@@ -1248,14 +1243,15 @@ export function usePartSearch() {
 
                         originalValues[fieldName] = cleanVal
 
-                        // 清理搜索值
+                        // WPS 表格内的数据已经是清理过的格式，直接用清理后的值进行 Find 查找
                         const searchValueCleaned = cleanValue(cleanVal)
 
                         if (searchValueCleaned) {
                             criteria.push({
                                 columnName: fieldName,
-                                searchValue: cleanVal, // 原始值
-                                searchValueClean: searchValueCleaned, // 清理后的值
+                                // 直接使用清理后的值进行搜索
+                                searchValue: searchValueCleaned,
+                                searchValueClean: searchValueCleaned,
                                 op: matchMode === 'exact' ? 'Equals' : 'Contains'
                             } as WpsSearchCriteria)
                         }
@@ -1317,12 +1313,20 @@ export function usePartSearch() {
                             for (const itemResult of batchRes.results) {
                                 if (itemResult.success && itemResult.records) {
                                     const item = chunk.find(i => i.id === itemResult.id)
+                                    const itemCriteria = item?.criteria || []
                                     const originalValues = item?.originalValues || {}
                                     const prefixedOriginalValues: Record<string, string> = {}
                                     for (const [key, value] of Object.entries(originalValues)) {
                                         prefixedOriginalValues[`原始_${key}`] = value
                                     }
-                                    const recordsWithId = itemResult.records.map(r => ({
+
+                                    // 由于 AirScript 端优化后只做模糊匹配，
+                                    // 需要在客户端对所有表格类型的结果进行二次过滤
+                                    const filteredRecords = itemResult.records.filter(record =>
+                                        matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
+                                    )
+
+                                    const recordsWithId = filteredRecords.map(r => ({
                                         ...r,
                                         _BatchQueryID: itemResult.id,
                                         ...prefixedOriginalValues
@@ -1425,13 +1429,15 @@ export function usePartSearch() {
                     if (!value || !value.trim()) continue
 
                     originalValues[columnName] = value.trim()
+                    // WPS 表格内的数据已经是清理过的格式，直接用清理后的值进行 Find 查找
                     const searchValueCleaned = cleanValue(value)
 
                     if (searchValueCleaned) {
                         criteria.push({
                             columnName,
-                            searchValue: value.trim(), // 原始值
-                            searchValueClean: searchValueCleaned, // 清理后的值
+                            // 直接使用清理后的值进行搜索
+                            searchValue: searchValueCleaned,
+                            searchValueClean: searchValueCleaned,
                             op: matchMode === 'exact' ? 'Equals' : 'Contains'
                         } as WpsSearchCriteria)
                     }
@@ -1484,17 +1490,11 @@ export function usePartSearch() {
                                 prefixedOriginalValues[`原始_${key}`] = value
                             }
 
-                            // 客户端二次过滤
-                            let filteredRecords = itemResult.records
-                            const isDbSheet = filteredRecords.length > 0 &&
-                                filteredRecords[0].fields &&
-                                typeof filteredRecords[0].fields === 'object'
-
-                            if (isDbSheet) {
-                                filteredRecords = filteredRecords.filter(record =>
-                                    matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
-                                )
-                            }
+                            // 由于 AirScript 端优化后只做模糊匹配，
+                            // 需要在客户端对所有表格类型的结果进行二次过滤
+                            const filteredRecords = itemResult.records.filter(record =>
+                                matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
+                            )
 
                             const recordsWithId = filteredRecords.map(r => ({
                                 ...r,
