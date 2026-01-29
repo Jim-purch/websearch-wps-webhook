@@ -12,6 +12,7 @@ export interface RowData {
 export interface PasteQueryData {
     rows: RowData[]
     matchMode: 'fuzzy' | 'exact'
+    batchSize?: number
 }
 
 interface PasteQueryModalProps {
@@ -19,7 +20,7 @@ interface PasteQueryModalProps {
     onClose: () => void
     tableKey: string
     columns: string[]
-    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
+    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize: number) => void
     isSearching: boolean
     batchProgress?: string
     initialData?: PasteQueryData
@@ -46,9 +47,15 @@ export function PasteQueryModal({
     const [matchMode, setMatchMode] = useState<'fuzzy' | 'exact'>(
         initialData?.matchMode || 'exact'
     )
+    const [batchSize, setBatchSize] = useState<number>(
+        initialData?.batchSize || 50
+    )
+
     const tableRef = useRef<HTMLDivElement>(null)
     const [mounted, setMounted] = useState(false)
     const [copyToast, setCopyToast] = useState(false)
+
+    // ... (rest of the hooks remain same) ...
 
     // 表格选择功能
     const {
@@ -105,15 +112,16 @@ export function PasteQueryModal({
                 ? initialData.rows
                 : [{ id: '1', values: {} }])
             setMatchMode(initialData.matchMode || 'exact')
+            setBatchSize(initialData.batchSize || 50)
         }
     }, [isOpen, tableKey]) // 添加 tableKey 作为依赖，确保切换表时能正确加载数据
 
     // 当数据变化时通知外部组件保存
     useEffect(() => {
         if (isOpen && onDataChange) {
-            onDataChange(tableKey, { rows, matchMode })
+            onDataChange(tableKey, { rows, matchMode, batchSize })
         }
-    }, [rows, matchMode, isOpen, tableKey, onDataChange])
+    }, [rows, matchMode, batchSize, isOpen, tableKey, onDataChange])
 
     // 处理单元格粘贴事件 - 从当前单元格位置开始粘贴
     const handleCellPaste = useCallback((e: React.ClipboardEvent, startRowIndex: number, startColIndex: number) => {
@@ -211,8 +219,8 @@ export function PasteQueryModal({
             return
         }
 
-        onSearch(validRows, matchMode)
-    }, [rows, matchMode, onSearch])
+        onSearch(validRows, matchMode, batchSize)
+    }, [rows, matchMode, batchSize, onSearch])
 
     // 获取显示名称
     const displayName = tableKey.includes('__copy_')
@@ -265,7 +273,7 @@ export function PasteQueryModal({
                     tabIndex={0}
                     {...containerProps}
                 >
-                    <table className="w-full border-collapse">
+                    <table className="w-full border-collapse transition-all">
                         <thead>
                             <tr className="bg-[var(--hover-bg)]">
                                 <th className="border border-[var(--border)] px-3 py-2 text-left text-sm font-medium w-16">
@@ -349,10 +357,12 @@ export function PasteQueryModal({
 
                 {/* Footer */}
                 <div className="flex items-center justify-between p-4 border-t border-[var(--border)] bg-[var(--hover-bg)]">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
                         <span className="text-sm text-[var(--text-muted)]">
                             共 {rows.length} 行数据
                         </span>
+
+                        <div className="h-4 w-[1px] bg-[var(--border)]"></div>
 
                         {/* Match Mode Selector */}
                         <div className="flex items-center gap-2">
@@ -378,6 +388,34 @@ export function PasteQueryModal({
                                 >
                                     模糊
                                 </button>
+                            </div>
+                        </div>
+
+                        <div className="h-4 w-[1px] bg-[var(--border)]"></div>
+
+                        {/* Batch Size Selector */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-[var(--foreground)]" title="每次向WPS发送查询请求包含的行数">每次处理行数：</span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="100"
+                                    value={batchSize}
+                                    onChange={(e) => setBatchSize(Number(e.target.value))}
+                                    className="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
+                                />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={batchSize}
+                                    onChange={(e) => {
+                                        const val = Math.max(1, Math.min(100, Number(e.target.value)))
+                                        setBatchSize(val)
+                                    }}
+                                    className="w-14 px-2 py-0.5 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
+                                />
                             </div>
                         </div>
                     </div>

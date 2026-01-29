@@ -935,7 +935,7 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
 
     // 使用 Excel Find 方法进行搜索
     const records = []
-    const MAX_RECORDS = 20 // 批量搜索时，单次查询限制更严格一些
+    const MAX_RECORDS = 30 // 批量搜索时，单次查询限制更严格一些
 
     const firstCrit = validCriteria[0]
     const searchColumn = sheet.Columns(firstCrit.colIndex)

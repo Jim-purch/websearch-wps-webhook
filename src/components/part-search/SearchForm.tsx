@@ -14,9 +14,9 @@ interface SearchFormProps {
     onAutoLoadImagesChange: (value: boolean) => void
     // Batch Search Props
     onDownloadTemplate?: () => void
-    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact') => void
+    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact', batchSize?: number) => void
     isBatchSearching?: boolean
-    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact') => void
+    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number) => void
     batchProgress?: string
     // Preset Props
     onSavePreset?: () => void
@@ -63,6 +63,7 @@ export function SearchForm({
     const [isOpen, setIsOpen] = useState(true)
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
     const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
+    const [batchSize, setBatchSize] = useState<number>(50) // 默认 50
     const [pasteModalTableKey, setPasteModalTableKey] = useState<string | null>(null)
     // 保存每个表的粘贴查询数据
     const [pasteData, setPasteData] = useState<Record<string, PasteQueryData>>({})
@@ -125,7 +126,7 @@ export function SearchForm({
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file && onBatchSearch) {
-            onBatchSearch(file, batchMatchMode)
+            onBatchSearch(file, batchMatchMode, batchSize)
             // 重置 input value 使得同一个文件可以重复上传
             e.target.value = ''
             setIsBatchModalOpen(false) // 关闭弹窗
@@ -367,29 +368,58 @@ export function SearchForm({
                                 3. 上传填写好的 Excel 文件进行批量查询。
                             </p>
 
-                            <div className="flex items-center gap-4 p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
-                                <span className="text-sm font-medium text-[var(--foreground)]">查询模式：</span>
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setBatchMatchMode('exact')}
-                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'exact'
-                                            ? 'bg-[#667eea] text-white font-medium'
-                                            : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
-                                            }`}
-                                    >
-                                        精确查询
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setBatchMatchMode('fuzzy')}
-                                        className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'fuzzy'
-                                            ? 'bg-[#667eea] text-white font-medium'
-                                            : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
-                                            }`}
-                                    >
-                                        模糊查询
-                                    </button>
+                            <div className="flex flex-col gap-3">
+                                {/* 查询模式设置 */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
+                                    <span className="text-sm font-medium text-[var(--foreground)]">查询模式：</span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setBatchMatchMode('exact')}
+                                            className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'exact'
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                                }`}
+                                        >
+                                            精确查询
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setBatchMatchMode('fuzzy')}
+                                            className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchMatchMode === 'fuzzy'
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                                }`}
+                                        >
+                                            模糊查询
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 批次数量设置 */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
+                                    <span className="text-sm font-medium text-[var(--foreground)]" title="每次向WPS发送查询请求包含的行数">每次处理行数：</span>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="100"
+                                            value={batchSize}
+                                            onChange={(e) => setBatchSize(Number(e.target.value))}
+                                            className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            value={batchSize}
+                                            onChange={(e) => {
+                                                const val = Math.max(1, Math.min(100, Number(e.target.value)))
+                                                setBatchSize(val)
+                                            }}
+                                            className="w-14 px-2 py-1 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -443,8 +473,8 @@ export function SearchForm({
                     onClose={() => setPasteModalTableKey(null)}
                     tableKey={pasteModalTableKey}
                     columns={selectedColumns[pasteModalTableKey] || []}
-                    onSearch={(data, matchMode) => {
-                        onPasteSearch(pasteModalTableKey, data, matchMode)
+                    onSearch={(data, matchMode, size) => {
+                        onPasteSearch(pasteModalTableKey, data, matchMode, size)
                         setPasteModalTableKey(null)
                     }}
                     isSearching={isBatchSearching}

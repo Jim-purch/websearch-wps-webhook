@@ -42,7 +42,7 @@ export interface TableSearchResult {
     displayColumns?: string[] // 显示列顺序（基于用户配置）
 }
 
-const BATCH_SIZE = 2
+// 移除硬编码的 BATCH_SIZE，改为通过参数传递，默认50
 
 /**
  * 合并批量查询结果
@@ -1147,7 +1147,11 @@ export function usePartSearch() {
     }, [selectedColumns])
 
     // 执行批量搜索 (解析 多 Sheet Excel -> 分批调用 API -> 增量更新结果)
-    const performBatchSearch = useCallback(async (file: File, matchMode: 'fuzzy' | 'exact' = 'exact') => {
+    const performBatchSearch = useCallback(async (
+        file: File,
+        matchMode: 'fuzzy' | 'exact' = 'exact',
+        batchSize: number = 50
+    ) => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
             setSearchError('Token 配置不完整')
             return
@@ -1288,8 +1292,8 @@ export function usePartSearch() {
 
                 // 将 items 分批
                 const chunkedItems = []
-                for (let j = 0; j < items.length; j += BATCH_SIZE) {
-                    chunkedItems.push(items.slice(j, j + BATCH_SIZE))
+                for (let j = 0; j < items.length; j += batchSize) {
+                    chunkedItems.push(items.slice(j, j + batchSize))
                 }
 
                 for (let chunkIdx = 0; chunkIdx < chunkedItems.length; chunkIdx++) {
@@ -1394,7 +1398,8 @@ export function usePartSearch() {
     const performPasteSearch = useCallback(async (
         tableKey: string,
         data: Array<{ id: string; values: Record<string, string> }>,
-        matchMode: 'fuzzy' | 'exact' = 'exact'
+        matchMode: 'fuzzy' | 'exact' = 'exact',
+        batchSize: number = 50
     ) => {
         if (!selectedToken?.id || !selectedToken?.webhook_url) {
             setSearchError('Token 配置不完整')
@@ -1454,8 +1459,8 @@ export function usePartSearch() {
 
             // 分批处理
             const chunkedItems = []
-            for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
-                chunkedItems.push(allItems.slice(i, i + BATCH_SIZE))
+            for (let i = 0; i < allItems.length; i += batchSize) {
+                chunkedItems.push(allItems.slice(i, i + batchSize))
             }
 
             let processedCount = 0
