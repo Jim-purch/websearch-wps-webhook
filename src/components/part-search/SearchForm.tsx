@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { SearchCondition } from '@/hooks/usePartSearch'
 import { PasteQueryModal, type PasteQueryData } from './PasteQueryModal'
 
@@ -345,8 +346,8 @@ export function SearchForm({
             )
             }
             {/* 批量查询弹窗 */}
-            {isBatchModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            {isBatchModalOpen && createPortal(
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl shadow-2xl p-6 w-full max-w-md space-y-6" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between">
                             <h3 className="text-xl font-bold flex items-center gap-2">
@@ -463,7 +464,8 @@ export function SearchForm({
                             </div>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* 粘贴查询弹窗 */}

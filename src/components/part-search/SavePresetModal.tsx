@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { SearchPreset } from '@/types'
 
 type SaveMode = 'new' | 'update'
@@ -90,8 +91,8 @@ export function SavePresetModal({
 
     if (!isOpen) return null
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    return createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
             <div
                 className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl shadow-2xl p-6 w-full max-w-md"
                 onClick={e => e.stopPropagation()}
@@ -120,8 +121,8 @@ export function SavePresetModal({
                                     setSelectedPresetId('')
                                 }}
                                 className={`flex-1 py-2 px-3 text-sm rounded-md transition-all ${saveMode === 'new'
-                                        ? 'bg-[var(--card-bg)] text-[var(--foreground)] shadow-sm font-medium'
-                                        : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                                    ? 'bg-[var(--card-bg)] text-[var(--foreground)] shadow-sm font-medium'
+                                    : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'
                                     }`}
                             >
                                 新建预设
@@ -130,8 +131,8 @@ export function SavePresetModal({
                                 type="button"
                                 onClick={() => setSaveMode('update')}
                                 className={`flex-1 py-2 px-3 text-sm rounded-md transition-all ${saveMode === 'update'
-                                        ? 'bg-[var(--card-bg)] text-[var(--foreground)] shadow-sm font-medium'
-                                        : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                                    ? 'bg-[var(--card-bg)] text-[var(--foreground)] shadow-sm font-medium'
+                                    : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'
                                     }`}
                             >
                                 更新现有预设
@@ -250,6 +251,7 @@ export function SavePresetModal({
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }
