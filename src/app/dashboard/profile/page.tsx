@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useTokens } from '@/hooks/useTokens'
 import { useSharedTokens } from '@/hooks/useSharedTokens'
 import type { CreateTokenInput, UpdateTokenInput } from '@/types'
+import { MCPConfigDrawer } from '@/components/tokens/MCPConfigDrawer'
 
 export default function ProfilePage() {
     const { user, refreshUser } = useAuth()
@@ -36,6 +37,7 @@ export default function ProfilePage() {
     const [tokenError, setTokenError] = useState('')
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
     const [isTokenListOpen, setIsTokenListOpen] = useState(false) // Default to closed to save space
+    const [isMCPDrawerOpen, setIsMCPDrawerOpen] = useState(false)
 
     useEffect(() => {
         if (user?.display_name) {
@@ -221,6 +223,16 @@ export default function ProfilePage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMCPDrawerOpen(true);
+                            }}
+                            className="btn-secondary flex items-center gap-2 py-1.5 px-3 text-sm h-fit"
+                            title="生成 MCP JSON 配置"
+                        >
+                            <span>🤖</span> MCP 配置
+                        </button>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -442,6 +454,12 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </section>
+
+            <MCPConfigDrawer
+                isOpen={isMCPDrawerOpen}
+                onClose={() => setIsMCPDrawerOpen(false)}
+                tokens={tokens}
+            />
         </div>
     )
 }
