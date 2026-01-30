@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { TableSearchResult } from '@/hooks/usePartSearch'
 import { useTableSelection } from '@/hooks/useTableSelection'
@@ -283,26 +283,86 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         setMounted(true)
     }, [])
 
+    // 排序状态: { key: 列名, direction: 'asc' | 'desc' | null }
+    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' | null }>({
+        key: null,
+        direction: null
+    })
+
+    const handleSort = useCallback((key: string) => {
+        setSortConfig(prev => {
+            if (prev.key !== key) {
+                return { key, direction: 'asc' }
+            }
+            if (prev.direction === 'asc') {
+                return { key, direction: 'desc' }
+            }
+            if (prev.direction === 'desc') {
+                return { key: null, direction: null }
+            }
+            return { key, direction: 'asc' }
+        })
+    }, [])
+
     const records = result.records || []
 
     // 处理 WPS 记录格式
-    const rows = records.map(record => {
-        if (record.fields && typeof record.fields === 'object') {
-            const fields = record.fields as Record<string, unknown>
-            // 如果是多维表格记录，需要将顶层的批处理元数据（如 _BatchQueryID 和 原始_ 列）合并到 row 对象中
-            const row = { ...fields }
-            if ('_BatchQueryID' in record) {
-                row._BatchQueryID = record._BatchQueryID
-            }
-            Object.keys(record).forEach(key => {
-                if (key.startsWith('原始_')) {
-                    row[key] = record[key]
+    const rows = useMemo(() => {
+        const baseRows = records.map(record => {
+            if (record.fields && typeof record.fields === 'object') {
+                const fields = record.fields as Record<string, unknown>
+                // 如果是多维表格记录，需要将顶层的批处理元数据（如 _BatchQueryID 和 原始_ 列）合并到 row 对象中
+                const row = { ...fields }
+                if ('_BatchQueryID' in record) {
+                    row._BatchQueryID = record._BatchQueryID
                 }
-            })
-            return row
+                Object.keys(record).forEach(key => {
+                    if (key.startsWith('原始_')) {
+                        row[key] = record[key]
+                    }
+                })
+                return row
+            }
+            return record as Record<string, unknown>
+        })
+
+        if (!sortConfig.key || !sortConfig.direction) {
+            return baseRows
         }
-        return record
-    })
+
+        return [...baseRows].sort((a, b) => {
+            const key = sortConfig.key!
+            let aVal = a[key]
+            let bVal = b[key]
+
+            // 处理对象类型 (如图片)
+            if (aVal && typeof aVal === 'object' && '_type' in aVal) {
+                // 如果是图片/附件对象，尝试使用 imageId 或 cellAddress 排序
+                const obj = aVal as { imageId?: string; cellAddress?: string; value?: string }
+                aVal = obj.value || obj.imageId || obj.cellAddress || ''
+            }
+            if (bVal && typeof bVal === 'object' && '_type' in bVal) {
+                const obj = bVal as { imageId?: string; cellAddress?: string; value?: string }
+                bVal = obj.value || obj.imageId || obj.cellAddress || ''
+            }
+
+            // 转为字符串比较，处理数字和空值
+            const aStr = String(aVal ?? '')
+            const bStr = String(bVal ?? '')
+
+            // 尝试数字比较
+            const aNum = Number(aStr)
+            const bNum = Number(bStr)
+            if (!isNaN(aNum) && !isNaN(bNum) && aStr.trim() !== '' && bStr.trim() !== '') {
+                return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum
+            }
+
+            // 字符串比较
+            return sortConfig.direction === 'asc'
+                ? aStr.localeCompare(bStr, 'zh-CN', { numeric: true })
+                : bStr.localeCompare(aStr, 'zh-CN', { numeric: true })
+        })
+    }, [records, sortConfig])
 
     const hasBatchQueryID = records.some(r => '_BatchQueryID' in r)
 
@@ -502,11 +562,30 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                     {displayColumns.map((col, colIdx) => (
                                         <th
                                             key={col}
-                                            className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
-                                            onClick={() => selectColumn(colIdx, rows.length)}
-                                            title="点击全选此列"
+                                            className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap group transition-colors"
                                         >
-                                            {col === '_BatchQueryID' ? 'QueryID' : col}
+                                            <div className="flex items-center gap-1">
+                                                <span
+                                                    className="cursor-pointer hover:text-[var(--text-main)]"
+                                                    onClick={() => selectColumn(colIdx, rows.length)}
+                                                    title="点击全选此列"
+                                                >
+                                                    {col === '_BatchQueryID' ? 'QueryID' : col}
+                                                </span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleSort(col)
+                                                    }}
+                                                    className={`p-1 rounded hover:bg-[var(--hover-bg)] transition-colors opacity-0 group-hover:opacity-100 ${sortConfig.key === col ? 'opacity-100 text-[#eab308]' : ''
+                                                        }`}
+                                                    title="点击切换排序：无 -> 升序 -> 降序"
+                                                >
+                                                    {sortConfig.key === col ? (
+                                                        sortConfig.direction === 'asc' ? '🔼' : '🔽'
+                                                    ) : '↕️'}
+                                                </button>
+                                            </div>
                                         </th>
                                     ))}
                                     <th className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)]">
