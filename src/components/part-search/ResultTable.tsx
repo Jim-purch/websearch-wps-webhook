@@ -288,7 +288,18 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     // 处理 WPS 记录格式
     const rows = records.map(record => {
         if (record.fields && typeof record.fields === 'object') {
-            return record.fields as Record<string, unknown>
+            const fields = record.fields as Record<string, unknown>
+            // 如果是多维表格记录，需要将顶层的批处理元数据（如 _BatchQueryID 和 原始_ 列）合并到 row 对象中
+            const row = { ...fields }
+            if ('_BatchQueryID' in record) {
+                row._BatchQueryID = record._BatchQueryID
+            }
+            Object.keys(record).forEach(key => {
+                if (key.startsWith('原始_')) {
+                    row[key] = record[key]
+                }
+            })
+            return row
         }
         return record
     })
