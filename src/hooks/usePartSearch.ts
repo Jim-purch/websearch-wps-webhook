@@ -1338,7 +1338,14 @@ export function usePartSearch() {
                     try {
                         const originalQueryColumns = Array.from(new Set(chunk.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`))))
 
-                        const res = await searchBatch(selectedToken.id, realTableName, chunk)
+                        // 获取列配置
+                        const currentConfig = columnConfigs[tableKey] || []
+                        // 筛选出需要获取的列 (fetch === true)
+                        const returnColumns = currentConfig.filter(c => c.fetch).map(c => c.name)
+                        // 显示列顺序
+                        const displayColumns = returnColumns
+
+                        const res = await searchBatch(selectedToken.id, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined)
 
                         let newResult: TableSearchResult
 
@@ -1379,7 +1386,8 @@ export function usePartSearch() {
                                 totalCount: allRecords.length,
                                 truncated: false,
                                 error: undefined,
-                                originalQueryColumns
+                                originalQueryColumns,
+                                displayColumns: displayColumns
                             }
                         } else {
                             newResult = {
@@ -1424,7 +1432,7 @@ export function usePartSearch() {
             setIsBatchSearching(false)
             setBatchProgress('')
         }
-    }, [selectedToken, selectedColumns])
+    }, [selectedToken, selectedColumns, columnConfigs])
 
     // 执行粘贴查询 (从粘贴的数据进行批量搜索)
     const performPasteSearch = useCallback(async (
@@ -1509,7 +1517,14 @@ export function usePartSearch() {
                     new Set(chunk.flatMap(item => Object.keys(item.originalValues).map(k => `原始_${k}`)))
                 )
 
-                const res = await searchBatch(selectedToken.id, realTableName, chunk)
+                // 获取列配置
+                const currentConfig = columnConfigs[tableKey] || []
+                // 筛选出需要获取的列 (fetch === true)
+                const returnColumns = currentConfig.filter(c => c.fetch).map(c => c.name)
+                // 显示列顺序
+                const displayColumns = returnColumns
+
+                const res = await searchBatch(selectedToken.id, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined)
 
                 let newResult: TableSearchResult
 
@@ -1550,7 +1565,8 @@ export function usePartSearch() {
                         totalCount: allRecords.length,
                         truncated: false,
                         error: undefined,
-                        originalQueryColumns
+                        originalQueryColumns,
+                        displayColumns: displayColumns
                     }
                 } else {
                     newResult = {
@@ -1579,7 +1595,7 @@ export function usePartSearch() {
             setIsBatchSearching(false)
             setBatchProgress('')
         }
-    }, [selectedToken])
+    }, [selectedToken, columnConfigs])
 
     return {
         // Token

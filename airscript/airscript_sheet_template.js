@@ -766,7 +766,7 @@ if (action === "getAll") {
     result = getImageUrlFromCell(argv.sheetName, argv.cellAddress, argv.cells)
 } else if (action === "searchBatch") {
     // 批量搜索
-    result = searchBatch(argv.sheetName, argv.batchCriteria)
+    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns)
 } else {
     result = {
         success: false,
@@ -779,9 +779,10 @@ if (action === "getAll") {
  * 批量搜索 (支持多行查询)
  * @param {string} sheetName - 工作表名称
  * @param {Array} batchCriteria - 批量查询条件数组，每个元素为 {id: string, criteria: Array}
+ * @param {Array} returnColumns - (可选) 指定返回的列名数组
  * @returns {Object} 包含所有查询结果的对象
  */
-function searchBatch(sheetName, batchCriteria) {
+function searchBatch(sheetName, batchCriteria, returnColumns) {
     console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
 
     if (!sheetName) {
@@ -855,6 +856,16 @@ function searchBatch(sheetName, batchCriteria) {
         }
         const allColumns = Object.keys(columnMap)
 
+        // 确定要返回的列
+        let outputColumns = allColumns
+        if (returnColumns && Array.isArray(returnColumns) && returnColumns.length > 0) {
+            // 过滤只返回存在的列
+            const validReturnCols = returnColumns.filter(c => columnMap[c])
+            if (validReturnCols.length > 0) {
+                outputColumns = validReturnCols
+            }
+        }
+
         // 遍历每一个查询请求
         for (let i = 0; i < batchCriteria.length; i++) {
             const queryItem = batchCriteria[i]
@@ -869,7 +880,7 @@ function searchBatch(sheetName, batchCriteria) {
             // 简单起见，且为了保证一致性，我们在这里实现一个简化的 searchMultiCriteria 变体，
             // 复用已经获取的 resources (sheet, imageMap, columnMap)
 
-            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow)
+            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, outputColumns, imageMap, hasImages, headerRow)
 
             batchResults.push({
                 id: queryId,

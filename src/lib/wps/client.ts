@@ -220,16 +220,19 @@ export interface WpsBatchSearchResult {
  * @param tokenId
  * @param sheetName
  * @param batchCriteria Array of { id: string, criteria: WpsSearchCriteria[] }
+ * @param returnColumns (可选) 指定返回的列名数组
  */
 export async function searchBatch(
     tokenId: string,
     sheetName: string,
-    batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>
+    batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>,
+    returnColumns?: string[] // 新增参数
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     const result = await callWpsProxy<WpsBatchSearchResult>(tokenId, {
         action: 'searchBatch',
         sheetName,
-        batchCriteria
+        batchCriteria,
+        returnColumns // 传递给后端
     })
 
     return result

@@ -683,9 +683,10 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
  * 批量搜索 (支持多行查询)
  * @param {string} sheetName - 数据表名称
  * @param {Array} batchCriteria - 批量查询条件数组，每个元素为 {id: string, criteria: Array, returnColumns: Array}
+ * @param {Array} globalReturnColumns - (可选) 全局指定返回的列名数组
  * @returns {Object} 包含所有查询结果的对象
  */
-function searchBatch(sheetName, batchCriteria) {
+function searchBatch(sheetName, batchCriteria, globalReturnColumns) {
     console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
 
     if (!sheetName) {
@@ -739,7 +740,9 @@ function searchBatch(sheetName, batchCriteria) {
             const queryItem = batchCriteria[i]
             const queryId = queryItem.id || ("q_" + i)
             const criteria = queryItem.criteria
-            const returnColumns = queryItem.returnColumns
+            const returnColumns = (queryItem.returnColumns && queryItem.returnColumns.length > 0)
+                ? queryItem.returnColumns
+                : globalReturnColumns
 
             // 构建 Filter
             const filter = { "mode": "AND", "criteria": [] }
@@ -878,7 +881,7 @@ if (action === "getAll") {
     result = getTableDetails(argv.sheetName, argv.sampleSize)
 } else if (action === "searchBatch") {
     // 批量搜索
-    result = searchBatch(argv.sheetName, argv.batchCriteria)
+    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns)
 } else {
     result = {
         success: false,
