@@ -199,20 +199,69 @@ async function getSpreadsheetMetadata(
     )
 }
 
-/**
- * 获取指定范围的值
- */
+interface CacheEntry {
+    values: string[][]
+    cachedAt: number
+}
+
+// 全局内存缓存
+const googleSheetsCache = new Map<string, CacheEntry>()
+// 正在进行中的请求缓存，防止并发冲突
+const activeFetches = new Map<string, Promise<string[][]>>()
+// 强制刷新最小间隔，防止高频刷新 (30秒)
+const MIN_REFRESH_INTERVAL_MS = 30000
+
 async function getSheetValues(
     spreadsheetId: string,
     range: string,
-    auth: GoogleSheetsAuth
+    auth: GoogleSheetsAuth,
+    bypassCache?: boolean
 ): Promise<string[][]> {
-    const data = await callSheetsApi<{ values?: string[][] }>(
-        `/${spreadsheetId}/values/${encodeURIComponent(range)}`,
-        auth,
-        { valueRenderOption: 'FORMATTED_VALUE' }
-    )
-    return data.values || []
+    const cacheKey = `${spreadsheetId}::${range}`
+
+    // Cooldown check for refresh cache
+    if (bypassCache) {
+        const cached = googleSheetsCache.get(cacheKey)
+        if (cached && (Date.now() - cached.cachedAt) < MIN_REFRESH_INTERVAL_MS) {
+            console.log(`[GoogleSheets Cache] Cooldown active for ${cacheKey}. Skip refresh.`)
+            return cached.values
+        }
+    } else {
+        const cached = googleSheetsCache.get(cacheKey)
+        if (cached) {
+            console.log(`[GoogleSheets Cache] HIT: ${cacheKey}`)
+            return cached.values
+        }
+    }
+
+    // Single-Flight: Coalesce concurrent API calls
+    let activePromise = activeFetches.get(cacheKey)
+    if (activePromise) {
+        console.log(`[GoogleSheets Cache] Coalescing concurrent fetch for ${cacheKey}`)
+        return activePromise
+    }
+
+    console.log(`[GoogleSheets Cache] MISS/BYPASS: ${cacheKey}. Fetching from API...`)
+    const fetchPromise = (async () => {
+        try {
+            const data = await callSheetsApi<{ values?: string[][] }>(
+                `/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+                auth,
+                { valueRenderOption: 'FORMATTED_VALUE' }
+            )
+            const values = data.values || []
+            googleSheetsCache.set(cacheKey, {
+                values,
+                cachedAt: Date.now()
+            })
+            return values
+        } finally {
+            activeFetches.delete(cacheKey)
+        }
+    })()
+
+    activeFetches.set(cacheKey, fetchPromise)
+    return fetchPromise
 }
 
 /**
@@ -286,6 +335,12 @@ export async function getAllSheetsInfo(tokenValue: string, spreadsheetId: string
                 console.error(`Failed to get headers for sheet ${sheetName}:`, err)
             }
 
+            const cachedKey = `${spreadsheetId}::'${sheetName}'`
+            const cached = googleSheetsCache.get(cachedKey)
+            const cacheTime = cached
+                ? new Date(cached.cachedAt).toLocaleString('zh-CN', { hour12: false })
+                : null
+
             sheets.push({
                 name: sheetName,
                 index: metadata.sheets.indexOf(sheet) + 1,
@@ -294,7 +349,8 @@ export async function getAllSheetsInfo(tokenValue: string, spreadsheetId: string
                     : '',
                 rowCount: gridProps?.rowCount || 0,
                 columnCount: gridProps?.columnCount || 0,
-                columns
+                columns,
+                cacheTime
             })
         }
 
@@ -321,7 +377,8 @@ export async function searchInSheet(
     sheetName: string,
     searchValue: string,
     searchColumn?: number,
-    maxResults?: number
+    maxResults?: number,
+    bypassCache?: boolean
 ) {
     if (!sheetName) {
         return { success: false, error: '缺少参数: sheetName', message: '请提供工作表名称' }
@@ -332,7 +389,7 @@ export async function searchInSheet(
 
     try {
         const auth = await resolveAuth(tokenValue)
-        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth)
+        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth, bypassCache)
 
         if (allValues.length === 0) {
             return {
@@ -413,7 +470,8 @@ export async function getRangeData(
     spreadsheetId: string,
     sheetName: string,
     rangeAddress?: string,
-    hasHeader?: boolean
+    hasHeader?: boolean,
+    bypassCache?: boolean
 ) {
     if (!sheetName) {
         return { success: false, error: '缺少参数: sheetName', message: '请提供工作表名称' }
@@ -425,7 +483,7 @@ export async function getRangeData(
             ? `'${sheetName}'!${rangeAddress}`
             : `'${sheetName}'`
 
-        const allValues = await getSheetValues(spreadsheetId, range, auth)
+        const allValues = await getSheetValues(spreadsheetId, range, auth, bypassCache)
 
         if (allValues.length === 0) {
             return {
@@ -487,7 +545,8 @@ export async function searchMultiCriteria(
     spreadsheetId: string,
     sheetName: string,
     criteria: SearchCriteria[],
-    returnColumns?: string[]
+    returnColumns?: string[],
+    bypassCache?: boolean
 ) {
     if (!sheetName) {
         return { success: false, error: '缺少参数: sheetName', message: '请提供工作表名称' }
@@ -498,7 +557,7 @@ export async function searchMultiCriteria(
 
     try {
         const auth = await resolveAuth(tokenValue)
-        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth)
+        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth, bypassCache)
 
         if (allValues.length <= 1) {
             return {
@@ -659,7 +718,8 @@ export async function searchBatch(
     spreadsheetId: string,
     sheetName: string,
     batchCriteria: BatchCriteriaItem[],
-    returnColumns?: string[]
+    returnColumns?: string[],
+    bypassCache?: boolean
 ) {
     if (!sheetName) {
         return { success: false, error: '缺少参数: sheetName', message: '请提供工作表名称' }
@@ -670,7 +730,7 @@ export async function searchBatch(
 
     try {
         const auth = await resolveAuth(tokenValue)
-        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth)
+        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'`, auth, bypassCache)
 
         if (allValues.length <= 1) {
             return {
@@ -1071,7 +1131,8 @@ export async function handleGoogleSheetsAction(
                 argv.sheetName as string,
                 argv.searchValue as string,
                 argv.searchColumn as number | undefined,
-                argv.maxResults as number | undefined
+                argv.maxResults as number | undefined,
+                argv.bypassCache as boolean | undefined
             )
 
         case 'searchMulti':
@@ -1080,7 +1141,8 @@ export async function handleGoogleSheetsAction(
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.criteria as SearchCriteria[],
-                argv.returnColumns as string[] | undefined
+                argv.returnColumns as string[] | undefined,
+                argv.bypassCache as boolean | undefined
             )
 
         case 'getData':
@@ -1089,7 +1151,8 @@ export async function handleGoogleSheetsAction(
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.range as string | undefined,
-                argv.hasHeader as boolean | undefined
+                argv.hasHeader as boolean | undefined,
+                argv.bypassCache as boolean | undefined
             )
 
         case 'searchBatch':
@@ -1098,8 +1161,28 @@ export async function handleGoogleSheetsAction(
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.batchCriteria as BatchCriteriaItem[],
-                argv.returnColumns as string[] | undefined
+                argv.returnColumns as string[] | undefined,
+                argv.bypassCache as boolean | undefined
             )
+
+        case 'refreshCache':
+            const refreshSheetName = argv.sheetName as string
+            const refreshAuth = await resolveAuth(tokenValue)
+            // 强制刷新 (传入 bypassCache = true)
+            await getSheetValues(spreadsheetId, `'${refreshSheetName}'`, refreshAuth, true)
+
+            // 获取最新缓存时间
+            const rCacheKey = `${spreadsheetId}::'${refreshSheetName}'`
+            const rCached = googleSheetsCache.get(rCacheKey)
+            const rCacheTime = rCached
+                ? new Date(rCached.cachedAt).toLocaleString('zh-CN', { hour12: false })
+                : null
+
+            return {
+                success: true,
+                sheetName: refreshSheetName,
+                cacheTime: rCacheTime
+            }
 
         case 'setCellValue':
             return await setCellValue(

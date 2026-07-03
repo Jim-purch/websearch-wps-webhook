@@ -23,6 +23,8 @@ export interface WpsTable {
     usedRange?: string
     tokenId?: string
     tokenName?: string
+    cacheTime?: string | null
+    isGoogleSheets?: boolean
 }
 
 export interface WpsGetAllResult {
@@ -119,7 +121,8 @@ export async function searchMultiCriteria(
     criteria: WpsSearchCriteria[],
     returnColumns?: string[], // 新增参数：指定返回列
     limit?: number,
-    offset?: number
+    offset?: number,
+    bypassCache?: boolean
 ): Promise<ParsedWpsResult<WpsSearchResult>> {
     const result = await callWpsProxy<WpsSearchResult>(tokenId, {
         action: 'searchMulti',
@@ -127,7 +130,8 @@ export async function searchMultiCriteria(
         criteria,
         returnColumns, // 传递给后端
         limit,
-        offset
+        offset,
+        bypassCache
     })
 
     return result
@@ -233,16 +237,32 @@ export async function searchBatch(
     sheetName: string,
     batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>,
     returnColumns?: string[], // 新增参数
-    limit?: number
+    limit?: number,
+    bypassCache?: boolean
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     const result = await callWpsProxy<WpsBatchSearchResult>(tokenId, {
         action: 'searchBatch',
         sheetName,
         batchCriteria,
         returnColumns, // 传递给后端
-        limit
+        limit,
+        bypassCache
     })
 
+    return result
+}
+
+/**
+ * 刷新 Google Sheets 缓存
+ */
+export async function refreshGsheetCache(
+    tokenId: string,
+    sheetName: string
+): Promise<ParsedWpsResult<{ sheetName: string; cacheTime: string | null }>> {
+    const result = await callWpsProxy<{ sheetName: string; cacheTime: string | null }>(tokenId, {
+        action: 'refreshCache',
+        sheetName
+    })
     return result
 }
 

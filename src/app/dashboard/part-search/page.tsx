@@ -58,6 +58,8 @@ export default function PartSearchPage() {
         downloadBatchTemplate,
         performBatchSearch,
         performPasteSearch,
+        refreshTokensCache,
+        setRefreshTokensCache,
         columnConfigs,
         setColumnConfigs,
         // 预设加载支持
@@ -484,6 +486,8 @@ export default function PartSearchPage() {
                         columnsData={columnsData}
                         forceCollapsed={forceCollapsedCounter}
                         forceExpanded={forceExpandedCounter}
+                        refreshTokensCache={refreshTokensCache}
+                        onRefreshTokensCacheChange={setRefreshTokensCache}
                     />
                 )}
 

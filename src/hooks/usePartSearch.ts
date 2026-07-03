@@ -8,6 +8,7 @@ import {
     searchMultiCriteria,
     searchBatch,
     getImageUrls,
+    refreshGsheetCache,
     type WpsTable,
     type WpsSearchCriteria,
     type WpsSearchResult,
@@ -173,6 +174,9 @@ export function usePartSearch() {
     // 导出状态
     const [isExporting, setIsExporting] = useState(false)
 
+    // Google Sheets 缓存控制
+    const [refreshTokensCache, setRefreshTokensCache] = useState<Record<string, boolean>>({})
+
     // 图片URL缓存 { "tableName__cellAddress": url }
     const [imageUrlCache, setImageUrlCache] = useState<Record<string, string>>({})
 
@@ -246,10 +250,14 @@ export function usePartSearch() {
 
             for (const res of results) {
                 if (res.success && res.data) {
+                    const tokenObj = tokensToFetch.find(t => t.id === res.tokenId)
+                    const isGsheet = tokenObj?.webhook_url?.startsWith('gsheet://') || false
                     const tablesWithToken = res.data.map(table => ({
                         ...table,
                         tokenId: res.tokenId,
-                        tokenName: res.tokenName
+                        tokenName: res.tokenName,
+                        isGoogleSheets: isGsheet,
+                        cacheTime: table.cacheTime || null
                     }))
                     allTables.push(...tablesWithToken)
                 } else {
@@ -354,8 +362,73 @@ export function usePartSearch() {
         setSelectedTableNames(new Set())
     }, [])
 
-    // 加载选中表的列信息
-    const loadColumnsForSelected = useCallback(() => {
+    // 加载选中表的列信息 (支持异步刷新 Google Sheets 缓存)
+    const loadColumnsForSelected = useCallback(async () => {
+        // 查找哪些选中的表需要刷新缓存
+        const tablesToRefresh = Array.from(selectedTableNames).filter(tableKey => {
+            let tokenId = ''
+            if (tableKey.includes('::')) {
+                tokenId = tableKey.split('::')[0]
+            }
+            const table = tables.find(t => `${t.tokenId}::${t.name}` === tableKey)
+            return table?.isGoogleSheets && refreshTokensCache[tokenId]
+        })
+
+        if (tablesToRefresh.length > 0) {
+            setIsLoadingTables(true)
+            setTablesError(null)
+            try {
+                const refreshPromises = tablesToRefresh.map(async (tableKey) => {
+                    let tokenId = ''
+                    let tableName = tableKey
+                    if (tableKey.includes('::')) {
+                        const parts = tableKey.split('::')
+                        tokenId = parts[0]
+                        tableName = parts[1]
+                    }
+                    
+                    const res = await refreshGsheetCache(tokenId, tableName)
+                    if (res.success && res.data) {
+                        return { tableKey, cacheTime: res.data.cacheTime }
+                    } else {
+                        console.error(`刷新表 ${tableName} 缓存失败:`, res.error)
+                    }
+                    return null
+                })
+
+                const refreshResults = await Promise.all(refreshPromises)
+
+                // 更新 tables 状态中的缓存时间
+                setTables(prevTables => {
+                    return prevTables.map(t => {
+                        const key = `${t.tokenId}::${t.name}`
+                        const match = refreshResults.find(r => r && r.tableKey === key)
+                        if (match) {
+                            return { ...t, cacheTime: match.cacheTime }
+                        }
+                        return t
+                    })
+                })
+
+                // 重置这些已刷新 Token 的强制刷新状态
+                setRefreshTokensCache(prev => {
+                    const next = { ...prev }
+                    for (const tableKey of tablesToRefresh) {
+                        if (tableKey.includes('::')) {
+                            next[tableKey.split('::')[0]] = false
+                        }
+                    }
+                    return next
+                })
+
+            } catch (err) {
+                console.error('Refresh caches failed:', err)
+                setTablesError('刷新 Google Sheets 缓存时发生错误')
+            } finally {
+                setIsLoadingTables(false)
+            }
+        }
+
         // 清空之前的搜索结果
         setSearchResults([])
 
@@ -406,7 +479,7 @@ export function usePartSearch() {
 
         setColumnsData(newColumnsData)
         setSelectedColumns(newSelectedColumns)
-    }, [selectedTableNames, tables])
+    }, [selectedTableNames, tables, refreshTokensCache])
 
     // 切换列选择 (tableName 为 tableKey)
     const toggleColumn = useCallback((tableName: string, columnName: string) => {
@@ -622,7 +695,7 @@ export function usePartSearch() {
                     if (batchItems.length === 0) continue
 
                     try {
-                        const res = await searchBatch(tokenId, realTableName, batchItems, returnColumns.length > 0 ? returnColumns : undefined)
+                        const res = await searchBatch(tokenId, realTableName, batchItems, returnColumns.length > 0 ? returnColumns : undefined, undefined, undefined)
                         if (res.success && res.data) {
                             const batchRes = res.data as WpsBatchSearchResult
                             const allRecords: Record<string, unknown>[] = []
@@ -703,7 +776,10 @@ export function usePartSearch() {
                             tokenId,
                             realTableName,
                             tableIndependentConds,
-                            returnColumns.length > 0 ? returnColumns : undefined
+                            returnColumns.length > 0 ? returnColumns : undefined,
+                            undefined, // limit
+                            undefined, // offset
+                            undefined
                         )
 
                         if (result.success && result.data) {
@@ -782,7 +858,8 @@ export function usePartSearch() {
                 targetResult.originalCriteria || [],
                 targetResult.displayColumns,
                 limit,
-                offset
+                offset,
+                undefined
             )
 
             if (result.success && result.data) {
@@ -1668,7 +1745,7 @@ export function usePartSearch() {
                         // 显示列顺序
                         const displayColumns = returnColumns
 
-                        const res = await searchBatch(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit)
+                        const res = await searchBatch(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined)
 
                         let newResult: TableSearchResult
 
@@ -1858,7 +1935,7 @@ export function usePartSearch() {
                 // 显示列顺序
                 const displayColumns = returnColumns
 
-                const res = await searchBatch(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit)
+                const res = await searchBatch(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined)
 
                 let newResult: TableSearchResult
 
@@ -2193,6 +2270,8 @@ export function usePartSearch() {
         isExporting,
         handleImageLoad,
         imageUrlCache,
+        refreshTokensCache,
+        setRefreshTokensCache,
 
         // Batch Search
         isBatchSearching,
