@@ -52,6 +52,9 @@
   /* 代码和内联元素 */
   --code-bg: rgba(255, 255, 255, 0.1);
   --code-text: #e0e0e0;
+
+  /* 表格冻结列/表头背景（实色） */
+  --table-sticky-bg: #14142b;
 }
 
 /* 暗色主题 - 明确的类选择器 */
@@ -83,6 +86,8 @@ body.theme-dark {
 
   --code-bg: rgba(255, 255, 255, 0.1);
   --code-text: #e0e0e0;
+
+  --table-sticky-bg: #14142b;
 }
 
 /* 亮色主题 */
@@ -114,6 +119,8 @@ body.theme-light {
 
   --code-bg: rgba(0, 0, 0, 0.06);
   --code-text: #1a1a2e;
+
+  --table-sticky-bg: #ffffff;
 }
 
 @theme inline {

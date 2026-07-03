@@ -64,8 +64,16 @@ export function useTableSelection(options: UseTableSelectionOptions = {}): UseTa
             e.preventDefault()
         }
 
-        selectionStartRef.current = { row, col }
-        setSelection({ start: { row, col }, end: { row, col } })
+        // 支持 Shift 键框选
+        if (e.shiftKey && selectionStartRef.current) {
+            setSelection({
+                start: selectionStartRef.current,
+                end: { row, col }
+            })
+        } else {
+            selectionStartRef.current = { row, col }
+            setSelection({ start: { row, col }, end: { row, col } })
+        }
         setIsSelecting(true)
     }, [])
 
@@ -105,6 +113,7 @@ export function useTableSelection(options: UseTableSelectionOptions = {}): UseTa
     // 全选列
     const selectColumn = useCallback((col: number, rowCount: number) => {
         if (rowCount <= 0) return
+        selectionStartRef.current = { row: 0, col }
         setSelection({
             start: { row: 0, col },
             end: { row: rowCount - 1, col }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { TableSearchResult } from '@/hooks/usePartSearch'
 import { useTableSelection } from '@/hooks/useTableSelection'
@@ -305,6 +305,43 @@ function ResultCard({
     const [editValue, setEditValue] = useState('')
     const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
 
+    // 列宽度和行高度状态
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
+    const [rowHeight, setRowHeight] = useState<'default' | 'compact' | 'very-compact'>('default')
+    const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null)
+
+    const handleResizeStart = useCallback((col: string, e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const thElement = (e.target as HTMLElement).parentElement
+        if (!thElement) return
+        const startWidth = thElement.getBoundingClientRect().width
+        resizingRef.current = {
+            col,
+            startX: e.clientX,
+            startWidth
+        }
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!resizingRef.current) return
+            const deltaX = moveEvent.clientX - resizingRef.current.startX
+            const newWidth = Math.max(50, resizingRef.current.startWidth + deltaX)
+            setColumnWidths(prev => ({
+                ...prev,
+                [resizingRef.current!.col]: newWidth
+            }))
+        }
+
+        const handleMouseUp = () => {
+            resizingRef.current = null
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+    }, [])
+
     // 确保在客户端渲染后才使用 Portal
     useEffect(() => {
         setMounted(true)
@@ -593,6 +630,8 @@ function ResultCard({
         )
     }
 
+    const pyClass = rowHeight === 'very-compact' ? 'py-0.5' : rowHeight === 'compact' ? 'py-1' : 'py-2'
+
     return (
         <div className="card mb-6 overflow-hidden">
             <div
@@ -615,6 +654,18 @@ function ResultCard({
                         {result.truncated && ' (已截断)'}
                         {result.error && ' (部分失败)'}
                     </span>
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <select
+                            value={rowHeight}
+                            onChange={(e) => setRowHeight(e.target.value as 'default' | 'compact' | 'very-compact')}
+                            className="text-xs px-2 py-1 rounded bg-[var(--card-bg)] border border-[var(--border)] text-[var(--text-main)] hover:border-[#eab308] focus:border-[#eab308] transition-colors outline-none cursor-pointer"
+                            title="行高"
+                        >
+                            <option value="default">默认高度</option>
+                            <option value="compact">紧凑</option>
+                            <option value="very-compact">非常紧凑</option>
+                        </select>
+                    </div>
                     {onExportSingle && (
                         <button
                             type="button"
@@ -640,238 +691,267 @@ function ResultCard({
             )}
 
             {!collapsed && (
-                <div
-                    className={`p-4 overflow-x-auto ${isSelecting ? 'select-none' : ''}`}
-                    {...containerProps}
-                >
-                    {result.error && (
-                        <div className="mb-4 p-3 rounded-lg bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#ef4444] text-sm flex items-center gap-2">
-                            <span>❌</span>
-                            <span>部分搜索失败: {result.error}</span>
-                        </div>
-                    )}
-                    {result.truncated && (
-                        <div className="mb-4 p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm">
-                            ⚠️ 搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），
-                            仅显示前 {result.maxRecords} 条。建议使用更精确的搜索条件缩小范围。
-                        </div>
-                    )}
-
-                    {/* 批量操作工具栏 */}
-                    {selectedRows.size > 0 && (
-                        <div className="mb-4 px-4 py-2.5 bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.2)] rounded-lg flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                            <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
-                                <span className="text-[#eab308] font-medium">已选中 {selectedRows.size} 行</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {updateCell && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsBatchEditModalOpen(true)}
-                                        className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
-                                        title="批量修改选中行的指定字段"
-                                    >
-                                        <span>✏️</span> 批量修改
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={handleBatchExport}
-                                    className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
-                                    title="导出选中行到 Excel"
-                                >
-                                    <span>📤</span> 导出选中行
-                                </button>
-                                {updateCell && onDeleteRows && (
-                                    <button
-                                        type="button"
-                                        onClick={handleBatchDelete}
-                                        className="text-xs px-3 py-1.5 rounded bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.2)] text-[#ef4444] hover:bg-[#ef4444] hover:text-white transition-colors flex items-center gap-1 font-medium cursor-pointer"
-                                        title="删除选中行"
-                                    >
-                                        <span>🗑️</span> 批量删除
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {rows.length === 0 ? (
-                        <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
-                    ) : (
-                        <table className="w-full border-collapse text-sm">
-                            <thead>
-                                <tr>
-                                    <th className="px-3 py-2 border-b border-[var(--border)] w-10 text-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={rows.length > 0 && selectedRows.size === rows.length}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedRows(new Set(rows.map((_, i) => i)))
-                                                } else {
-                                                    setSelectedRows(new Set())
-                                                }
-                                            }}
-                                            className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
-                                        />
-                                    </th>
-                                    {displayColumns.map((col, colIdx) => (
-                                        <th
-                                            key={col}
-                                            className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap group transition-colors"
+                <div className="flex flex-col">
+                    {/* 提示与批量操作工具栏（带内边距） */}
+                    {(result.error || result.truncated || selectedRows.size > 0) && (
+                        <div className="p-4 pb-0 flex flex-col gap-4">
+                            {result.error && (
+                                <div className="p-3 rounded-lg bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#ef4444] text-sm flex items-center gap-2">
+                                    <span>❌</span>
+                                    <span>部分搜索失败: {result.error}</span>
+                                </div>
+                            )}
+                            {result.truncated && (
+                                <div className="p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm">
+                                    ⚠️ 搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），
+                                    仅显示前 {result.maxRecords} 条。建议使用更精确的搜索条件缩小范围。
+                                </div>
+                            )}
+                            {selectedRows.size > 0 && (
+                                <div className="px-4 py-2.5 bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.2)] rounded-lg flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                                        <span className="text-[#eab308] font-medium">已选中 {selectedRows.size} 行</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {updateCell && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsBatchEditModalOpen(true)}
+                                                className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                                title="批量修改选中行的指定字段"
+                                            >
+                                                <span>✏️</span> 批量修改
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={handleBatchExport}
+                                            className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                            title="导出选中行到 Excel"
                                         >
-                                            <div className="flex items-center gap-1">
-                                                <span
-                                                    className="cursor-pointer hover:text-[var(--text-main)]"
-                                                    onClick={() => selectColumn(colIdx, rows.length)}
-                                                    title="点击全选此列"
-                                                >
-                                                    {col === '_BatchQueryID' ? 'QueryID' : col}
-                                                </span>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleSort(col)
-                                                    }}
-                                                    className={`p-1 rounded hover:bg-[var(--hover-bg)] transition-colors opacity-0 group-hover:opacity-100 ${sortConfig.key === col ? 'opacity-100 text-[#eab308]' : ''
-                                                        }`}
-                                                    title="点击切换排序：无 -> 升序 -> 降序"
-                                                >
-                                                    {sortConfig.key === col ? (
-                                                        sortConfig.direction === 'asc' ? '🔼' : '🔽'
-                                                    ) : '↕️'}
-                                                </button>
-                                            </div>
-                                        </th>
-                                    ))}
-                                    <th className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)]">
-                                        操作
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((row, rowIdx) => (
-                                    <tr key={rowIdx} className="transition-colors">
-                                        <td className="px-3 py-2 border-b border-[var(--border)] text-center w-10">
+                                            <span>📤</span> 导出选中行
+                                        </button>
+                                        {updateCell && onDeleteRows && (
+                                            <button
+                                                type="button"
+                                                onClick={handleBatchDelete}
+                                                className="text-xs px-3 py-1.5 rounded bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.2)] text-[#ef4444] hover:bg-[#ef4444] hover:text-white transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                                title="删除选中行"
+                                            >
+                                                <span>🗑️</span> 批量删除
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 表格容器（无内边距，实现无缝贴合） */}
+                    <div
+                        className={`overflow-auto max-h-[600px] ${isSelecting ? 'select-none' : ''}`}
+                        {...containerProps}
+                    >
+                        {rows.length === 0 ? (
+                            <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
+                        ) : (
+                            <table className="w-full border-collapse text-sm">
+                                <thead>
+                                    <tr>
+                                        <th 
+                                            className="sticky top-0 left-0 bg-[var(--table-sticky-bg)] z-50 px-3 py-2 border-b border-[var(--border)] w-10 text-center"
+                                            style={{ left: 0 }}
+                                        >
                                             <input
                                                 type="checkbox"
-                                                checked={selectedRows.has(rowIdx)}
+                                                checked={rows.length > 0 && selectedRows.size === rows.length}
                                                 onChange={(e) => {
-                                                    const next = new Set(selectedRows)
                                                     if (e.target.checked) {
-                                                        next.add(rowIdx)
+                                                        setSelectedRows(new Set(rows.map((_, i) => i)))
                                                     } else {
-                                                        next.delete(rowIdx)
+                                                        setSelectedRows(new Set())
                                                     }
-                                                    setSelectedRows(next)
                                                 }}
                                                 className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
                                             />
-                                        </td>
+                                        </th>
                                         {displayColumns.map((col, colIdx) => {
-                                            const val = row[col]
-                                            const cellKey = `${index}-${rowIdx}-${col}`
-                                            const isCopied = copiedCell === cellKey
-                                            const isSelected = isCellSelected(rowIdx, colIdx)
-                                            const modifiedKey = `${index}__${rowIdx}__${col}`
-                                            const isModified = modifiedCells && modifiedCells[modifiedKey] !== undefined
-                                            const isEditing = editingCell && editingCell.rowIdx === rowIdx && editingCell.colIdx === colIdx
-
-                                            // 普通值处理
-                                            let displayVal = val
-                                            if (val && typeof val === 'object' && !('_type' in val)) {
-                                                displayVal = JSON.stringify(val)
-                                            }
-                                            if (val && typeof val === 'object' && '_type' in val) {
-                                                const imgObj = val as { _type: string; value?: string }
-                                                displayVal = imgObj.value || ''
-                                            }
-                                            const strVal = String(displayVal ?? '')
-
-                                            // 编辑输入框
-                                            if (isEditing) {
-                                                return (
-                                                    <td
-                                                        key={col}
-                                                        className="px-2 py-1 border-b border-[var(--border)] bg-[rgba(234,179,8,0.05)]"
-                                                    >
-                                                        <input
-                                                            type="text"
-                                                            className="w-full px-2 py-1 text-sm bg-[var(--bg)] border border-[#eab308] rounded focus:outline-none focus:ring-2 focus:ring-[#eab308] text-[var(--text-main)]"
-                                                            value={editValue}
-                                                            autoFocus
-                                                            onChange={(e) => setEditValue(e.target.value)}
-                                                            onBlur={() => {
-                                                                if (updateCell && editValue !== strVal) {
-                                                                    updateCell(index, rowIdx, col, editValue)
-                                                                }
-                                                                setEditingCell(null)
+                                            const isFirstDataCol = colIdx === 0;
+                                            return (
+                                                <th
+                                                    key={col}
+                                                    className={`px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap group transition-colors select-none ${
+                                                        isFirstDataCol
+                                                            ? 'sticky top-0 left-10 z-50 bg-[var(--table-sticky-bg)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]'
+                                                            : 'sticky top-0 bg-[var(--table-sticky-bg)] z-30'
+                                                    }`}
+                                                    style={{
+                                                        width: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                        minWidth: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                        maxWidth: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                        left: isFirstDataCol ? '40px' : undefined,
+                                                    }}
+                                                >
+                                                    <div className="flex items-center gap-1 overflow-hidden pr-2">
+                                                        <span
+                                                            className="cursor-pointer hover:text-[var(--text-main)] truncate"
+                                                            onClick={() => selectColumn(colIdx, rows.length)}
+                                                            title="点击全选此列"
+                                                        >
+                                                            {col === '_BatchQueryID' ? 'QueryID' : col}
+                                                        </span>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                handleSort(col)
                                                             }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
+                                                            className={`p-1 rounded hover:bg-[var(--hover-bg)] transition-colors opacity-0 group-hover:opacity-100 ${sortConfig.key === col ? 'opacity-100 text-[#eab308]' : ''
+                                                                }`}
+                                                            title="点击切换排序：无 -> 升序 -> 降序"
+                                                        >
+                                                            {sortConfig.key === col ? (
+                                                                sortConfig.direction === 'asc' ? '🔼' : '🔽'
+                                                            ) : '↕️'}
+                                                        </button>
+                                                    </div>
+                                                    {/* 列宽调整手柄 */}
+                                                    <div
+                                                        className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-[#eab308]/50 active:bg-[#eab308] z-20 transition-colors"
+                                                        onMouseDown={(e) => handleResizeStart(col, e)}
+                                                        title="拖拽调整列宽"
+                                                    />
+                                                </th>
+                                            );
+                                        })}
+                                        <th className="sticky top-0 bg-[var(--table-sticky-bg)] z-30 px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)]">
+                                            操作
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map((row, rowIdx) => (
+                                        <tr key={rowIdx} className="transition-colors">
+                                            <td 
+                                                className={`sticky left-0 bg-[var(--table-sticky-bg)] hover:bg-[var(--hover-bg)] z-20 px-3 ${pyClass} border-b border-[var(--border)] text-center w-10`}
+                                                style={{ left: 0 }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRows.has(rowIdx)}
+                                                    onChange={(e) => {
+                                                        const next = new Set(selectedRows)
+                                                        if (e.target.checked) {
+                                                            next.add(rowIdx)
+                                                        } else {
+                                                            next.delete(rowIdx)
+                                                        }
+                                                        setSelectedRows(next)
+                                                    }}
+                                                    className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
+                                                />
+                                            </td>
+                                            {displayColumns.map((col, colIdx) => {
+                                                const val = row[col]
+                                                const cellKey = `${index}-${rowIdx}-${col}`
+                                                const isCopied = copiedCell === cellKey
+                                                const isSelected = isCellSelected(rowIdx, colIdx)
+                                                const modifiedKey = `${index}__${rowIdx}__${col}`
+                                                const isModified = modifiedCells && modifiedCells[modifiedKey] !== undefined
+                                                const isEditing = editingCell && editingCell.rowIdx === rowIdx && editingCell.colIdx === colIdx
+
+                                                // 普通值处理
+                                                let displayVal = val
+                                                if (val && typeof val === 'object' && !('_type' in val)) {
+                                                    displayVal = JSON.stringify(val)
+                                                }
+                                                if (val && typeof val === 'object' && '_type' in val) {
+                                                    const imgObj = val as { _type: string; value?: string }
+                                                    displayVal = imgObj.value || ''
+                                                }
+                                                const strVal = String(displayVal ?? '')
+
+                                                const isFirstDataCol = colIdx === 0
+                                                const cellStyle = {
+                                                    width: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                    minWidth: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                    maxWidth: columnWidths[col] ? `${columnWidths[col]}px` : undefined,
+                                                    left: isFirstDataCol ? '40px' : undefined,
+                                                    ...(isFirstDataCol ? {
+                                                        background: isSelected
+                                                            ? 'linear-gradient(rgba(102,126,234,0.3), rgba(102,126,234,0.3)), var(--table-sticky-bg)'
+                                                            : isModified
+                                                                ? 'linear-gradient(rgba(234,179,8,0.12), rgba(234,179,8,0.12)), var(--table-sticky-bg)'
+                                                                : isCopied
+                                                                    ? 'linear-gradient(rgba(34,197,94,0.2), rgba(34,197,94,0.2)), var(--table-sticky-bg)'
+                                                                    : undefined
+                                                    } : {})
+                                                }
+
+                                                // 编辑输入框
+                                                if (isEditing) {
+                                                    return (
+                                                        <td
+                                                            key={col}
+                                                            className={`px-2 py-1 border-b border-[var(--border)] bg-[rgba(234,179,8,0.05)] ${
+                                                                isFirstDataCol ? 'sticky z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]' : ''
+                                                            }`}
+                                                            style={cellStyle}
+                                                        >
+                                                            <input
+                                                                type="text"
+                                                                className="w-full px-2 py-1 text-sm bg-[var(--bg)] border border-[#eab308] rounded focus:outline-none focus:ring-2 focus:ring-[#eab308] text-[var(--text-main)]"
+                                                                value={editValue}
+                                                                autoFocus
+                                                                onChange={(e) => setEditValue(e.target.value)}
+                                                                onBlur={() => {
                                                                     if (updateCell && editValue !== strVal) {
                                                                         updateCell(index, rowIdx, col, editValue)
                                                                     }
                                                                     setEditingCell(null)
-                                                                } else if (e.key === 'Escape') {
-                                                                    setEditingCell(null)
-                                                                }
-                                                            }}
-                                                        />
-                                                    </td>
-                                                )
-                                            }
-
-                                            const cellClassName = `
-                                                px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
-                                                ${isSelected
-                                                    ? 'bg-[rgba(102,126,234,0.3)]'
-                                                    : isModified
-                                                        ? 'bg-[rgba(234,179,8,0.12)] border-l-2 border-l-[#eab308] font-medium text-[#eab308]'
-                                                        : isCopied
-                                                            ? 'bg-[rgba(34,197,94,0.2)]'
-                                                            : 'hover:bg-[var(--hover-bg)]'
-                                                }
-                                            `
-
-                                            const handleDblClick = () => {
-                                                if (updateCell && col !== '_BatchQueryID' && col !== '_rowNumber') {
-                                                    setEditingCell({ rowIdx, colIdx })
-                                                    setEditValue(strVal)
-                                                }
-                                            }
-
-                                            // 图片对象 (AirScript)
-                                            if (val && typeof val === 'object' && '_type' in val) {
-                                                const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; value?: string }
-
-                                                if (imgObj._type === 'image' && imgObj.imageUrl) {
-                                                    return (
-                                                        <td
-                                                            key={col}
-                                                            data-selectable-cell
-                                                            className={cellClassName}
-                                                            onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
-                                                            onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
-                                                            onDoubleClick={handleDblClick}
-                                                        >
-                                                            <ImageWithPreview
-                                                                src={imgObj.imageUrl}
-                                                                onCopy={() => handleCellClick(imgObj.imageUrl!, cellKey)}
-                                                                isCopied={isCopied}
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        if (updateCell && editValue !== strVal) {
+                                                                            updateCell(index, rowIdx, col, editValue)
+                                                                        }
+                                                                        setEditingCell(null)
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setEditingCell(null)
+                                                                    }
+                                                                }}
                                                             />
                                                         </td>
                                                     )
                                                 }
 
-                                                if (imgObj._type === 'dispimg' && imgObj.imageId) {
-                                                    const imgObjFull = imgObj as { _type: string; imageId: string; cellAddress?: string; value?: string }
+                                                const cellClassName = `
+                                                    px-3 ${pyClass} border-b border-[var(--border)] cursor-cell transition-colors overflow-hidden text-ellipsis whitespace-nowrap
+                                                    ${isFirstDataCol
+                                                        ? 'sticky z-10 bg-[var(--table-sticky-bg)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]'
+                                                        : ''
+                                                    }
+                                                    ${isSelected
+                                                        ? 'bg-[rgba(102,126,234,0.3)]'
+                                                        : isModified
+                                                            ? 'bg-[rgba(234,179,8,0.12)] border-l-2 border-l-[#eab308] font-medium text-[#eab308]'
+                                                            : isCopied
+                                                                ? 'bg-[rgba(34,197,94,0.2)]'
+                                                                : 'hover:bg-[var(--hover-bg)]'
+                                                    }
+                                                `
 
-                                                    if (imgObjFull.cellAddress && tokenId) {
-                                                        const cacheKey = `${result.realTableName || result.tableName}__${imgObjFull.cellAddress}`
-                                                        const cachedUrl = imageUrlCache?.[cacheKey]
+                                                const handleDblClick = () => {
+                                                    if (updateCell && col !== '_BatchQueryID' && col !== '_rowNumber') {
+                                                        setEditingCell({ rowIdx, colIdx })
+                                                        setEditValue(strVal)
+                                                    }
+                                                }
 
+                                                // 图片对象 (AirScript)
+                                                if (val && typeof val === 'object' && '_type' in val) {
+                                                    const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; value?: string }
+
+                                                    if (imgObj._type === 'image' && imgObj.imageUrl) {
                                                         return (
                                                             <td
                                                                 key={col}
@@ -880,25 +960,83 @@ function ResultCard({
                                                                 onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                                 onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
                                                                 onDoubleClick={handleDblClick}
+                                                                style={cellStyle}
                                                             >
-                                                                <LazyImageCell
-                                                                    tokenId={tokenId}
-                                                                    sheetName={result.realTableName || result.tableName}
-                                                                    cellAddress={imgObjFull.cellAddress}
-                                                                    imageId={imgObjFull.imageId}
-                                                                    onCopy={(text) => handleCellClick(text, cellKey)}
+                                                                <ImageWithPreview
+                                                                    src={imgObj.imageUrl}
+                                                                    onCopy={() => handleCellClick(imgObj.imageUrl!, cellKey)}
                                                                     isCopied={isCopied}
-                                                                    autoLoad={autoLoadImages}
-                                                                    onImageLoad={onImageLoad}
-                                                                    cachedUrl={cachedUrl}
-                                                                 />
+                                                                />
                                                             </td>
                                                         )
                                                     }
 
-                                                    const shortId = imgObj.imageId.length > 16
-                                                        ? `${imgObj.imageId.slice(0, 8)}...${imgObj.imageId.slice(-6)}`
-                                                        : imgObj.imageId
+                                                    if (imgObj._type === 'dispimg' && imgObj.imageId) {
+                                                        const imgObjFull = imgObj as { _type: string; imageId: string; cellAddress?: string; value?: string }
+
+                                                        if (imgObjFull.cellAddress && tokenId) {
+                                                            const cacheKey = `${result.realTableName || result.tableName}__${imgObjFull.cellAddress}`
+                                                            const cachedUrl = imageUrlCache?.[cacheKey]
+
+                                                            return (
+                                                                <td
+                                                                    key={col}
+                                                                    data-selectable-cell
+                                                                    className={cellClassName}
+                                                                    onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                                    onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                                    onDoubleClick={handleDblClick}
+                                                                    style={cellStyle}
+                                                                >
+                                                                    <LazyImageCell
+                                                                        tokenId={tokenId}
+                                                                        sheetName={result.realTableName || result.tableName}
+                                                                        cellAddress={imgObjFull.cellAddress}
+                                                                        imageId={imgObjFull.imageId}
+                                                                        onCopy={(text) => handleCellClick(text, cellKey)}
+                                                                        isCopied={isCopied}
+                                                                        autoLoad={autoLoadImages}
+                                                                        onImageLoad={onImageLoad}
+                                                                        cachedUrl={cachedUrl}
+                                                                     />
+                                                                </td>
+                                                            )
+                                                        }
+
+                                                        const shortId = imgObj.imageId.length > 16
+                                                            ? `${imgObj.imageId.slice(0, 8)}...${imgObj.imageId.slice(-6)}`
+                                                            : imgObj.imageId
+                                                        return (
+                                                            <td
+                                                                key={col}
+                                                                data-selectable-cell
+                                                                className={cellClassName}
+                                                                onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                                onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                                onDoubleClick={handleDblClick}
+                                                                style={cellStyle}
+                                                            >
+                                                                <div
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[rgba(234,179,8,0.15)] text-[#eab308]"
+                                                                    title={`图片ID: ${imgObj.imageId}`}
+                                                                >
+                                                                    <span>🖼️</span>
+                                                                    <span className="font-mono">{shortId}</span>
+                                                                </div>
+                                                            </td>
+                                                        )
+                                                    }
+                                                }
+
+                                                // 检测是否为 URL
+                                                const urlPattern = /^https?:\/\/[^\s]+$/i
+                                                const isUrl = urlPattern.test(strVal.trim())
+
+                                                // 检测是否为图片 URL
+                                                const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i
+                                                const isImageUrl = isUrl && imageExtensions.test(strVal.trim())
+
+                                                if (isImageUrl && autoLoadImages) {
                                                     return (
                                                         <td
                                                             key={col}
@@ -907,47 +1045,43 @@ function ResultCard({
                                                             onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                             onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
                                                             onDoubleClick={handleDblClick}
+                                                            style={cellStyle}
                                                         >
-                                                            <div
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[rgba(234,179,8,0.15)] text-[#eab308]"
-                                                                title={`图片ID: ${imgObj.imageId}`}
-                                                            >
-                                                                <span>🖼️</span>
-                                                                <span className="font-mono">{shortId}</span>
-                                                            </div>
+                                                            <ImageWithPreview
+                                                                src={strVal.trim()}
+                                                                onCopy={() => handleCellClick(strVal.trim(), cellKey)}
+                                                                isCopied={isCopied}
+                                                            />
                                                         </td>
                                                     )
                                                 }
-                                            }
 
-                                            // 检测是否为 URL
-                                            const urlPattern = /^https?:\/\/[^\s]+$/i
-                                            const isUrl = urlPattern.test(strVal.trim())
+                                                if (isUrl) {
+                                                    return (
+                                                        <td
+                                                            key={col}
+                                                            data-selectable-cell
+                                                            onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                            onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                            onDoubleClick={handleDblClick}
+                                                            className={cellClassName}
+                                                            title="双击进行编辑，或拖拽选择区域按 Ctrl+C 复制"
+                                                            style={cellStyle}
+                                                        >
+                                                            <a
+                                                                href={strVal.trim()}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className={`inline-flex items-center gap-1 text-[#3b82f6] hover:text-[#60a5fa] hover:underline transition-colors ${isCopied ? 'text-[#22c55e]' : ''}`}
+                                                            >
+                                                                <span>🔗</span>
+                                                                <span className="max-w-[200px] truncate">{strVal.trim()}</span>
+                                                            </a>
+                                                        </td>
+                                                    )
+                                                }
 
-                                            // 检测是否为图片 URL
-                                            const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i
-                                            const isImageUrl = isUrl && imageExtensions.test(strVal.trim())
-
-                                            if (isImageUrl && autoLoadImages) {
-                                                return (
-                                                    <td
-                                                        key={col}
-                                                        data-selectable-cell
-                                                        className={cellClassName}
-                                                        onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
-                                                        onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
-                                                        onDoubleClick={handleDblClick}
-                                                    >
-                                                        <ImageWithPreview
-                                                            src={strVal.trim()}
-                                                            onCopy={() => handleCellClick(strVal.trim(), cellKey)}
-                                                            isCopied={isCopied}
-                                                        />
-                                                    </td>
-                                                )
-                                            }
-
-                                            if (isUrl) {
                                                 return (
                                                     <td
                                                         key={col}
@@ -957,63 +1091,41 @@ function ResultCard({
                                                         onDoubleClick={handleDblClick}
                                                         className={cellClassName}
                                                         title="双击进行编辑，或拖拽选择区域按 Ctrl+C 复制"
+                                                        style={cellStyle}
                                                     >
-                                                        <a
-                                                            href={strVal.trim()}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className={`inline-flex items-center gap-1 text-[#3b82f6] hover:text-[#60a5fa] hover:underline transition-colors ${isCopied ? 'text-[#22c55e]' : ''}`}
-                                                        >
-                                                            <span>🔗</span>
-                                                            <span className="max-w-[200px] truncate">{strVal.trim()}</span>
-                                                        </a>
+                                                        {strVal}
                                                     </td>
                                                 )
-                                            }
-
-                                            return (
-                                                <td
-                                                    key={col}
-                                                    data-selectable-cell
-                                                    onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
-                                                    onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
-                                                    onDoubleClick={handleDblClick}
-                                                    className={cellClassName}
-                                                    title="双击进行编辑，或拖拽选择区域按 Ctrl+C 复制"
-                                                >
-                                                    {strVal}
-                                                </td>
-                                            )
-                                        })}
-                                        <td className="px-3 py-2 border-b border-[var(--border)] whitespace-nowrap">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleCopyRow(row)}
-                                                className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white transition-colors cursor-pointer"
-                                                title="复制整行"
-                                            >
-                                                📋
-                                            </button>
-                                            {updateCell && onDeleteRows && (
+                                            })}
+                                            <td className={`px-3 ${pyClass} border-b border-[var(--border)] whitespace-nowrap`}>
                                                 <button
                                                     type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleSingleDelete(rowIdx)
-                                                    }}
-                                                    className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#ef4444] hover:border-[#ef4444] hover:text-white transition-colors ml-1 cursor-pointer"
-                                                    title="删除此行"
+                                                    onClick={() => handleCopyRow(row)}
+                                                    className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white transition-colors cursor-pointer"
+                                                    title="复制整行"
                                                 >
-                                                    🗑️
+                                                    📋
                                                 </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                                                {updateCell && onDeleteRows && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            handleSingleDelete(rowIdx)
+                                                        }}
+                                                        className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#ef4444] hover:border-[#ef4444] hover:text-white transition-colors ml-1 cursor-pointer"
+                                                        title="删除此行"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
             )}
 
