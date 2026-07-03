@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { TableSearchResult } from '@/hooks/usePartSearch'
 import { useTableSelection } from '@/hooks/useTableSelection'
+import { BatchEditModal } from './BatchEditModal'
 
 interface ResultTableProps {
     results: TableSearchResult[]
@@ -302,6 +303,7 @@ function ResultCard({
     // 双击编辑状态
     const [editingCell, setEditingCell] = useState<{ rowIdx: number; colIdx: number } | null>(null)
     const [editValue, setEditValue] = useState('')
+    const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
 
     // 确保在客户端渲染后才使用 Portal
     useEffect(() => {
@@ -434,6 +436,28 @@ function ResultCard({
             ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
             : columns
         )
+
+    const handleBatchEditConfirm = useCallback((columnName: string, newValue: string) => {
+        if (!updateCell) return
+        selectedRows.forEach(rowIdx => {
+            const row = rows[rowIdx]
+            if (!row) return
+            const val = row[columnName]
+            let displayVal = val
+            if (val && typeof val === 'object' && !('_type' in val)) {
+                displayVal = JSON.stringify(val)
+            }
+            if (val && typeof val === 'object' && '_type' in val) {
+                const imgObj = val as { _type: string; value?: string }
+                displayVal = imgObj.value || ''
+            }
+            const strVal = String(displayVal ?? '')
+            if (strVal !== newValue) {
+                updateCell(index, rowIdx, columnName, newValue)
+            }
+        })
+        setSelectedRows(new Set())
+    }, [index, rows, selectedRows, updateCell])
 
     // 表格选择功能
     const {
@@ -640,6 +664,16 @@ function ResultCard({
                                 <span className="text-[#eab308] font-medium">已选中 {selectedRows.size} 行</span>
                             </div>
                             <div className="flex items-center gap-2">
+                                {updateCell && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsBatchEditModalOpen(true)}
+                                        className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                        title="批量修改选中行的指定字段"
+                                    >
+                                        <span>✏️</span> 批量修改
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     onClick={handleBatchExport}
@@ -981,6 +1015,16 @@ function ResultCard({
                         </table>
                     )}
                 </div>
+            )}
+
+            {isBatchEditModalOpen && (
+                <BatchEditModal
+                    isOpen={isBatchEditModalOpen}
+                    onClose={() => setIsBatchEditModalOpen(false)}
+                    columns={displayColumns.filter(col => col !== '_BatchQueryID' && col !== '_rowNumber')}
+                    selectedCount={selectedRows.size}
+                    onConfirm={handleBatchEditConfirm}
+                />
             )}
         </div>
     )
