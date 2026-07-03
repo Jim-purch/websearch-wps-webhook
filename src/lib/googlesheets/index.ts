@@ -4,5 +4,8 @@ export {
     searchInSheet,
     searchMultiCriteria,
     getRangeData,
-    searchBatch
+    searchBatch,
+    setCellValue,
+    setRangeValues,
+    updateRow
 } from './googlesheets'

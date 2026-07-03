@@ -13,6 +13,10 @@ interface ResultTableProps {
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void // 图片加载回调
     imageUrlCache?: Record<string, string> // 图片缓存
     onExportSingle?: (result: TableSearchResult) => void // 导出单个结果的回调
+    modifiedCells?: Record<string, any>
+    updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void
+    revertChanges?: () => void
+    saveChanges?: () => Promise<void>
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -131,8 +135,6 @@ function ImageWithPreview({
         </>
     )
 }
-
-
 
 import { getImageUrls } from '@/lib/wps'
 
@@ -264,7 +266,17 @@ function LazyImageCell({
     )
 }
 
-function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, imageUrlCache, onExportSingle }: {
+function ResultCard({
+    result,
+    index,
+    tokenId,
+    autoLoadImages,
+    onImageLoad,
+    imageUrlCache,
+    onExportSingle,
+    modifiedCells,
+    updateCell
+}: {
     result: TableSearchResult;
     index: number;
     tokenId?: string;
@@ -272,11 +284,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void;
     imageUrlCache?: Record<string, string>;
     onExportSingle?: (result: TableSearchResult) => void;
+    modifiedCells?: Record<string, any>;
+    updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void;
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
     const [copyToast, setCopyToast] = useState(false)
     const [mounted, setMounted] = useState(false)
+    
+    // 双击编辑状态
+    const [editingCell, setEditingCell] = useState<{ rowIdx: number; colIdx: number } | null>(null)
+    const [editValue, setEditValue] = useState('')
 
     // 确保在客户端渲染后才使用 Portal
     useEffect(() => {
@@ -308,45 +326,22 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
 
     // 处理 WPS 记录格式
     const rows = useMemo(() => {
-        const baseRows = records.map(record => {
-            if (record.fields && typeof record.fields === 'object') {
-                const fields = record.fields as Record<string, unknown>
-                // 如果是多维表格记录，需要将顶层的批处理元数据（如 _BatchQueryID 和 原始_ 列）合并到 row 对象中
-                const row = { ...fields }
-                if ('_BatchQueryID' in record) {
-                    row._BatchQueryID = record._BatchQueryID
+        const list = records.map(r => {
+            if (r.fields && typeof r.fields === 'object') {
+                return {
+                    id: r.id,
+                    recordId: r.recordId,
+                    ...r.fields as Record<string, unknown>
                 }
-                Object.keys(record).forEach(key => {
-                    if (key.startsWith('原始_')) {
-                        row[key] = record[key]
-                    }
-                })
-                return row
             }
-            return record as Record<string, unknown>
+            return r
         })
 
-        if (!sortConfig.key || !sortConfig.direction) {
-            return baseRows
-        }
+        if (!sortConfig.key) return list
 
-        return [...baseRows].sort((a, b) => {
-            const key = sortConfig.key!
-            let aVal = a[key]
-            let bVal = b[key]
-
-            // 处理对象类型 (如图片)
-            if (aVal && typeof aVal === 'object' && '_type' in aVal) {
-                // 如果是图片/附件对象，尝试使用 imageId 或 cellAddress 排序
-                const obj = aVal as { imageId?: string; cellAddress?: string; value?: string }
-                aVal = obj.value || obj.imageId || obj.cellAddress || ''
-            }
-            if (bVal && typeof bVal === 'object' && '_type' in bVal) {
-                const obj = bVal as { imageId?: string; cellAddress?: string; value?: string }
-                bVal = obj.value || obj.imageId || obj.cellAddress || ''
-            }
-
-            // 转为字符串比较，处理数字和空值
+        return [...list].sort((a, b) => {
+            const aVal = a[sortConfig.key!]
+            const bVal = b[sortConfig.key!]
             const aStr = String(aVal ?? '')
             const bStr = String(bVal ?? '')
 
@@ -373,7 +368,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     const originalQueryColumns = result.originalQueryColumns || []
 
     // 优先使用 displayColumns (来自 Step 3 的配置顺序)，如果没有则回退到默认逻辑
-    // 如果有 displayColumns，只显示其中的列，但在批量查询时保留 QueryID 和 原始查询列
     const displayColumns = result.displayColumns && result.displayColumns.length > 0
         ? (hasBatchQueryID
             ? ['_BatchQueryID', ...originalQueryColumns, ...result.displayColumns]
@@ -415,21 +409,17 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         if (val && typeof val === 'object' && '_type' in val) {
             const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; cellAddress?: string }
 
-            // 优先返回 imageUrl
             if (imgObj.imageUrl) return imgObj.imageUrl
 
-            // 对于 DISPIMG 格式，检查缓存中是否有已加载的图片URL
             if (imgObj._type === 'dispimg' && imgObj.cellAddress && imageUrlCache) {
                 const cacheKey = `${result.realTableName || result.tableName}__${imgObj.cellAddress}`
                 const cachedUrl = imageUrlCache[cacheKey]
                 if (cachedUrl) return cachedUrl
             }
 
-            // 最后才返回 imageId
             if (imgObj.imageId) return imgObj.imageId
         }
 
-        // 处理对象
         if (val && typeof val === 'object') {
             return JSON.stringify(val)
         }
@@ -437,20 +427,59 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         return String(val ?? '')
     }, [rows, displayColumns, imageUrlCache, result.realTableName, result.tableName])
 
-    // 键盘复制支持 (Ctrl+C / Cmd+C)
+    // 键盘复制与粘贴支持 (Ctrl+C / Ctrl+V)
     useEffect(() => {
         if (collapsed) return
 
-        const handleKeyDown = (e: KeyboardEvent) => {
+        const handleKeyDown = async (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
                 e.preventDefault()
                 copySelection(getCellText)
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && selection && updateCell) {
+                const activeElement = document.activeElement
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    return
+                }
+
+                e.preventDefault()
+
+                try {
+                    const text = await navigator.clipboard.readText()
+                    if (!text) return
+
+                    const lines = text.split('\n').map(line => line.split('\t'))
+                    if (lines.length === 0) return
+
+                    const startRow = Math.min(selection.start.row, selection.end.row)
+                    const startCol = Math.min(selection.start.col, selection.end.col)
+
+                    for (let r = 0; r < lines.length; r++) {
+                        const targetRowIdx = startRow + r
+                        if (targetRowIdx >= rows.length) break
+
+                        const rowValues = lines[r]
+                        for (let c = 0; c < rowValues.length; c++) {
+                            const targetColIdx = startCol + c
+                            if (targetColIdx >= displayColumns.length) break
+
+                            const colName = displayColumns[targetColIdx]
+                            if (colName === '_BatchQueryID' || colName === '_rowNumber') continue
+
+                            const val = rowValues[c].trim()
+                            updateCell(index, targetRowIdx, colName, val)
+                        }
+                    }
+                } catch (err) {
+                    console.error('粘贴数据失败:', err)
+                }
             }
         }
 
         document.addEventListener('keydown', handleKeyDown)
         return () => document.removeEventListener('keydown', handleKeyDown)
-    }, [collapsed, selection, copySelection, getCellText])
+    }, [collapsed, selection, copySelection, getCellText, rows.length, displayColumns, updateCell, index])
 
     const handleCellClick = useCallback(async (value: string, cellKey: string) => {
         const success = await copyToClipboard(value)
@@ -467,8 +496,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
         setTimeout(() => setCopyToast(false), 1500)
     }, [displayColumns])
 
-    // 如果有错误且没有记录，才显示完全失败的状态
-    // 如果有记录但有错误（比如批量搜索中途失败），则显示记录并提示错误
     if (result.error && records.length === 0) {
         return (
             <div className="card mb-4 overflow-hidden">
@@ -478,16 +505,15 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                         搜索失败: {result.tableName}
                     </h4>
                 </div>
-                <div className="p-4">
-                    <p className="text-[#ef4444]">{result.error}</p>
+                <div className="p-6">
+                    <p className="text-sm text-[var(--text-muted)] mb-4">{result.error}</p>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="card mb-4 overflow-hidden">
-            {/* Header */}
+        <div className="card mb-6 overflow-hidden">
             <div
                 className="p-4 bg-[rgba(234,179,8,0.1)] border-b border-[var(--border)] cursor-pointer flex justify-between items-center"
                 onClick={() => setCollapsed(!collapsed)}
@@ -525,7 +551,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                 </div>
             </div>
 
-            {/* Copy Toast - 使用 Portal 渲染到 body 确保在整个网页顶部中央显示 */}
             {copyToast && mounted && createPortal(
                 <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-lg bg-[#22c55e] text-white text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
                     ✓ 已复制到剪贴板
@@ -533,7 +558,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                 document.body
             )}
 
-            {/* Body */}
             {!collapsed && (
                 <div
                     className={`p-4 overflow-x-auto ${isSelecting ? 'select-none' : ''}`}
@@ -551,7 +575,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                             仅显示前 {result.maxRecords} 条。建议使用更精确的搜索条件缩小范围。
                         </div>
                     )}
-
 
                     {rows.length === 0 ? (
                         <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
@@ -601,23 +624,87 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                             const cellKey = `${index}-${rowIdx}-${col}`
                                             const isCopied = copiedCell === cellKey
                                             const isSelected = isCellSelected(rowIdx, colIdx)
+                                            const modifiedKey = `${index}__${rowIdx}__${col}`
+                                            const isModified = modifiedCells && modifiedCells[modifiedKey] !== undefined
+                                            const isEditing = editingCell && editingCell.rowIdx === rowIdx && editingCell.colIdx === colIdx
 
-                                            // 检测是否为图片对象 (来自AirScript)
+                                            // 普通值处理
+                                            let displayVal = val
+                                            if (val && typeof val === 'object' && !('_type' in val)) {
+                                                displayVal = JSON.stringify(val)
+                                            }
+                                            if (val && typeof val === 'object' && '_type' in val) {
+                                                const imgObj = val as { _type: string; value?: string }
+                                                displayVal = imgObj.value || ''
+                                            }
+                                            const strVal = String(displayVal ?? '')
+
+                                            // 编辑输入框
+                                            if (isEditing) {
+                                                return (
+                                                    <td
+                                                        key={col}
+                                                        className="px-2 py-1 border-b border-[var(--border)] bg-[rgba(234,179,8,0.05)]"
+                                                    >
+                                                        <input
+                                                            type="text"
+                                                            className="w-full px-2 py-1 text-sm bg-[var(--bg)] border border-[#eab308] rounded focus:outline-none focus:ring-2 focus:ring-[#eab308] text-[var(--text-main)]"
+                                                            value={editValue}
+                                                            autoFocus
+                                                            onChange={(e) => setEditValue(e.target.value)}
+                                                            onBlur={() => {
+                                                                if (updateCell && editValue !== strVal) {
+                                                                    updateCell(index, rowIdx, col, editValue)
+                                                                }
+                                                                setEditingCell(null)
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    if (updateCell && editValue !== strVal) {
+                                                                        updateCell(index, rowIdx, col, editValue)
+                                                                    }
+                                                                    setEditingCell(null)
+                                                                } else if (e.key === 'Escape') {
+                                                                    setEditingCell(null)
+                                                                }
+                                                            }}
+                                                        />
+                                                    </td>
+                                                )
+                                            }
+
+                                            const cellClassName = `
+                                                px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
+                                                ${isSelected
+                                                    ? 'bg-[rgba(102,126,234,0.3)]'
+                                                    : isModified
+                                                        ? 'bg-[rgba(234,179,8,0.12)] border-l-2 border-l-[#eab308] font-medium text-[#eab308]'
+                                                        : isCopied
+                                                            ? 'bg-[rgba(34,197,94,0.2)]'
+                                                            : 'hover:bg-[var(--hover-bg)]'
+                                                }
+                                            `
+
+                                            const handleDblClick = () => {
+                                                if (updateCell && col !== '_BatchQueryID' && col !== '_rowNumber') {
+                                                    setEditingCell({ rowIdx, colIdx })
+                                                    setEditValue(strVal)
+                                                }
+                                            }
+
+                                            // 图片对象 (AirScript)
                                             if (val && typeof val === 'object' && '_type' in val) {
                                                 const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; value?: string }
 
-                                                // 有图片URL - 直接显示图片
                                                 if (imgObj._type === 'image' && imgObj.imageUrl) {
                                                     return (
                                                         <td
                                                             key={col}
                                                             data-selectable-cell
-                                                            className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
-                                                                ? 'bg-[rgba(102,126,234,0.3)]'
-                                                                : 'hover:bg-[var(--hover-bg)]'
-                                                                }`}
+                                                            className={cellClassName}
                                                             onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                             onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                            onDoubleClick={handleDblClick}
                                                         >
                                                             <ImageWithPreview
                                                                 src={imgObj.imageUrl}
@@ -628,11 +715,9 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                     )
                                                 }
 
-                                                // DISPIMG格式 - 使用懒加载组件获取图片URL
                                                 if (imgObj._type === 'dispimg' && imgObj.imageId) {
                                                     const imgObjFull = imgObj as { _type: string; imageId: string; cellAddress?: string; value?: string }
 
-                                                    // 如果有cellAddress和tokenId，使用LazyImageCell自动加载
                                                     if (imgObjFull.cellAddress && tokenId) {
                                                         const cacheKey = `${result.realTableName || result.tableName}__${imgObjFull.cellAddress}`
                                                         const cachedUrl = imageUrlCache?.[cacheKey]
@@ -641,12 +726,10 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                             <td
                                                                 key={col}
                                                                 data-selectable-cell
-                                                                className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
-                                                                    ? 'bg-[rgba(102,126,234,0.3)]'
-                                                                    : 'hover:bg-[var(--hover-bg)]'
-                                                                    }`}
+                                                                className={cellClassName}
                                                                 onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                                 onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                                onDoubleClick={handleDblClick}
                                                             >
                                                                 <LazyImageCell
                                                                     tokenId={tokenId}
@@ -658,12 +741,11 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                                     autoLoad={autoLoadImages}
                                                                     onImageLoad={onImageLoad}
                                                                     cachedUrl={cachedUrl}
-                                                                />
+                                                                 />
                                                             </td>
                                                         )
                                                     }
 
-                                                    // 没有cellAddress时，显示图片ID徽章
                                                     const shortId = imgObj.imageId.length > 16
                                                         ? `${imgObj.imageId.slice(0, 8)}...${imgObj.imageId.slice(-6)}`
                                                         : imgObj.imageId
@@ -671,12 +753,10 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                         <td
                                                             key={col}
                                                             data-selectable-cell
-                                                            className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
-                                                                ? 'bg-[rgba(102,126,234,0.3)]'
-                                                                : 'hover:bg-[var(--hover-bg)]'
-                                                                }`}
+                                                            className={cellClassName}
                                                             onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                             onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                            onDoubleClick={handleDblClick}
                                                         >
                                                             <div
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[rgba(234,179,8,0.15)] text-[#eab308]"
@@ -690,13 +770,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                 }
                                             }
 
-                                            // 普通值处理
-                                            let displayVal = val
-                                            if (val && typeof val === 'object') {
-                                                displayVal = JSON.stringify(val)
-                                            }
-                                            const strVal = String(displayVal ?? '')
-
                                             // 检测是否为 URL
                                             const urlPattern = /^https?:\/\/[^\s]+$/i
                                             const isUrl = urlPattern.test(strVal.trim())
@@ -705,18 +778,15 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                             const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i
                                             const isImageUrl = isUrl && imageExtensions.test(strVal.trim())
 
-                                            // 如果是图片 URL 且开启了自动加载图片，则显示图片
                                             if (isImageUrl && autoLoadImages) {
                                                 return (
                                                     <td
                                                         key={col}
                                                         data-selectable-cell
-                                                        className={`px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors ${isSelected
-                                                            ? 'bg-[rgba(102,126,234,0.3)]'
-                                                            : 'hover:bg-[var(--hover-bg)]'
-                                                            }`}
+                                                        className={cellClassName}
                                                         onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                         onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                        onDoubleClick={handleDblClick}
                                                     >
                                                         <ImageWithPreview
                                                             src={strVal.trim()}
@@ -727,7 +797,6 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                 )
                                             }
 
-                                            // 如果是普通 URL（非图片或未开启自动加载图片），显示为超链接
                                             if (isUrl) {
                                                 return (
                                                     <td
@@ -735,17 +804,9 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                         data-selectable-cell
                                                         onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                         onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
-                                                        onDoubleClick={() => handleCellClick(strVal.trim(), cellKey)}
-                                                        className={`
-                                                            px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
-                                                            ${isSelected
-                                                                ? 'bg-[rgba(102,126,234,0.3)]'
-                                                                : isCopied
-                                                                    ? 'bg-[rgba(34,197,94,0.2)]'
-                                                                    : 'hover:bg-[rgba(234,179,8,0.2)]'
-                                                            }
-                                                        `}
-                                                        title="双击复制链接，单击打开链接，或拖拽选择区域按 Ctrl+C 复制"
+                                                        onDoubleClick={handleDblClick}
+                                                        className={cellClassName}
+                                                        title="双击进行编辑，或拖拽选择区域按 Ctrl+C 复制"
                                                     >
                                                         <a
                                                             href={strVal.trim()}
@@ -767,17 +828,9 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
                                                     data-selectable-cell
                                                     onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
                                                     onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
-                                                    onDoubleClick={() => handleCellClick(strVal, cellKey)}
-                                                    className={`
-                                                        px-3 py-2 border-b border-[var(--border)] cursor-cell transition-colors
-                                                        ${isSelected
-                                                            ? 'bg-[rgba(102,126,234,0.3)]'
-                                                            : isCopied
-                                                                ? 'bg-[rgba(34,197,94,0.2)]'
-                                                                : 'hover:bg-[rgba(234,179,8,0.2)]'
-                                                        }
-                                                    `}
-                                                    title="双击复制内容，或拖拽选择区域按 Ctrl+C 复制"
+                                                    onDoubleClick={handleDblClick}
+                                                    className={cellClassName}
+                                                    title="双击进行编辑，或拖拽选择区域按 Ctrl+C 复制"
                                                 >
                                                     {strVal}
                                                 </td>
@@ -804,7 +857,36 @@ function ResultCard({ result, index, tokenId, autoLoadImages, onImageLoad, image
     )
 }
 
-export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onImageLoad, imageUrlCache, onExportSingle }: ResultTableProps) {
+export function ResultTable({
+    results,
+    isSearching,
+    tokenId,
+    autoLoadImages,
+    onImageLoad,
+    imageUrlCache,
+    onExportSingle,
+    modifiedCells,
+    updateCell,
+    revertChanges,
+    saveChanges
+}: ResultTableProps) {
+    const modifiedCount = modifiedCells ? Object.keys(modifiedCells).length : 0
+    const [isSavingLocal, setIsSavingLocal] = useState(false)
+    const [saveError, setSaveError] = useState<string | null>(null)
+
+    const handleSave = async () => {
+        if (!saveChanges) return
+        setIsSavingLocal(true)
+        setSaveError(null)
+        try {
+            await saveChanges()
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : '保存失败')
+        } finally {
+            setIsSavingLocal(false)
+        }
+    }
+
     if (isSearching && results.length === 0) {
         return (
             <div className="card p-8">
@@ -829,6 +911,42 @@ export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onI
 
     return (
         <div>
+            {modifiedCount > 0 && (
+                <div className="mb-4 p-4 bg-[rgba(234,179,8,0.1)] border border-[#eab308] rounded-lg flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50 backdrop-blur-md">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xl">⚠️</span>
+                        <div>
+                            <div className="font-semibold text-[#eab308]">检测到未保存的本地修改</div>
+                            <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                                您已修改了 {modifiedCount} 个单元格。双击数据格可编辑，或在选中区域按 Ctrl+V 粘贴覆盖。保存前请确认数据行未发生错位。
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {saveError && <span className="text-xs text-red-500 mr-1">{saveError}</span>}
+                        <button
+                            onClick={revertChanges}
+                            disabled={isSavingLocal}
+                            className="text-xs px-3 py-1.5 rounded border border-[var(--border)] hover:bg-[rgba(239,68,68,0.1)] hover:text-red-500 hover:border-red-500 transition-colors"
+                        >
+                            撤销所有修改
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={isSavingLocal}
+                            className="text-xs px-4 py-1.5 rounded bg-[#eab308] hover:bg-[#ca9a06] text-black font-semibold transition-colors flex items-center gap-1.5"
+                        >
+                            {isSavingLocal ? (
+                                <>
+                                    <span className="spinner w-3 h-3 border-black border-t-transparent"></span>
+                                    正在保存...
+                                </>
+                            ) : '保存修改到云端 ☁️'}
+                        </button>
+                    </div>
+                </div>
+            )}
+            
             {results.map((result, index) => (
                 <ResultCard
                     key={`${result.tableName}-${index}`}
@@ -839,6 +957,8 @@ export function ResultTable({ results, isSearching, tokenId, autoLoadImages, onI
                     onImageLoad={onImageLoad}
                     imageUrlCache={imageUrlCache}
                     onExportSingle={onExportSingle}
+                    modifiedCells={modifiedCells}
+                    updateCell={updateCell}
                 />
             ))}
         </div>

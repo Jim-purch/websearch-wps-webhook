@@ -237,3 +237,66 @@ export async function searchBatch(
 
     return result
 }
+
+export interface WpsWriteResult {
+    success: boolean
+    sheetName: string
+    cellAddress?: string
+    rangeAddress?: string
+    rowIndex?: number
+    cellCount?: number
+    writtenCells?: number
+    value?: any
+    message?: string
+}
+
+/**
+ * 设置单个单元格的值
+ */
+export async function setCellValue(
+    tokenId: string,
+    sheetName: string,
+    cellAddress: string,
+    value: any
+): Promise<ParsedWpsResult<WpsWriteResult>> {
+    return await callWpsProxy<WpsWriteResult>(tokenId, {
+        action: 'setCellValue',
+        sheetName,
+        cellAddress,
+        value
+    })
+}
+
+/**
+ * 批量设置区域的值
+ */
+export async function setRangeValues(
+    tokenId: string,
+    sheetName: string,
+    rangeAddress: string,
+    values: any[][]
+): Promise<ParsedWpsResult<WpsWriteResult>> {
+    return await callWpsProxy<WpsWriteResult>(tokenId, {
+        action: 'setRangeValues',
+        sheetName,
+        rangeAddress,
+        values
+    })
+}
+
+/**
+ * 根据列名设置指定行的数据
+ */
+export async function updateRow(
+    tokenId: string,
+    sheetName: string,
+    rowIndex: number,
+    rowData: Record<string, any>
+): Promise<ParsedWpsResult<WpsWriteResult>> {
+    return await callWpsProxy<WpsWriteResult>(tokenId, {
+        action: 'updateRow',
+        sheetName,
+        rowIndex,
+        rowData
+    })
+}

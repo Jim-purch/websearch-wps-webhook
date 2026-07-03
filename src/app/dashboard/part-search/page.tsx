@@ -57,7 +57,12 @@ export default function PartSearchPage() {
         // 预设加载支持
         setSelectedTableNames,
         setColumnsData,
-        setSelectedColumns
+        setSelectedColumns,
+        // 编辑功能支持
+        modifiedCells,
+        updateCell,
+        revertChanges,
+        saveChanges
     } = usePartSearch()
 
     const {
@@ -334,6 +339,10 @@ export default function PartSearchPage() {
                     onImageLoad={handleImageLoad}
                     imageUrlCache={imageUrlCache}
                     onExportSingle={exportSingleResult}
+                    modifiedCells={modifiedCells}
+                    updateCell={updateCell}
+                    revertChanges={revertChanges}
+                    saveChanges={saveChanges}
                 />
             </div>
 

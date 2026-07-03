@@ -87,7 +87,7 @@ async function getServiceAccountAccessToken(credentials: {
     const crypto = await import('crypto')
 
     const tokenUri = credentials.token_uri || 'https://oauth2.googleapis.com/token'
-    const scope = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+    const scope = 'https://www.googleapis.com/auth/spreadsheets'
 
     const now = Math.floor(Date.now() / 1000)
     const header = { alg: 'RS256', typ: 'JWT' }
@@ -146,7 +146,9 @@ function base64UrlEncode(str: string): string {
 async function callSheetsApi<T>(
     path: string,
     auth: GoogleSheetsAuth,
-    queryParams?: Record<string, string>
+    queryParams?: Record<string, string>,
+    method: string = 'GET',
+    body?: any
 ): Promise<T> {
     const baseUrl = 'https://sheets.googleapis.com/v4/spreadsheets'
     const url = new URL(`${baseUrl}${path}`)
@@ -165,7 +167,15 @@ async function callSheetsApi<T>(
         headers['Authorization'] = `Bearer ${auth.accessToken}`
     }
 
-    const response = await fetch(url.toString(), { headers })
+    if (body) {
+        headers['Content-Type'] = 'application/json'
+    }
+
+    const response = await fetch(url.toString(), {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+    })
 
     if (!response.ok) {
         const errorText = await response.text()
@@ -595,6 +605,7 @@ export async function searchMultiCriteria(
 
             if (matchAll) {
                 const rowData: Record<string, unknown> = {}
+                rowData['_rowNumber'] = rowIdx + 1
                 for (const colName of outputColumns) {
                     const idx = columnMap[colName]
                     rowData[colName] = row[idx] !== undefined ? row[idx] : null
@@ -752,6 +763,7 @@ export async function searchBatch(
 
                 if (matchAll) {
                     const rowData: Record<string, unknown> = {}
+                    rowData['_rowNumber'] = rowIdx + 1
                     for (const colName of outputColumns) {
                         const idx = columnMap[colName]
                         rowData[colName] = row[idx] !== undefined ? row[idx] : null
@@ -783,6 +795,181 @@ export async function searchBatch(
             success: false,
             error: String(error),
             message: '批量搜索执行失败'
+        }
+    }
+}
+
+/**
+ * 设置单个单元格的值
+ */
+export async function setCellValue(
+    tokenValue: string,
+    spreadsheetId: string,
+    sheetName: string,
+    cellAddress: string,
+    value: any
+) {
+    try {
+        const auth = await resolveAuth(tokenValue)
+        const range = `'${sheetName}'!${cellAddress}`
+        
+        await callSheetsApi(
+            `/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+            auth,
+            { valueInputOption: 'USER_ENTERED' },
+            'PUT',
+            {
+                range,
+                majorDimension: 'ROWS',
+                values: [[value === null || value === undefined ? '' : value]]
+            }
+        )
+
+        return {
+            success: true,
+            sheetName,
+            cellAddress,
+            value,
+            message: '单元格更新成功'
+        }
+    } catch (error) {
+        console.error('setCellValue failed:', error)
+        return {
+            success: false,
+            error: String(error),
+            message: '设置单元格值时发生错误'
+        }
+    }
+}
+
+/**
+ * 批量设置区域的值
+ */
+export async function setRangeValues(
+    tokenValue: string,
+    spreadsheetId: string,
+    sheetName: string,
+    rangeAddress: string,
+    values: any[][]
+) {
+    try {
+        const auth = await resolveAuth(tokenValue)
+        const range = `'${sheetName}'!${rangeAddress}`
+
+        await callSheetsApi(
+            `/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+            auth,
+            { valueInputOption: 'USER_ENTERED' },
+            'PUT',
+            {
+                range,
+                majorDimension: 'ROWS',
+                values
+            }
+        )
+
+        let cellCount = 0
+        if (Array.isArray(values)) {
+            cellCount = values.reduce((sum, row) => sum + (Array.isArray(row) ? row.length : 1), 0)
+        }
+
+        return {
+            success: true,
+            sheetName,
+            rangeAddress,
+            cellCount,
+            message: '区域更新成功'
+        }
+    } catch (error) {
+        console.error('setRangeValues failed:', error)
+        return {
+            success: false,
+            error: String(error),
+            message: '设置区域值时发生错误'
+        }
+    }
+}
+
+/**
+ * 根据列名设置指定行的数据
+ */
+export async function updateRow(
+    tokenValue: string,
+    spreadsheetId: string,
+    sheetName: string,
+    rowIndex: number,
+    rowData: Record<string, any>
+) {
+    try {
+        const auth = await resolveAuth(tokenValue)
+        // 获取第一行作为表头来获取列索引映射
+        const allValues = await getSheetValues(spreadsheetId, `'${sheetName}'!1:1`, auth)
+        if (allValues.length === 0) {
+            throw new Error('Sheet has no header row or is empty')
+        }
+        const headerRow = allValues[0]
+        const columnMap: Record<string, number> = {}
+        const nameCounts: Record<string, number> = {}
+        for (let i = 0; i < headerRow.length; i++) {
+            let colName = headerRow[i] || columnToLetter(i + 1)
+            if (nameCounts[colName]) {
+                nameCounts[colName]++
+                colName = `${colName}-${nameCounts[colName]}`
+            } else {
+                nameCounts[colName] = 1
+            }
+            columnMap[colName] = i
+        }
+
+        const lastColLetter = columnToLetter(headerRow.length)
+        const rowRange = `'${sheetName}'!A${rowIndex}:${lastColLetter}${rowIndex}`
+        
+        // 获取当前行数据
+        const currentRowValues = await getSheetValues(spreadsheetId, rowRange, auth)
+        const rowValues = currentRowValues.length > 0 ? currentRowValues[0] : new Array(headerRow.length).fill('')
+
+        let writtenCells = 0
+        const invalidColumns = []
+
+        for (const [colName, val] of Object.entries(rowData)) {
+            const idx = columnMap[colName]
+            if (idx === undefined) {
+                invalidColumns.push(colName)
+                continue
+            }
+            while (rowValues.length <= idx) {
+                rowValues.push('')
+            }
+            rowValues[idx] = val === null || val === undefined ? '' : String(val)
+            writtenCells++
+        }
+
+        await callSheetsApi(
+            `/${spreadsheetId}/values/${encodeURIComponent(rowRange)}`,
+            auth,
+            { valueInputOption: 'USER_ENTERED' },
+            'PUT',
+            {
+                range: rowRange,
+                majorDimension: 'ROWS',
+                values: [rowValues]
+            }
+        )
+
+        return {
+            success: true,
+            sheetName,
+            rowIndex,
+            writtenCells,
+            invalidColumns: invalidColumns.length > 0 ? invalidColumns : undefined,
+            message: '行更新成功'
+        }
+    } catch (error) {
+        console.error('updateRow failed:', error)
+        return {
+            success: false,
+            error: String(error),
+            message: '更新行时发生错误'
         }
     }
 }
@@ -838,8 +1025,34 @@ export async function handleGoogleSheetsAction(
                 argv.returnColumns as string[] | undefined
             )
 
+        case 'setCellValue':
+            return await setCellValue(
+                tokenValue,
+                spreadsheetId,
+                argv.sheetName as string,
+                argv.cellAddress as string,
+                argv.value
+            )
+
+        case 'setRangeValues':
+            return await setRangeValues(
+                tokenValue,
+                spreadsheetId,
+                argv.sheetName as string,
+                argv.rangeAddress as string,
+                argv.values as any[][]
+            )
+
+        case 'updateRow':
+            return await updateRow(
+                tokenValue,
+                spreadsheetId,
+                argv.sheetName as string,
+                argv.rowIndex as number,
+                argv.rowData as Record<string, any>
+            )
+
         case 'getImageUrl':
-            // Google Sheets 不支持单元格图片 URL 获取
             return {
                 success: true,
                 sheetName: argv.sheetName as string,
@@ -853,7 +1066,7 @@ export async function handleGoogleSheetsAction(
             return {
                 success: false,
                 error: '未知操作: ' + action,
-                message: '支持的操作: getAll, search, searchMulti, searchBatch, getData'
+                message: '支持的操作: getAll, search, searchMulti, searchBatch, getData, setCellValue, setRangeValues, updateRow'
             }
     }
 }

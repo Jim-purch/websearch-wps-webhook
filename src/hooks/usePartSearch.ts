@@ -28,6 +28,16 @@ export interface ColumnConfig {
     fetch: boolean
 }
 
+export interface ModifiedCell {
+    resultIndex: number
+    tableName: string
+    rowIdx: number       // Index in searchResults[resultIndex].records
+    rowNumber: number    // Row number in the worksheet (_rowNumber)
+    columnName: string
+    originalValue: any
+    newValue: any
+}
+
 export interface TableSearchResult {
     tableName: string
     realTableName?: string  // 真实表名（用于图片加载等API调用）
@@ -145,6 +155,9 @@ export function usePartSearch() {
     const [searchResults, setSearchResults] = useState<TableSearchResult[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [searchError, setSearchError] = useState<string | null>(null)
+
+    // 已修改的单元格数据 { "resultIndex__rowIdx__columnName": ModifiedCell }
+    const [modifiedCells, setModifiedCells] = useState<Record<string, ModifiedCell>>({})
 
     // 批量搜索状态
     const [isBatchSearching, setIsBatchSearching] = useState(false)
@@ -1597,6 +1610,139 @@ export function usePartSearch() {
         }
     }, [selectedToken, columnConfigs])
 
+    // 更新单元格本地状态
+    const updateCell = useCallback((resultIndex: number, rowIdx: number, columnName: string, newValue: any) => {
+        setSearchResults(prevResults => {
+            const nextResults = [...prevResults]
+            const result = { ...nextResults[resultIndex] }
+            const records = [...result.records]
+            const record = { ...records[rowIdx] }
+            
+            const originalVal = record[columnName]
+            record[columnName] = newValue
+            records[rowIdx] = record
+            result.records = records
+            nextResults[resultIndex] = result
+
+            // 更新已修改单元格的状态
+            setModifiedCells(prev => {
+                const key = `${resultIndex}__${rowIdx}__${columnName}`
+                const rowNumber = (record._rowNumber || record.row) as number
+                const existing = prev[key]
+                
+                // 如果该单元格之前已经被修改过，保留最初的原始值
+                const originalValue = existing ? existing.originalValue : originalVal
+                
+                const next = { ...prev }
+                if (newValue === originalValue) {
+                    delete next[key]
+                } else {
+                    next[key] = {
+                        resultIndex,
+                        tableName: result.realTableName || result.tableName,
+                        rowIdx,
+                        rowNumber,
+                        columnName,
+                        originalValue,
+                        newValue
+                    }
+                }
+                return next
+            })
+
+            return nextResults
+        })
+    }, [])
+
+    // 撤销所有修改
+    const revertChanges = useCallback(() => {
+        setSearchResults(prevResults => {
+            const nextResults = [...prevResults]
+            const modifications = Object.values(modifiedCells)
+            if (modifications.length === 0) return prevResults
+
+            const affectedResultIndices = new Set(modifications.map(m => m.resultIndex))
+            for (const resIdx of affectedResultIndices) {
+                const result = { ...nextResults[resIdx] }
+                result.records = [...result.records]
+                nextResults[resIdx] = result
+            }
+
+            for (const mod of modifications) {
+                const result = nextResults[mod.resultIndex]
+                const record = { ...result.records[mod.rowIdx] }
+                record[mod.columnName] = mod.originalValue
+                result.records[mod.rowIdx] = record
+            }
+
+            return nextResults
+        })
+        setModifiedCells({})
+    }, [modifiedCells])
+
+    // 保存修改到云端
+    const saveChanges = useCallback(async () => {
+        if (!selectedToken) {
+            throw new Error('请先选择 Token')
+        }
+
+        const modifications = Object.values(modifiedCells)
+        if (modifications.length === 0) {
+            return
+        }
+
+        setIsSearching(true)
+        setSearchError(null)
+
+        try {
+            // 按表名和行号分组修改数据，以减少 API 调用次数（一行只调用一次 updateRow）
+            const groups: Record<string, Record<number, Record<string, any>>> = {}
+            
+            for (const mod of modifications) {
+                if (!mod.rowNumber) {
+                    throw new Error(`表格 "${mod.tableName}" 第 ${mod.rowIdx + 1} 行没有行号信息，无法保存到云端`)
+                }
+                if (!groups[mod.tableName]) {
+                    groups[mod.tableName] = {}
+                }
+                if (!groups[mod.tableName][mod.rowNumber]) {
+                    groups[mod.tableName][mod.rowNumber] = {}
+                }
+                groups[mod.tableName][mod.rowNumber][mod.columnName] = mod.newValue
+            }
+
+            // 导入 wps 客户端的 updateRow 方法
+            const { updateRow: clientUpdateRow } = await import('@/lib/wps')
+
+            const promises = []
+            for (const [tableName, rows] of Object.entries(groups)) {
+                for (const [rowNumberStr, rowData] of Object.entries(rows)) {
+                    const rowNumber = parseInt(rowNumberStr, 10)
+                    promises.push(
+                        clientUpdateRow(selectedToken.id, tableName, rowNumber, rowData)
+                    )
+                }
+            }
+
+            const results = await Promise.all(promises)
+            
+            const failures = results.filter(r => !r.success)
+            if (failures.length > 0) {
+                const errorMsgs = failures.map(f => f.error).join('; ')
+                throw new Error(`部分单元格数据保存到云端失败: ${errorMsgs}`)
+            }
+
+            // 全部保存成功，清空本地已修改状态
+            setModifiedCells({})
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : '保存失败'
+            setSearchError(msg)
+            throw err
+        } finally {
+            setIsSearching(false)
+        }
+    }, [selectedToken, modifiedCells])
+
     return {
         // Token
         tokens: allTokens,
@@ -1650,6 +1796,12 @@ export function usePartSearch() {
         // 预设加载支持
         setSelectedTableNames,
         setColumnsData,
-        setSelectedColumns
+        setSelectedColumns,
+
+        // 编辑功能支持
+        modifiedCells,
+        updateCell,
+        revertChanges,
+        saveChanges
     }
 }
