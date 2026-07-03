@@ -135,7 +135,7 @@ export interface SearchPreset {
     selected_table_names: string[]
     columns_data: Record<string, unknown[]>
     selected_columns: Record<string, string[]>
-    column_configs: Record<string, { name: string; fetch: boolean }[]>
+    column_configs: Record<string, { name: string; fetch: boolean; sameValue?: boolean }[]>
     created_at: string
     updated_at: string
 }
@@ -146,7 +146,7 @@ export interface CreatePresetInput {
     selected_table_names: string[]
     columns_data: Record<string, unknown[]>
     selected_columns: Record<string, string[]>
-    column_configs: Record<string, { name: string; fetch: boolean }[]>
+    column_configs: Record<string, { name: string; fetch: boolean; sameValue?: boolean }[]>
 }
 
 export interface UpdatePresetInput {
@@ -154,5 +154,5 @@ export interface UpdatePresetInput {
     selected_table_names?: string[]
     columns_data?: Record<string, unknown[]>
     selected_columns?: Record<string, string[]>
-    column_configs?: Record<string, { name: string; fetch: boolean }[]>
+    column_configs?: Record<string, { name: string; fetch: boolean; sameValue?: boolean }[]>
 }

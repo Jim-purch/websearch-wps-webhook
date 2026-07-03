@@ -11,28 +11,33 @@ type TokenWithShareInfo = Token & {
 
 interface TokenSelectorProps {
     tokens: TokenWithShareInfo[]
-    selectedToken: TokenWithShareInfo | null
+    selectedTokens: TokenWithShareInfo[]
     isLoading: boolean
-    onSelect: (tokenId: string) => void
+    onToggle: (tokenId: string) => void
+    onSelectAll: () => void
+    onDeselectAll: () => void
     forceCollapsed?: number // 收起计数器，每次变化时强制收起
 }
 
-export function TokenSelector({ tokens, selectedToken, isLoading, onSelect, forceCollapsed }: TokenSelectorProps) {
+export function TokenSelector({
+    tokens,
+    selectedTokens,
+    isLoading,
+    onToggle,
+    onSelectAll,
+    onDeselectAll,
+    forceCollapsed
+}: TokenSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
 
-    // 当选择Token后自动收起步骤1
-    useEffect(() => {
-        if (selectedToken) {
-            setIsOpen(false)
-        }
-    }, [selectedToken])
-
-    // 当外部强制收起时（计数器大于0表示需要收起）
+    // 当外部要求折叠时
     useEffect(() => {
         if (forceCollapsed && forceCollapsed > 0) {
             setIsOpen(false)
         }
     }, [forceCollapsed])
+
+    const selectedIds = new Set(selectedTokens.map(t => t.id))
 
     return (
         <div className="card">
@@ -42,10 +47,10 @@ export function TokenSelector({ tokens, selectedToken, isLoading, onSelect, forc
             >
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                     <span className="text-xl">🔑</span>
-                    步骤 1: 选择 Token
-                    {!isOpen && selectedToken && (
+                    步骤 1: 选择 Token (多选)
+                    {!isOpen && selectedTokens.length > 0 && (
                         <span className="text-sm font-normal text-[var(--text-muted)] ml-2">
-                            - 已选: {selectedToken.name}
+                            - 已选: {selectedTokens.map(t => t.name).join(', ')}
                         </span>
                     )}
                 </h3>
@@ -56,40 +61,78 @@ export function TokenSelector({ tokens, selectedToken, isLoading, onSelect, forc
 
             {isOpen && (
                 <div className="p-6 pt-0 border-t border-transparent">
-                    <select
-                        className="input"
-                        value={selectedToken?.id || ''}
-                        onChange={(e) => onSelect(e.target.value)}
-                        disabled={isLoading}
-                    >
-                        <option value="">-- 请选择一个 Token --</option>
-                        {tokens.map((token) => {
-                            const isGSheet = token.webhook_url?.startsWith('gsheet://')
-                            const typeIcon = token._isShared ? '📥' : (isGSheet ? '📗' : '🔑')
-                            const typeSuffix = isGSheet ? ' [Google Sheets]' : ''
-                            return (
-                                <option key={token.id} value={token.id}>
-                                    {typeIcon} {token.name}{typeSuffix}
-                                    {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
-                                    {!token._isShared && token.description ? ` (${token.description})` : ''}
-                                </option>
-                            )
-                        })}
-                    </select>
-                    {tokens.length === 0 && !isLoading && (
+                    {isLoading ? (
+                        <div className="flex justify-center py-4">
+                            <div className="spinner"></div>
+                        </div>
+                    ) : tokens.length === 0 ? (
                         <p className="text-sm text-[var(--text-muted)] mt-2">
                             没有可用的 Token。请先在「管理 Token」中添加带有 Webhook URL 的 Token，或在「分享管理」中添加他人分享的 Token。
                         </p>
-                    )}
-                    {selectedToken?._isShared && (
-                        <p className="text-sm text-blue-600 mt-2">
-                            📥 这是他人分享给您的 Token
-                            {selectedToken._sharerEmail && `，来自 ${selectedToken._sharerEmail}`}
-                        </p>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                                {tokens.map((token) => {
+                                    const isSelected = selectedIds.has(token.id)
+                                    const isGSheet = token.webhook_url?.startsWith('gsheet://')
+                                    const typeIcon = token._isShared ? '📥' : (isGSheet ? '📗' : '🔑')
+                                    const typeSuffix = isGSheet ? ' [Google Sheets]' : ''
+                                    
+                                    return (
+                                        <button
+                                            key={token.id}
+                                            type="button"
+                                            onClick={() => onToggle(token.id)}
+                                            className={`
+                                                flex items-start text-left gap-3 p-3 rounded-lg border text-sm transition-all
+                                                ${isSelected
+                                                    ? 'border-[#eab308] bg-[rgba(234,179,8,0.1)] text-[var(--foreground)] shadow-sm'
+                                                    : 'border-[var(--border)] hover:border-[#667eea] hover:bg-[var(--hover-bg)]'
+                                                }
+                                            `}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                readOnly
+                                                className="accent-[#eab308] mt-0.5 pointer-events-none"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-semibold truncate flex items-center gap-1.5">
+                                                    <span>{typeIcon}</span>
+                                                    <span className="truncate">{token.name}</span>
+                                                </div>
+                                                <div className="text-xs text-[var(--text-muted)] truncate mt-1">
+                                                    {isGSheet ? 'Google Sheets' : 'WPS 表格'}
+                                                    {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
+                                                    {!token._isShared && token.description && ` - ${token.description}`}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={onSelectAll}
+                                    className="btn-secondary text-xs py-1.5 px-3"
+                                >
+                                    全选
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onDeselectAll}
+                                    className="btn-secondary text-xs py-1.5 px-3"
+                                >
+                                    全不选
+                                </button>
+                            </div>
+                        </>
                     )}
                 </div>
             )}
         </div>
     )
 }
-

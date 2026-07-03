@@ -1081,7 +1081,7 @@ export function ResultTable({
                     key={`${result.tableName}-${index}`}
                     result={result}
                     index={index}
-                    tokenId={tokenId}
+                    tokenId={result.tokenId || tokenId}
                     autoLoadImages={autoLoadImages}
                     onImageLoad={onImageLoad}
                     imageUrlCache={imageUrlCache}

@@ -21,6 +21,8 @@ export interface WpsTable {
     rowCount?: number
     columnCount?: number
     usedRange?: string
+    tokenId?: string
+    tokenName?: string
 }
 
 export interface WpsGetAllResult {

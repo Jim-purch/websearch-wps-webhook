@@ -12,8 +12,9 @@ export function useSearchPresets() {
     const supabase = createClient()
 
     // 获取指定 Token 的所有预设
-    const fetchPresets = useCallback(async (tokenId: string) => {
-        if (!tokenId) {
+    const fetchPresets = useCallback(async (tokenId: string | string[]) => {
+        const tokenIds = Array.isArray(tokenId) ? tokenId : [tokenId]
+        if (tokenIds.length === 0 || !tokenIds[0]) {
             setPresets([])
             return
         }
@@ -25,7 +26,7 @@ export function useSearchPresets() {
             const { data, error } = await supabase
                 .from('search_presets')
                 .select('*')
-                .eq('token_id', tokenId)
+                .in('token_id', tokenIds)
                 .order('created_at', { ascending: false })
 
             if (error) throw error

@@ -20,7 +20,12 @@ export default function PartSearchPage() {
         tokens,
         isLoadingTokens,
         selectedToken,
+        selectedTokens,
+        setSelectedTokens,
         selectToken,
+        toggleToken,
+        selectAllTokens,
+        deselectAllTokens,
         tables,
         isLoadingTables,
         tablesError,
@@ -88,16 +93,16 @@ export default function PartSearchPage() {
     const [step3ExpandedCounter, setStep3ExpandedCounter] = useState(0) // 步骤3展开
     const [step4ExpandedCounter, setStep4ExpandedCounter] = useState(0) // 步骤4展开
 
-    // 当 Token 变化时，加载该 Token 的预设
+    // 当 selectedTokens 变化时，加载对应的预设
     useEffect(() => {
-        if (selectedToken?.id) {
-            fetchPresets(selectedToken.id)
+        if (selectedTokens.length > 0) {
+            fetchPresets(selectedTokens.map(t => t.id))
             setActivePresetId(null)
         } else {
             clearPresets()
             setActivePresetId(null)
         }
-    }, [selectedToken?.id, fetchPresets, clearPresets])
+    }, [selectedTokens, fetchPresets, clearPresets])
 
     // 当加载列信息后，自动展开步骤3
     useEffect(() => {
@@ -166,6 +171,7 @@ export default function PartSearchPage() {
     const handleLoadPreset = useCallback((preset: SearchPreset) => {
         // 如果点击的是当前激活的预设，则取消激活
         if (activePresetId === preset.id) {
+            setSelectedTokens([])
             // 清空列数据
             setColumnsData({})
             // 清空选中的搜索列
@@ -177,6 +183,12 @@ export default function PartSearchPage() {
             // 强制展开步骤2，方便用户选择表
             setForceExpandedCounter(prev => prev + 1)
             return
+        }
+
+        // 查找预设对应的 Token 并选中它
+        const matchedToken = tokens.find(t => t.id === preset.token_id)
+        if (matchedToken) {
+            setSelectedTokens([matchedToken])
         }
 
         // 设置选中的表名
@@ -196,7 +208,7 @@ export default function PartSearchPage() {
 
         // 强制收起步骤1、2、3
         setForceCollapsedCounter(prev => prev + 1)
-    }, [activePresetId, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
+    }, [activePresetId, tokens, setSelectedTokens, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs])
 
     // 编辑预设
     const handleEditPreset = useCallback((preset: SearchPreset) => {
@@ -253,14 +265,16 @@ export default function PartSearchPage() {
                 {/* Step 1: Token Selection */}
                 <TokenSelector
                     tokens={tokens}
-                    selectedToken={selectedToken}
+                    selectedTokens={selectedTokens}
                     isLoading={isLoadingTokens}
-                    onSelect={selectToken}
+                    onToggle={toggleToken}
+                    onSelectAll={selectAllTokens}
+                    onDeselectAll={deselectAllTokens}
                     forceCollapsed={forceCollapsedCounter}
                 />
 
                 {/* Step 2: Table Selection */}
-                {selectedToken && (
+                {selectedTokens.length > 0 && (
                     <TableSelector
                         tables={tables}
                         selectedTableNames={selectedTableNames}
@@ -282,6 +296,7 @@ export default function PartSearchPage() {
                         columnsData={columnsData}
                         selectedColumns={selectedColumns}
                         columnConfigs={columnConfigs}
+                        selectedTokens={selectedTokens}
                         onToggle={toggleColumn}
                         onConfigChange={(tableKey, newConfig) => {
                             setColumnConfigs(prev => ({
@@ -306,6 +321,7 @@ export default function PartSearchPage() {
                         selectedColumns={selectedColumns}
                         isSearching={isSearching}
                         onSearch={performSearch}
+                        selectedTokens={selectedTokens}
                         onExport={exportToExcel}
                         isExporting={isExporting}
                         autoLoadImages={autoLoadImages}
@@ -315,6 +331,7 @@ export default function PartSearchPage() {
                         isBatchSearching={isBatchSearching}
                         onPasteSearch={performPasteSearch}
                         batchProgress={batchProgress}
+                        columnConfigs={columnConfigs}
                         onSavePreset={openSaveModal}
                         forceExpanded={step4ExpandedCounter}
                     />

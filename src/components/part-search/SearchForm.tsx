@@ -4,11 +4,13 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { SearchCondition } from '@/hooks/usePartSearch'
 import { PasteQueryModal, type PasteQueryData } from './PasteQueryModal'
+import type { Token } from '@/types'
 
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
-    onSearch: (conditions: SearchCondition[]) => void
+    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals' }) => void
+    selectedTokens?: Token[]
     onExport?: () => void
     isExporting?: boolean
     autoLoadImages: boolean
@@ -19,12 +21,12 @@ interface SearchFormProps {
     isBatchSearching?: boolean
     onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number) => void
     batchProgress?: string
+    columnConfigs: Record<string, any[]> // 添加列配置用于识别同值搜索字段
     // Preset Props
     onSavePreset?: () => void
     // Expand control
     forceExpanded?: number // 展开计数器，每次变化时强制展开
 }
-
 
 interface InputState {
     value: string
@@ -35,6 +37,7 @@ export function SearchForm({
     selectedColumns,
     isSearching,
     onSearch,
+    selectedTokens = [],
     onExport,
     isExporting = false,
     autoLoadImages,
@@ -44,21 +47,60 @@ export function SearchForm({
     isBatchSearching = false,
     onPasteSearch,
     batchProgress,
+    columnConfigs,
     onSavePreset,
     forceExpanded
 }: SearchFormProps) {
-    // ... existing logic ...
+    
+    // 找出所有选中的且配置为 sameValue 的字段
+    const sameValueCols = useMemo(() => {
+        const cols: Array<{ tableKey: string; columnName: string; displayName: string }> = []
+        for (const [tableKey, columns] of Object.entries(selectedColumns)) {
+            const configs = columnConfigs[tableKey] || []
+            
+            // 格式化表名：增加 Token 名称前缀
+            let name = tableKey
+            let tokenId = ''
+            if (tableKey.includes('::')) {
+                const parts = tableKey.split('::')
+                tokenId = parts[0]
+                name = parts[1]
+            }
+            const baseName = name.includes('__copy_')
+                ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
+                : name
+            const tokenName = selectedTokens.find(t => t.id === tokenId)?.name
+            const tableDisplayName = tokenName ? `[${tokenName}] ${baseName}` : baseName
 
-    // (Ensure inputKeys and inputs state logic remains unchanged)
+            for (const columnName of columns) {
+                const config = configs.find(c => c.name === columnName)
+                if (config && config.sameValue) {
+                    cols.push({
+                        tableKey,
+                        columnName,
+                        displayName: `${tableDisplayName}.${columnName}`
+                    })
+                }
+            }
+        }
+        return cols
+    }, [selectedColumns, columnConfigs, selectedTokens])
+
+    // 过滤掉同值批量搜索的字段，只展示常规的独立搜索字段
     const inputKeys = useMemo(() => {
         const keys: Array<{ tableName: string; columnName: string }> = []
         for (const [tableName, columns] of Object.entries(selectedColumns)) {
+            const configs = columnConfigs[tableName] || []
             for (const columnName of columns) {
+                const config = configs.find(c => c.name === columnName)
+                if (config && config.sameValue) {
+                    continue // 同值批量字段跳过常规网格显示
+                }
                 keys.push({ tableName, columnName })
             }
         }
         return keys
-    }, [selectedColumns])
+    }, [selectedColumns, columnConfigs])
 
     const [inputs, setInputs] = useState<Record<string, InputState>>({})
     const [isOpen, setIsOpen] = useState(true)
@@ -66,8 +108,11 @@ export function SearchForm({
     const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
     const [batchSize, setBatchSize] = useState<number>(50) // 默认 50
     const [pasteModalTableKey, setPasteModalTableKey] = useState<string | null>(null)
-    // 保存每个表的粘贴查询数据
     const [pasteData, setPasteData] = useState<Record<string, PasteQueryData>>({})
+
+    // 同值批量搜索状态
+    const [sameValueInput, setSameValueInput] = useState('')
+    const [sameValueOp, setSameValueOp] = useState<'Contains' | 'Equals'>('Contains')
 
     // 处理粘贴数据变化
     const handlePasteDataChange = useCallback((tableKey: string, data: PasteQueryData) => {
@@ -77,7 +122,7 @@ export function SearchForm({
         }))
     }, [])
 
-    // 当外部强制展开时（计数器大于0表示需要展开）
+    // 当外部强制展开时
     useEffect(() => {
         if (forceExpanded && forceExpanded > 0) {
             setIsOpen(true)
@@ -115,7 +160,16 @@ export function SearchForm({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        onSearch(getConditions())
+        
+        const sameValueValues = sameValueInput
+            .split('\n')
+            .map(v => v.trim())
+            .filter(v => v !== '')
+
+        onSearch(getConditions(), {
+            values: sameValueValues,
+            op: sameValueOp
+        })
     }
 
     const handleExport = () => {
@@ -128,19 +182,20 @@ export function SearchForm({
         const file = e.target.files?.[0]
         if (file && onBatchSearch) {
             onBatchSearch(file, batchMatchMode, batchSize)
-            // 重置 input value 使得同一个文件可以重复上传
             e.target.value = ''
-            setIsBatchModalOpen(false) // 关闭弹窗
+            setIsBatchModalOpen(false)
         }
     }
 
     const openBatchModal = () => {
-        // 清除当前查询条件
         setInputs({})
+        setSameValueInput('')
         setIsBatchModalOpen(true)
     }
 
-    if (inputKeys.length === 0) {
+    // 判断是否有任意搜索字段被选中 (独立或同值)
+    const hasAnyFields = inputKeys.length > 0 || sameValueCols.length > 0
+    if (!hasAnyFields) {
         return null
     }
 
@@ -166,7 +221,7 @@ export function SearchForm({
                             title="保存当前搜索配置为预设"
                         >
                             <span>💾</span>
-                            保存搜索预设
+                            保存预设
                         </button>
                     )}
                     <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
@@ -178,90 +233,170 @@ export function SearchForm({
             {isOpen && (
                 <div className="p-6 pt-0 border-t border-transparent">
                     <form onSubmit={handleSubmit}>
-                        <div className="space-y-4 mb-6">
-                            {Object.entries(selectedColumns).map(([tableKey, columns]) => {
-                                if (columns.length === 0) return null
-
-                                // 获取显示名称
-                                const displayName = tableKey.includes('__copy_')
-                                    ? `${tableKey.split('__copy_')[0]} (副本${tableKey.split('__copy_')[1]})`
-                                    : tableKey
-
-                                return (
-                                    <div
-                                        key={tableKey}
-                                        className="rounded-lg border border-[var(--border)] overflow-hidden"
-                                    >
-                                        <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)] flex items-center gap-3">
-                                            {onPasteSearch && columns.length > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        setPasteModalTableKey(tableKey)
-                                                    }}
-                                                    className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white font-medium hover:from-[#7c3aed] hover:to-[#8b5cf6] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#8b5cf6]/30"
-                                                    title="粘贴 Excel 数据进行批量查询"
-                                                >
-                                                    <span>📋</span>
-                                                    粘贴列查询
-                                                </button>
-                                            )}
-                                            <span className="text-[#eab308] font-medium flex items-center gap-2">
-                                                <span>📊</span>
-                                                {displayName}
-                                            </span>
-                                        </div>
-                                        <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-                                            {columns.map((columnName) => {
-                                                const key = `${tableKey}__${columnName}`
-                                                const input = inputs[key] || { value: '', op: 'Contains' }
-                                                const isExact = input.op === 'Equals'
-
-                                                return (
-                                                    <div
-                                                        key={key}
-                                                        className="flex flex-col gap-1.5"
-                                                    >
-                                                        <div
-                                                            onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
-                                                            className="cursor-pointer flex items-center gap-2 select-none group w-fit"
-                                                            title="点击切换模糊/精确搜索"
-                                                        >
-                                                            <span className={`
-                                                                text-sm font-medium transition-colors
-                                                                ${isExact
-                                                                    ? 'text-[#667eea] font-bold'
-                                                                    : 'text-[var(--text-muted)] group-hover:text-[var(--foreground)]'
-                                                                }
-                                                            `}>
-                                                                {columnName}
-                                                            </span>
-                                                            <span className={`
-                                                                text-[10px] px-1.5 py-0.5 rounded border transition-all
-                                                                ${isExact
-                                                                    ? 'bg-[rgba(102,126,234,0.1)] text-[#667eea] border-[#667eea]'
-                                                                    : 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
-                                                                }
-                                                            `}>
-                                                                {isExact ? '精确' : '模糊'}
-                                                            </span>
-                                                        </div>
-                                                        <input
-                                                            type="text"
-                                                            value={input.value}
-                                                            onChange={(e) => handleInputChange(key, e.target.value)}
-                                                            placeholder="输入搜索关键字..."
-                                                            className="input w-full"
-                                                        />
-                                                    </div>
-                                                )
-                                            })}
+                        
+                        {/* 同值批量搜索区域 */}
+                        {sameValueCols.length > 0 && (
+                            <div className="mb-6 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.02)] p-4 space-y-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(234,179,8,0.15)] pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">🔗</span>
+                                        <span className="font-semibold text-[#eab308]">同值联合批量搜索</span>
+                                        <span className="text-xs text-[var(--text-muted)]">(跨表/跨字段一次性查询相同的一列值)</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-[var(--text-muted)]">匹配模式：</span>
+                                        <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSameValueOp('Equals')}
+                                                className={`px-2.5 py-1 text-xs transition-all ${sameValueOp === 'Equals'
+                                                    ? 'bg-[#eab308] text-black font-semibold'
+                                                    : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                }`}
+                                            >
+                                                精确
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSameValueOp('Contains')}
+                                                className={`px-2.5 py-1 text-xs transition-all ${sameValueOp === 'Contains'
+                                                    ? 'bg-[#eab308] text-black font-semibold'
+                                                    : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                }`}
+                                            >
+                                                模糊
+                                            </button>
                                         </div>
                                     </div>
-                                )
-                            })}
-                        </div>
+                                </div>
+
+                                {/* 已绑定的列标签 */}
+                                <div className="flex flex-wrap gap-2 items-center">
+                                    <span className="text-xs text-[var(--text-muted)]">生效字段:</span>
+                                    {sameValueCols.map(col => (
+                                        <span key={col.displayName} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[rgba(234,179,8,0.15)] border border-[rgba(234,179,8,0.3)] text-[#eab308]">
+                                            <span>📊</span>
+                                            {col.displayName}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                {/* 批量输入区域 */}
+                                <div className="flex flex-col gap-1.5">
+                                    <textarea
+                                        value={sameValueInput}
+                                        onChange={(e) => setSameValueInput(e.target.value)}
+                                        placeholder="请在此输入要搜索的相同值列表，一行一个。支持从 Excel 直接复制整列数据粘贴到此处。"
+                                        className="textarea w-full font-mono text-sm border-[var(--border)] focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] bg-[var(--card-bg)] rounded-lg p-3 resize-y min-h-[120px]"
+                                    />
+                                    <span className="text-xs text-[var(--text-muted)] text-right">
+                                        已输入 {sameValueInput.split('\n').filter(v => v.trim() !== '').length} 行
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 常规独立条件字段 */}
+                        {inputKeys.length > 0 && (
+                            <div className="space-y-4 mb-6">
+                                {Object.entries(selectedColumns).map(([tableKey, columns]) => {
+                                    // 检查该表是否含有处于常规检索下的字段
+                                    const visibleColumns = columns.filter(colName => {
+                                        const config = columnConfigs[tableKey]?.find(c => c.name === colName)
+                                        return !config || !config.sameValue
+                                    })
+                                    if (visibleColumns.length === 0) return null
+
+                                    // 格式化表名 (加上 Token 归属)
+                                    let name = tableKey
+                                    let tokenId = ''
+                                    if (tableKey.includes('::')) {
+                                        const parts = tableKey.split('::')
+                                        tokenId = parts[0]
+                                        name = parts[1]
+                                    }
+                                    const baseName = name.includes('__copy_')
+                                        ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
+                                        : name
+                                    const tokenName = selectedTokens.find(t => t.id === tokenId)?.name
+                                    const displayName = tokenName ? `[${tokenName}] ${baseName}` : baseName
+
+                                    return (
+                                        <div
+                                            key={tableKey}
+                                            className="rounded-lg border border-[var(--border)] overflow-hidden"
+                                        >
+                                            <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)] flex items-center gap-3">
+                                                {onPasteSearch && visibleColumns.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            setPasteModalTableKey(tableKey)
+                                                        }}
+                                                        className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white font-medium hover:from-[#7c3aed] hover:to-[#8b5cf6] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#8b5cf6]/30"
+                                                        title="粘贴 Excel 数据进行批量查询"
+                                                    >
+                                                        <span>📋</span>
+                                                        粘贴列查询
+                                                    </button>
+                                                )}
+                                                <span className="text-[#eab308] font-medium flex items-center gap-2">
+                                                    <span>📊</span>
+                                                    {displayName}
+                                                </span>
+                                            </div>
+                                            <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                                                {visibleColumns.map((columnName) => {
+                                                    const key = `${tableKey}__${columnName}`
+                                                    const input = inputs[key] || { value: '', op: 'Contains' }
+                                                    const isExact = input.op === 'Equals'
+
+                                                    return (
+                                                        <div
+                                                            key={key}
+                                                            className="flex flex-col gap-1.5"
+                                                        >
+                                                            <div
+                                                                onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
+                                                                className="cursor-pointer flex items-center gap-2 select-none group w-fit"
+                                                                title="点击切换模糊/精确搜索"
+                                                            >
+                                                                <span className={`
+                                                                    text-sm font-medium transition-colors
+                                                                    ${isExact
+                                                                        ? 'text-[#667eea] font-bold'
+                                                                        : 'text-[var(--text-muted)] group-hover:text-[var(--foreground)]'
+                                                                    }
+                                                                `}>
+                                                                    {columnName}
+                                                                </span>
+                                                                <span className={`
+                                                                    text-[10px] px-1.5 py-0.5 rounded border transition-all
+                                                                    ${isExact
+                                                                        ? 'bg-[rgba(102,126,234,0.1)] text-[#667eea] border-[#667eea]'
+                                                                        : 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
+                                                                    }
+                                                                `}>
+                                                                    {isExact ? '精确' : '模糊'}
+                                                                </span>
+                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                value={input.value}
+                                                                onChange={(e) => handleInputChange(key, e.target.value)}
+                                                                placeholder="输入搜索关键字..."
+                                                                className="input w-full"
+                                                            />
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
 
                         <div className="text-center flex flex-wrap justify-center items-center gap-4">
                             {/* 自动加载图片选项 */}
@@ -343,8 +478,8 @@ export function SearchForm({
                         </div>
                     </form>
                 </div >
-            )
-            }
+            )}
+            
             {/* 批量查询弹窗 */}
             {isBatchModalOpen && createPortal(
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -484,7 +619,6 @@ export function SearchForm({
                     initialData={pasteData[pasteModalTableKey]}
                     onDataChange={handlePasteDataChange}
                 />
-
             )}
         </div >
     )

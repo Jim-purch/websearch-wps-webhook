@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import type { WpsColumn } from '@/lib/wps'
 import type { ColumnConfig } from '@/hooks/usePartSearch'
+import type { Token } from '@/types'
 
 interface ColumnSelectorProps {
     columnsData: Record<string, WpsColumn[]>
     selectedColumns: Record<string, string[]>
     columnConfigs: Record<string, ColumnConfig[]>
+    selectedTokens?: Token[]
     onToggle: (tableName: string, columnName: string) => void
     onConfigChange: (tableName: string, newConfig: ColumnConfig[]) => void
     onSelectAll: () => void
@@ -24,6 +26,7 @@ export function ColumnSelector({
     columnsData,
     selectedColumns,
     columnConfigs,
+    selectedTokens = [],
     onToggle,
     onConfigChange,
     onSelectAll,
@@ -37,17 +40,16 @@ export function ColumnSelector({
 }: ColumnSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
     const tableKeys = Object.keys(columnsData)
-    // 拖拽相关状态
     const [draggedItem, setDraggedItem] = useState<{ tableName: string, index: number } | null>(null)
 
-    // 当外部强制收起时（计数器大于0表示需要收起）
+    // 当外部强制收起时
     useEffect(() => {
         if (forceCollapsed && forceCollapsed > 0) {
             setIsOpen(false)
         }
     }, [forceCollapsed])
 
-    // 当外部强制展开时（计数器大于0表示需要展开）
+    // 当外部强制展开时
     useEffect(() => {
         if (forceExpanded && forceExpanded > 0) {
             setIsOpen(true)
@@ -58,13 +60,29 @@ export function ColumnSelector({
         return null
     }
 
-    // 获取显示名称
+    // 获取显示名称 (包含 Token 归属前缀)
     const getDisplayName = (tableKey: string) => {
-        if (tableKey.includes('__copy_')) {
-            const parts = tableKey.split('__copy_')
-            return `${parts[0]} (副本${parts[1]})`
+        let name = tableKey
+        let tokenId = ''
+        if (tableKey.includes('::')) {
+            const parts = tableKey.split('::')
+            tokenId = parts[0]
+            name = parts[1]
         }
-        return tableKey
+        
+        let tokenName = ''
+        if (tokenId && selectedTokens) {
+            tokenName = selectedTokens.find(t => t.id === tokenId)?.name || ''
+        }
+
+        const baseDisplayName = name.includes('__copy_')
+            ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
+            : name
+
+        if (tokenName) {
+            return `[${tokenName}] ${baseDisplayName}`
+        }
+        return baseDisplayName
     }
 
     // 判断是否是副本
@@ -84,11 +102,24 @@ export function ColumnSelector({
         onConfigChange(tableName, newConfig)
     }
 
+    // 处理 同值批量搜索 状态切换
+    const handleSameValueToggle = (tableName: string, configIndex: number, e: React.MouseEvent) => {
+        e.stopPropagation()
+        const currentConfig = columnConfigs[tableName]
+        if (!currentConfig) return
+
+        const newConfig = [...currentConfig]
+        newConfig[configIndex] = {
+            ...newConfig[configIndex],
+            sameValue: !newConfig[configIndex].sameValue
+        }
+        onConfigChange(tableName, newConfig)
+    }
+
     // 拖拽处理
     const handleDragStart = (e: React.DragEvent, tableName: string, index: number) => {
         setDraggedItem({ tableName, index })
         e.dataTransfer.effectAllowed = 'move'
-        // 设置透明度等样式在 CSS 中处理或者这里简单处理
         if (e.currentTarget instanceof HTMLElement) {
             e.currentTarget.style.opacity = '0.5'
         }
@@ -130,7 +161,7 @@ export function ColumnSelector({
                         步骤 3: 选择搜索列与结果显示配置
                     </h3>
                     <span className="text-xs text-[var(--text-muted)]">
-                        拖动列名排序 | 右侧开关控制获取 | 点击选中为搜索条件
+                        拖动列名排序 | 右侧开关控制获取 | 🔗 同值开启后支持批量/联合查同一个值
                     </span>
                 </div>
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
@@ -143,9 +174,6 @@ export function ColumnSelector({
                     {tableKeys.map((tableKey) => {
                         const selected = selectedColumns[tableKey] || []
                         const currentConfig = columnConfigs[tableKey] || []
-
-                        // 如果 config 为空（初始化时），显示加载中或回退到 columnsData
-                        // 但通常 usePartSearch 会初始化它
 
                         return (
                             <div key={tableKey} className="mb-6 last:mb-0">
@@ -229,6 +257,22 @@ export function ColumnSelector({
                                                 >
                                                     {colConfig.fetch ? '获取' : '不获取'}
                                                 </button>
+
+                                                {/* Same Value Toggle */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleSameValueToggle(tableKey, index, e)}
+                                                    className={`
+                                                        text-[10px] px-1.5 py-0.5 rounded border transition-colors
+                                                        ${colConfig.sameValue
+                                                            ? 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/40 hover:bg-[#eab308]/30'
+                                                            : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-transparent hover:bg-[var(--text-muted)]/20'
+                                                        }
+                                                    `}
+                                                    title={colConfig.sameValue ? "已启用同值批量搜索 (点击取消)" : "点击启用同值批量搜索"}
+                                                >
+                                                    🔗 同值
+                                                </button>
                                             </div>
                                         )
                                     })}
@@ -276,4 +320,3 @@ export function ColumnSelector({
         </div>
     )
 }
-
