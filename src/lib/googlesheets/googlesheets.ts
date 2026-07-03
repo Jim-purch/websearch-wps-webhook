@@ -355,7 +355,7 @@ export async function searchInSheet(
             rowData: Record<string, string>
         }> = []
 
-        const searchStr = String(searchValue)
+        const searchStr = String(searchValue).toLowerCase()
 
         for (let rowIdx = 1; rowIdx < allValues.length; rowIdx++) {
             const row = allValues[rowIdx]
@@ -365,7 +365,7 @@ export async function searchInSheet(
 
             for (let colIdx = startCol; colIdx < endCol; colIdx++) {
                 const cellValue = row[colIdx] || ''
-                if (String(cellValue).includes(searchStr)) {
+                if (String(cellValue).toLowerCase().includes(searchStr)) {
                     // 收集整行数据
                     const rowData: Record<string, string> = {}
                     for (let c = 0; c < headerRow.length; c++) {
@@ -592,14 +592,22 @@ export async function searchMultiCriteria(
 
             for (const crit of validCriteria) {
                 const cellValue = row[crit.colIndex] || ''
-                const cellStr = String(cellValue)
-                const searchStr = String(crit.searchValue)
+                const cellStr = String(cellValue).toLowerCase()
+                const searchStr = String(crit.searchValue).toLowerCase()
 
                 if (!searchStr) continue
 
-                if (cellStr.indexOf(searchStr) === -1) {
-                    matchAll = false
-                    break
+                if (crit.opType === 'Equals') {
+                    if (cellStr !== searchStr) {
+                        matchAll = false
+                        break
+                    }
+                } else {
+                    // Contains
+                    if (cellStr.indexOf(searchStr) === -1) {
+                        matchAll = false
+                        break
+                    }
                 }
             }
 
@@ -751,13 +759,22 @@ export async function searchBatch(
 
                 for (const crit of validCriteria) {
                     const cellValue = row[crit.colIndex] || ''
-                    const cellStr = String(cellValue)
-                    const searchStr = String(crit.searchValue)
+                    const cellStr = String(cellValue).toLowerCase()
+                    const searchStr = String(crit.searchValue).toLowerCase()
 
                     if (!searchStr) continue
-                    if (cellStr.indexOf(searchStr) === -1) {
-                        matchAll = false
-                        break
+
+                    if (crit.opType === 'Equals') {
+                        if (cellStr !== searchStr) {
+                            matchAll = false
+                            break
+                        }
+                    } else {
+                        // Contains
+                        if (cellStr.indexOf(searchStr) === -1) {
+                            matchAll = false
+                            break
+                        }
                     }
                 }
 
