@@ -109,19 +109,13 @@ function ImageWithPreview({
                 >
                     ✕
                 </button>
-                <button
-                    className="absolute bottom-2 right-2 px-3 py-1 rounded bg-[#eab308] text-black text-sm hover:bg-[#ca9a06]"
-                    onClick={(e) => { e.stopPropagation(); onCopy() }}
-                >
-                    📋 复制链接
-                </button>
             </div>
         </div>,
         document.body
     ) : null
 
     return (
-        <>
+        <div className="relative inline-block group">
             <img
                 key={retryCount}
                 src={src}
@@ -132,8 +126,15 @@ function ImageWithPreview({
                 onError={() => setImgError(true)}
                 title="点击查看大图"
             />
+            <button
+                className="absolute top-0.5 right-0.5 p-1 rounded bg-black/60 text-white hover:bg-black/85 opacity-0 group-hover:opacity-100 transition-opacity z-10 text-[10px] flex items-center justify-center w-5 h-5"
+                onClick={(e) => { e.stopPropagation(); onCopy() }}
+                title={isCopied ? "已复制链接" : "复制图片链接"}
+            >
+                {isCopied ? "✅" : "📋"}
+            </button>
             {previewModal}
-        </>
+        </div>
     )
 }
 
