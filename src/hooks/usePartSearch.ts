@@ -53,6 +53,8 @@ export interface TableSearchResult {
     error?: string
     originalQueryColumns?: string[]  // 原始查询列名称列表
     displayColumns?: string[] // 显示列顺序（基于用户配置）
+    originalCriteria?: WpsSearchCriteria[] // 原始查询条件（用于加载更多）
+    isLoadingMore?: boolean // 是否正在加载更多中
 }
 
 // 移除硬编码的 BATCH_SIZE，改为通过参数传递，默认50
@@ -720,7 +722,8 @@ export function usePartSearch() {
                                 truncated: data.truncated || false,
                                 originalTotalCount: data.originalTotalCount,
                                 maxRecords: data.maxRecords,
-                                displayColumns: displayColumns
+                                displayColumns: displayColumns,
+                                originalCriteria: tableIndependentConds
                             })
                         } else {
                             results.push({
@@ -756,6 +759,78 @@ export function usePartSearch() {
             setIsSearching(false)
         }
     }, [selectedTokens, columnConfigs, selectedColumns])
+
+    // 加载更多 WPS 搜索数据
+    const loadMore = useCallback(async (resultIndex: number) => {
+        const targetResult = searchResults[resultIndex]
+        if (!targetResult || targetResult.isLoadingMore) return
+
+        // 设置该表的加载状态
+        setSearchResults(prev => {
+            const next = [...prev]
+            next[resultIndex] = { ...next[resultIndex], isLoadingMore: true }
+            return next
+        })
+
+        try {
+            const limit = 100
+            const offset = targetResult.records.length
+            
+            const result = await searchMultiCriteria(
+                targetResult.tokenId || '',
+                targetResult.realTableName || '',
+                targetResult.originalCriteria || [],
+                targetResult.displayColumns,
+                limit,
+                offset
+            )
+
+            if (result.success && result.data) {
+                const data = result.data as WpsSearchResult
+                let newRecords = data.records || []
+
+                // 客户端二次匹配验证，确保精确度
+                if (targetResult.originalCriteria) {
+                    newRecords = newRecords.filter(record => matchesAllCriteria(record, targetResult.originalCriteria!))
+                }
+
+                setSearchResults(prev => {
+                    const next = [...prev]
+                    const currentResult = next[resultIndex]
+                    next[resultIndex] = {
+                        ...currentResult,
+                        records: [...currentResult.records, ...newRecords],
+                        totalCount: currentResult.totalCount + newRecords.length,
+                        truncated: data.truncated || false,
+                        originalTotalCount: data.originalTotalCount,
+                        maxRecords: data.maxRecords,
+                        isLoadingMore: false
+                    }
+                    return next
+                })
+            } else {
+                setSearchResults(prev => {
+                    const next = [...prev]
+                    next[resultIndex] = {
+                        ...next[resultIndex],
+                        isLoadingMore: false,
+                        error: result.error || '加载更多失败'
+                    }
+                    return next
+                })
+            }
+        } catch (err) {
+            setSearchResults(prev => {
+                const next = [...prev]
+                next[resultIndex] = {
+                    ...next[resultIndex],
+                    isLoadingMore: false,
+                    error: err instanceof Error ? err.message : '加载更多发生错误'
+                }
+                return next
+            })
+        }
+    }, [searchResults])
 
     // 导出到 Excel (仅导出当前显示的结果)
     const exportToExcel = useCallback(async () => {
@@ -2110,6 +2185,7 @@ export function usePartSearch() {
         isSearching,
         searchError,
         performSearch,
+        loadMore,
         exportToExcel,
         exportSingleResult,
         isExporting,

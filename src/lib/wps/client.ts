@@ -117,13 +117,17 @@ export async function searchMultiCriteria(
     tokenId: string,
     sheetName: string,
     criteria: WpsSearchCriteria[],
-    returnColumns?: string[] // 新增参数：指定返回列
+    returnColumns?: string[], // 新增参数：指定返回列
+    limit?: number,
+    offset?: number
 ): Promise<ParsedWpsResult<WpsSearchResult>> {
     const result = await callWpsProxy<WpsSearchResult>(tokenId, {
         action: 'searchMulti',
         sheetName,
         criteria,
-        returnColumns // 传递给后端
+        returnColumns, // 传递给后端
+        limit,
+        offset
     })
 
     return result

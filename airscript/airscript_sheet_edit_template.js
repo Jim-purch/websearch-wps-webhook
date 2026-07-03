@@ -307,8 +307,8 @@ function parseDispImgFormula(value) {
 /**
  * 多条件 AND 搜索记录（含 _rowNumber 写入）
  */
-function searchMultiCriteria(sheetName, criteria, returnColumns) {
-    console.log("开始多条件搜索: 表=" + sheetName)
+function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offsetVal) {
+    console.log("开始多条件搜索: 表=" + sheetName + ", limit=" + limitVal + ", offset=" + offsetVal)
 
     if (!sheetName) {
         return { success: false, error: "缺少参数: sheetName" }
@@ -387,9 +387,11 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
         const imageMap = getSheetCellImages(sheet)
         const hasImages = Object.keys(imageMap).length > 0
 
+        const limit = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 100
+        const offset = (typeof offsetVal !== 'undefined' && offsetVal !== null) ? Number(offsetVal) : 0
         const records = []
-        const MAX_RECORDS = 100
         let truncated = false
+        let matchCount = 0
 
         const firstCrit = validCriteria[0]
         const searchColumn = sheet.Columns(firstCrit.colIndex)
@@ -432,48 +434,52 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                 }
 
                 if (matchAll) {
-                    const rowData = {}
-                    rowData['_rowNumber'] = currentRow // 写入行号
-                    for (const colName of outputColumns) {
-                        const idx = columnMap[colName]
-                        const cell = sheet.Cells(currentRow, idx)
-                        const cellValue = cell.Value
+                    matchCount++
+                    if (matchCount > offset) {
+                        const rowData = {}
+                        rowData['_rowNumber'] = currentRow // 写入行号
+                        for (const colName of outputColumns) {
+                            const idx = columnMap[colName]
+                            const cell = sheet.Cells(currentRow, idx)
+                            const cellValue = cell.Value
 
-                        let cellAddr = null
-                        if (hasImages || parseDispImgFormula(cellValue)) {
-                            cellAddr = cell.Address().replace(/\$/g, '')
-                        }
+                            let cellAddr = null
+                            if (hasImages || parseDispImgFormula(cellValue)) {
+                                cellAddr = cell.Address().replace(/\$/g, '')
+                            }
 
-                        if (hasImages && cellAddr && imageMap[cellAddr]) {
-                            rowData[colName] = { _type: 'image', value: cellValue, imageUrl: imageMap[cellAddr] }
-                        } else {
-                            const dispImg = parseDispImgFormula(cellValue)
-                            if (dispImg) {
-                                rowData[colName] = { _type: 'dispimg', value: cellValue, imageId: dispImg.imageId, cellAddress: cellAddr }
+                            if (hasImages && cellAddr && imageMap[cellAddr]) {
+                                rowData[colName] = { _type: 'image', value: cellValue, imageUrl: imageMap[cellAddr] }
                             } else {
-                                rowData[colName] = cellValue
+                                const dispImg = parseDispImgFormula(cellValue)
+                                if (dispImg) {
+                                    rowData[colName] = { _type: 'dispimg', value: cellValue, imageId: dispImg.imageId, cellAddress: cellAddr }
+                                } else {
+                                    rowData[colName] = cellValue
+                                }
                             }
                         }
+                        records.push(rowData)
                     }
-                    records.push(rowData)
 
-                    if (records.length >= MAX_RECORDS) {
+                    if (records.length >= limit) {
                         truncated = true
                         break
                     }
                 }
 
                 foundCell = searchColumn.Find(searchValue, foundCell, "etValues", "etPart")
-            } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+            } while (foundCell && foundCell.Address() !== firstAddress && records.length < limit)
         }
 
+        console.log("搜索完成，当前批次返回 " + records.length + " 个匹配项" + (truncated ? " (已截断)" : ""))
         return {
             success: true,
             sheetName: sheetName,
             criteriaCount: validCriteria.length,
             totalCount: records.length,
             truncated: truncated,
-            maxRecords: MAX_RECORDS,
+            maxRecords: limit,
             records: records
         }
     } catch (error) {
@@ -1173,7 +1179,7 @@ if (action === "getAll") {
 } else if (action === "search") {
     result = searchInSheet(argv.sheetName, argv.searchValue, argv.searchColumn, argv.maxResults)
 } else if (action === "searchMulti") {
-    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns)
+    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns, argv.limit, argv.offset)
 } else if (action === "getData") {
     result = getRangeData(argv.sheetName, argv.range, argv.hasHeader)
 } else if (action === "getImageUrl") {

@@ -47,6 +47,7 @@ export default function PartSearchPage() {
         isSearching,
         searchError,
         performSearch,
+        loadMore,
         exportToExcel,
         exportSingleResult,
         isExporting,
@@ -558,6 +559,7 @@ export default function PartSearchPage() {
                     revertChanges={revertChanges}
                     saveChanges={saveChanges}
                     onDeleteRows={deleteRows}
+                    onLoadMore={loadMore}
                 />
             </div>
 

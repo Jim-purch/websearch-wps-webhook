@@ -346,7 +346,8 @@ export async function searchInSheet(
         }
 
         const headerRow = allValues[0]
-        const limit = Math.min(Math.max(1, maxResults || 100), 500)
+        // 对于谷歌表格，如果指定了 maxResults 则使用它，否则默认无显示限制
+        const limit = maxResults && maxResults > 0 ? maxResults : 999999
         const results: Array<{
             row: number
             column: number
@@ -583,7 +584,8 @@ export async function searchMultiCriteria(
 
         // 在内存中搜索
         const records: Record<string, unknown>[] = []
-        const MAX_RECORDS = 100
+        // 对于谷歌表格，不设置 100 行显示限制（全量返回）
+        const MAX_RECORDS = 999999
         let truncated = false
 
         for (let rowIdx = 1; rowIdx < allValues.length; rowIdx++) {
@@ -751,7 +753,8 @@ export async function searchBatch(
             }
 
             const records: Record<string, unknown>[] = []
-            const MAX_RECORDS = 30
+            // 对于谷歌表格，批量搜索单条也不设置 30 行限制
+            const MAX_RECORDS = 999999
 
             for (let rowIdx = 1; rowIdx < allValues.length; rowIdx++) {
                 const row = allValues[rowIdx]

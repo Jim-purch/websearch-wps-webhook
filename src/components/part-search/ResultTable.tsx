@@ -19,6 +19,7 @@ interface ResultTableProps {
     revertChanges?: () => void
     saveChanges?: () => Promise<void>
     onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>
+    onLoadMore?: (resultIndex: number) => Promise<void> | void // 加载更多回调
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -279,7 +280,8 @@ function ResultCard({
     onExportSingle,
     modifiedCells,
     updateCell,
-    onDeleteRows
+    onDeleteRows,
+    onLoadMore
 }: {
     result: TableSearchResult;
     index: number;
@@ -291,6 +293,7 @@ function ResultCard({
     modifiedCells?: Record<string, any>;
     updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void;
     onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>;
+    onLoadMore?: (resultIndex: number) => Promise<void> | void;
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
@@ -702,9 +705,33 @@ function ResultCard({
                                 </div>
                             )}
                             {result.truncated && (
-                                <div className="p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm">
-                                    ⚠️ 搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），
-                                    仅显示前 {result.maxRecords} 条。建议使用更精确的搜索条件缩小范围。
+                                <div className="p-3 rounded-lg bg-[rgba(234,179,8,0.1)] border border-[rgba(234,179,8,0.3)] text-[#eab308] text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <span>⚠️</span>
+                                        <span>
+                                            搜索结果超过 {result.maxRecords} 行（共 {result.originalTotalCount} 行），仅显示前 {result.records.length} 条。建议使用更精确的搜索条件缩小范围。
+                                        </span>
+                                    </div>
+                                    {onLoadMore && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onLoadMore(index)}
+                                            disabled={result.isLoadingMore}
+                                            className="text-xs px-3.5 py-2 rounded-lg bg-[var(--card-bg)] border border-[rgba(234,179,8,0.3)] hover:bg-[var(--hover-bg)] text-[#eab308] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 select-none shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                                        >
+                                            {result.isLoadingMore ? (
+                                                <>
+                                                    <span className="inline-block animate-spin mr-1">⌛</span>
+                                                    正在加载...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>⬇️</span>
+                                                    加载下 100 条
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
                             )}
                             {selectedRows.size > 0 && (
@@ -1154,7 +1181,8 @@ export function ResultTable({
     updateCell,
     revertChanges,
     saveChanges,
-    onDeleteRows
+    onDeleteRows,
+    onLoadMore
 }: ResultTableProps) {
     const modifiedCount = modifiedCells ? Object.keys(modifiedCells).length : 0
     const [isSavingLocal, setIsSavingLocal] = useState(false)
@@ -1246,6 +1274,7 @@ export function ResultTable({
                     modifiedCells={modifiedCells}
                     updateCell={updateCell}
                     onDeleteRows={onDeleteRows}
+                    onLoadMore={onLoadMore}
                 />
             ))}
         </div>

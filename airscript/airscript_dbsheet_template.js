@@ -435,8 +435,8 @@ function getTableDetails(sheetName, sampleSize) {
  *   {columnName: "配件级别", searchValue: "F", op: "Equals"}
  * ]
  */
-function searchMultiCriteria(sheetName, criteria, returnColumns) {
-    console.log("开始多条件搜索: 表=" + sheetName + ", 条件数=" + (criteria ? criteria.length : 0))
+function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offsetVal) {
+    console.log("开始多条件搜索: 表=" + sheetName + ", limit=" + limitVal + ", offset=" + offsetVal)
 
     // 参数验证
     if (!sheetName) {
@@ -566,10 +566,11 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
 
         console.log("筛选条件 (" + filter.criteria.length + " 个): " + criteriaDescriptions.join(" AND "))
 
-        // 分页查询匹配记录，限制最大返回100条以避免超时
-        var MAX_RECORDS = 100
+        const limit = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 100
+        const offset = (typeof offsetVal !== 'undefined' && offsetVal !== null) ? Number(offsetVal) : 0
+        const MAX_RECORDS = offset + limit
         let allRecords = []
-        let offset = null
+        let dbOffset = null
         let pageCount = 0
         let truncated = false
         let originalTotalCount = 0
@@ -581,7 +582,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
 
                 const pageResult = Application.Record.GetRecords({
                     SheetId: sheetId,
-                    Offset: offset,
+                    Offset: dbOffset,
                     Filter: filter
                 })
 
@@ -591,13 +592,13 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                 }
 
                 allRecords = allRecords.concat(pageResult.records)
-                offset = pageResult.offset
+                dbOffset = pageResult.offset
 
                 console.log("第 " + pageCount + " 页获取到 " + pageResult.records.length + " 条记录，累计 " + allRecords.length + " 条")
 
                 // 检查是否已达到最大限制
                 if (allRecords.length >= MAX_RECORDS) {
-                    if (offset) {
+                    if (dbOffset) {
                         truncated = true
                         originalTotalCount = allRecords.length
                         console.log("已达到最大记录限制 " + MAX_RECORDS + " 条，停止查询")
@@ -605,7 +606,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                     break
                 }
 
-            } while (offset)
+            } while (dbOffset)
         } catch (queryError) {
             console.error("分页查询失败: " + queryError)
             return {
@@ -618,13 +619,12 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
             }
         }
 
-        // 如果超过限制，截断结果
+        // 如果超过限制，截断/分页结果
         let finalRecords = allRecords
-        if (allRecords.length > MAX_RECORDS) {
-            truncated = true
-            originalTotalCount = allRecords.length
-            finalRecords = allRecords.slice(0, MAX_RECORDS)
-            console.log("结果已从 " + allRecords.length + " 条截断为 " + MAX_RECORDS + " 条")
+        if (allRecords.length > offset) {
+            finalRecords = allRecords.slice(offset, offset + limit)
+        } else {
+            finalRecords = []
         }
 
         // 处理列过滤 (returnColumns)
@@ -649,13 +649,12 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                     id: rec.id,
                     recordId: rec.recordId,
                     fields: newFields,
-                    // 如果需要 createsBy 等元数据，可在此添加，但为了精简通常只需 fields
                 })
             }
             finalRecords = filteredRecords
         }
 
-        console.log("多条件搜索完成，共找到 " + allRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
+        console.log("多条件搜索完成，本批次返回 " + finalRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
 
         return {
             success: true,
@@ -663,9 +662,9 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
             criteriaCount: filter.criteria.length,
             criteriaDescription: criteriaDescriptions.join(" AND "),
             totalCount: finalRecords.length,
-            originalTotalCount: truncated ? (originalTotalCount + "+") : finalRecords.length,
+            originalTotalCount: truncated ? (originalTotalCount + "+") : allRecords.length,
             truncated: truncated,
-            maxRecords: MAX_RECORDS,
+            maxRecords: limit,
             records: JSON.parse(JSON.stringify(finalRecords))
         }
 
@@ -876,7 +875,7 @@ if (action === "getAll") {
     result = searchByColumn(argv.sheetName, argv.columnName, argv.searchValue, argv.op)
 } else if (action === "searchMulti") {
     // 多条件 AND 搜索
-    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns)
+    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns, argv.limit, argv.offset)
 } else if (action === "details") {
     result = getTableDetails(argv.sheetName, argv.sampleSize)
 } else if (action === "searchBatch") {

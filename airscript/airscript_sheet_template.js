@@ -474,8 +474,8 @@ function parseDispImgFormula(value) {
  * @param {Array} returnColumns - (可选) 指定返回的列名数组，如果为空则返回所有列
  * @returns {Object} 包含匹配记录的对象
  */
-function searchMultiCriteria(sheetName, criteria, returnColumns) {
-    console.log("开始多条件搜索: 表=" + sheetName + ", 条件数=" + (criteria ? criteria.length : 0))
+function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offsetVal) {
+    console.log("开始多条件搜索: 表=" + sheetName + ", limit=" + limitVal + ", offset=" + offsetVal)
 
     // 参数验证
     if (!sheetName) {
@@ -608,9 +608,11 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
         // 值清理和精确/模糊匹配判断全部移到客户端进行
         console.log("开始使用 Find 方法搜索...")
 
+        const limit = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 100
+        const offset = (typeof offsetVal !== 'undefined' && offsetVal !== null) ? Number(offsetVal) : 0
         const records = []
-        const MAX_RECORDS = 100
         let truncated = false
+        let matchCount = 0
 
         // 使用第一个条件的列进行 Find 搜索
         const firstCrit = validCriteria[0]
@@ -625,7 +627,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                 criteriaDescription: criteriaDescriptions.join(" AND "),
                 totalCount: 0,
                 truncated: false,
-                maxRecords: MAX_RECORDS,
+                maxRecords: limit,
                 records: []
             }
         }
@@ -671,53 +673,56 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
                 }
 
                 if (matchAll) {
-                    // 收集整行数据
-                    const rowData = {}
-                    for (const colName of outputColumns) {
-                        const idx = columnMap[colName]
-                        const cell = sheet.Cells(currentRow, idx)
-                        const cellValue = cell.Value
+                    matchCount++
+                    if (matchCount > offset) {
+                        // 收集整行数据
+                        const rowData = {}
+                        for (const colName of outputColumns) {
+                            const idx = columnMap[colName]
+                            const cell = sheet.Cells(currentRow, idx)
+                            const cellValue = cell.Value
 
-                        // 只有在需要图片时才获取地址，减少开销
-                        let cellAddr = null
-                        if (hasImages || parseDispImgFormula(cellValue)) {
-                            cellAddr = cell.Address().replace(/\$/g, '')
-                        }
-
-                        if (hasImages && cellAddr && imageMap[cellAddr]) {
-                            rowData[colName] = {
-                                _type: 'image',
-                                value: cellValue,
-                                imageUrl: imageMap[cellAddr]
+                            // 只有在需要图片时才获取地址，减少开销
+                            let cellAddr = null
+                            if (hasImages || parseDispImgFormula(cellValue)) {
+                                cellAddr = cell.Address().replace(/\$/g, '')
                             }
-                        } else {
-                            const dispImg = parseDispImgFormula(cellValue)
-                            if (dispImg) {
+
+                            if (hasImages && cellAddr && imageMap[cellAddr]) {
                                 rowData[colName] = {
-                                    _type: 'dispimg',
+                                    _type: 'image',
                                     value: cellValue,
-                                    imageId: dispImg.imageId,
-                                    cellAddress: cellAddr
+                                    imageUrl: imageMap[cellAddr]
                                 }
                             } else {
-                                rowData[colName] = cellValue
+                                const dispImg = parseDispImgFormula(cellValue)
+                                if (dispImg) {
+                                    rowData[colName] = {
+                                        _type: 'dispimg',
+                                        value: cellValue,
+                                        imageId: dispImg.imageId,
+                                        cellAddress: cellAddr
+                                    }
+                                } else {
+                                    rowData[colName] = cellValue
+                                }
                             }
                         }
+                        records.push(rowData)
                     }
-                    records.push(rowData)
 
-                    if (records.length >= MAX_RECORDS) {
+                    if (records.length >= limit) {
                         truncated = true
-                        console.log("已达到最大记录限制 " + MAX_RECORDS + " 条，停止搜索")
+                        console.log("已达到最大记录限制 " + limit + " 条，停止搜索")
                         break
                     }
                 }
 
                 foundCell = searchColumn.Find(searchValue, foundCell, "etValues", "etPart")
-            } while (foundCell && foundCell.Address() !== firstAddress && records.length < MAX_RECORDS)
+            } while (foundCell && foundCell.Address() !== firstAddress && records.length < limit)
         }
 
-        console.log("多条件搜索完成，共找到 " + records.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
+        console.log("多条件搜索完成，本批次共找到 " + records.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
 
         return {
             success: true,
@@ -726,7 +731,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns) {
             criteriaDescription: criteriaDescriptions.join(" AND "),
             totalCount: records.length,
             truncated: truncated,
-            maxRecords: MAX_RECORDS,
+            maxRecords: limit,
             records: records
         }
 
@@ -758,7 +763,7 @@ if (action === "getAll") {
     result = searchInSheet(argv.sheetName, argv.searchValue, argv.searchColumn, argv.maxResults)
 } else if (action === "searchMulti") {
     // 多条件 AND 搜索
-    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns)
+    result = searchMultiCriteria(argv.sheetName, argv.criteria, argv.returnColumns, argv.limit, argv.offset)
 } else if (action === "getData") {
     result = getRangeData(argv.sheetName, argv.range, argv.hasHeader)
 } else if (action === "getImageUrl") {
