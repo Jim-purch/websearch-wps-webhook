@@ -206,94 +206,96 @@ export function usePartSearch() {
         return [...ownTokens, ...sharedUsableTokens]
     }, [tokens, getUsableSharedTokens])
 
-    // 监听 selectedTokens 变化，并发加载所有 Token 对应的表列表
-    useEffect(() => {
-        if (selectedTokens.length === 0) {
+    // 刷新表列表
+    const refreshTables = useCallback(async (customTokens?: Token[]) => {
+        const tokensToFetch = customTokens || selectedTokens
+        if (tokensToFetch.length === 0) {
             setTables([])
             setSelectedTableNames(new Set())
             setColumnsData({})
             setSelectedColumns({})
             setSearchResults([])
             setTablesError(null)
-            return
+            return []
         }
 
-        let isMounted = true
         setIsLoadingTables(true)
         setTablesError(null)
 
-        const fetchAllTables = async () => {
-            try {
-                const promises = selectedTokens.map(async (token) => {
-                    if (!token.webhook_url) {
-                        return { success: false, tokenId: token.id, tokenName: token.name, error: '没有配置 Webhook URL' }
-                    }
-                    const result = await getTableList(token.id)
-                    return {
-                        success: result.success,
-                        tokenId: token.id,
-                        tokenName: token.name,
-                        data: result.data || [],
-                        error: result.error
-                    }
-                })
-
-                const results = await Promise.all(promises)
-                
-                if (!isMounted) return
-
-                const allTables: WpsTable[] = []
-                const errors: string[] = []
-
-                for (const res of results) {
-                    if (res.success && res.data) {
-                        const tablesWithToken = res.data.map(table => ({
-                            ...table,
-                            tokenId: res.tokenId,
-                            tokenName: res.tokenName
-                        }))
-                        allTables.push(...tablesWithToken)
-                    } else {
-                        errors.push(`${res.tokenName}: ${res.error || '加载失败'}`)
-                    }
+        try {
+            const promises = tokensToFetch.map(async (token) => {
+                if (!token.webhook_url) {
+                    return { success: false, tokenId: token.id, tokenName: token.name, error: '没有配置 Webhook URL' }
                 }
+                const result = await getTableList(token.id)
+                return {
+                    success: result.success,
+                    tokenId: token.id,
+                    tokenName: token.name,
+                    data: result.data || [],
+                    error: result.error
+                }
+            })
 
-                setTables(allTables)
-                if (errors.length > 0) {
-                    setTablesError(errors.join('; '))
+            const results = await Promise.all(promises)
+            
+            const allTables: WpsTable[] = []
+            const errors: string[] = []
+
+            for (const res of results) {
+                if (res.success && res.data) {
+                    const tablesWithToken = res.data.map(table => ({
+                        ...table,
+                        tokenId: res.tokenId,
+                        tokenName: res.tokenName
+                    }))
+                    allTables.push(...tablesWithToken)
                 } else {
-                    setTablesError(null)
-                }
-
-                // 过滤已选择表，保留仍然有效的表（以 tokenId::tableName 形式检查）
-                setSelectedTableNames(prev => {
-                    const next = new Set<string>()
-                    const validTableKeys = new Set(allTables.map(t => `${t.tokenId}::${t.name}`))
-                    for (const key of prev) {
-                        if (validTableKeys.has(key)) {
-                            next.add(key)
-                        }
-                    }
-                    return next
-                })
-
-            } catch (err) {
-                if (isMounted) {
-                    setTablesError(err instanceof Error ? err.message : '加载表列表失败')
-                }
-            } finally {
-                if (isMounted) {
-                    setIsLoadingTables(false)
+                    errors.push(`${res.tokenName}: ${res.error || '加载失败'}`)
                 }
             }
-        }
 
-        fetchAllTables()
+            setTables(allTables)
+            if (errors.length > 0) {
+                setTablesError(errors.join('; '))
+            } else {
+                setTablesError(null)
+            }
+
+            // 过滤已选择表，保留仍然有效的表（以 tokenId::tableName 形式检查）
+            setSelectedTableNames(prev => {
+                const next = new Set<string>()
+                const validTableKeys = new Set(allTables.map(t => `${t.tokenId}::${t.name}`))
+                for (const key of prev) {
+                    if (validTableKeys.has(key)) {
+                        next.add(key)
+                    }
+                }
+                return next
+            })
+
+            return allTables
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : '加载表列表失败'
+            setTablesError(msg)
+            throw err
+        } finally {
+            setIsLoadingTables(false)
+        }
+    }, [selectedTokens])
+
+    // 监听 selectedTokens 变化，并发加载所有 Token 对应的表列表
+    useEffect(() => {
+        let isMounted = true
+        
+        refreshTables().catch(err => {
+            console.error('Failed to auto-fetch tables:', err)
+        })
 
         return () => {
             isMounted = false
         }
-    }, [selectedTokens])
+    }, [selectedTokens, refreshTables])
 
     // 选择 Token (单个选择，用于兼容或特定单选)
     const selectToken = useCallback(async (tokenId: string) => {
@@ -2090,6 +2092,7 @@ export function usePartSearch() {
         selectAllTables,
         deselectAllTables,
         loadColumnsForSelected,
+        refreshTables,
 
         // Columns
         columnsData,
