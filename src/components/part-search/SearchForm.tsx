@@ -9,7 +9,7 @@ import type { Token } from '@/types'
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
-    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals' }) => void
+    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals'; limit?: number }) => void
     selectedTokens?: Token[]
     onExport?: () => void
     isExporting?: boolean
@@ -113,7 +113,6 @@ export function SearchForm({
 
     // 同值批量搜索状态
     const [sameValueInput, setSameValueInput] = useState('')
-    const [sameValueOp, setSameValueOp] = useState<'Contains' | 'Equals'>('Contains')
 
     // 处理粘贴数据变化
     const handlePasteDataChange = useCallback((tableKey: string, data: PasteQueryData) => {
@@ -169,7 +168,8 @@ export function SearchForm({
 
         onSearch(getConditions(), {
             values: sameValueValues,
-            op: sameValueOp
+            op: batchMatchMode === 'exact' ? 'Equals' : 'Contains',
+            limit: batchLimit
         })
     }
 
@@ -189,7 +189,6 @@ export function SearchForm({
     }
 
     const openBatchModal = () => {
-        setInputs({})
         setSameValueInput('')
         setIsBatchModalOpen(true)
     }
@@ -244,29 +243,48 @@ export function SearchForm({
                                         <span className="font-semibold text-[#eab308]">同值联合批量搜索</span>
                                         <span className="text-xs text-[var(--text-muted)]">(跨表/跨字段一次性查询相同的一列值)</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-[var(--text-muted)]">匹配模式：</span>
-                                        <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
-                                            <button
-                                                type="button"
-                                                onClick={() => setSameValueOp('Equals')}
-                                                className={`px-2.5 py-1 text-xs transition-all ${sameValueOp === 'Equals'
-                                                    ? 'bg-[#eab308] text-black font-semibold'
-                                                    : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                }`}
-                                            >
-                                                精确
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSameValueOp('Contains')}
-                                                className={`px-2.5 py-1 text-xs transition-all ${sameValueOp === 'Contains'
-                                                    ? 'bg-[#eab308] text-black font-semibold'
-                                                    : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                }`}
-                                            >
-                                                模糊
-                                            </button>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        {/* 匹配模式 */}
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs text-[var(--text-muted)]">匹配模式：</span>
+                                            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBatchMatchMode('exact')}
+                                                    className={`px-2.5 py-1 text-xs transition-all ${batchMatchMode === 'exact'
+                                                        ? 'bg-[#eab308] text-black font-semibold'
+                                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                    }`}
+                                                >
+                                                    精确
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBatchMatchMode('fuzzy')}
+                                                    className={`px-2.5 py-1 text-xs transition-all ${batchMatchMode === 'fuzzy'
+                                                        ? 'bg-[#eab308] text-black font-semibold'
+                                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                    }`}
+                                                >
+                                                    模糊
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* WPS表单项最大返回数 */}
+                                        <div className="flex items-center gap-1.5 border-l border-[var(--border)] pl-3">
+                                            <span className="text-xs text-[var(--text-muted)]" title="批量查询时，每个值在每张表中最大返回的行数">单项最大返回数：</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="500"
+                                                value={batchLimit}
+                                                onChange={(e) => {
+                                                    const val = Math.max(1, Math.min(500, Number(e.target.value)))
+                                                    setBatchLimit(val)
+                                                }}
+                                                className="w-12 px-1.5 py-0.5 text-xs border border-[var(--border)] rounded bg-[var(--card-bg)] text-center text-[var(--foreground)]"
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -645,6 +663,12 @@ export function SearchForm({
                     batchProgress={batchProgress}
                     initialData={pasteData[pasteModalTableKey]}
                     onDataChange={handlePasteDataChange}
+                    matchMode={batchMatchMode}
+                    onMatchModeChange={setBatchMatchMode}
+                    batchSize={batchSize}
+                    onBatchSizeChange={setBatchSize}
+                    batchLimit={batchLimit}
+                    onBatchLimitChange={setBatchLimit}
                 />
             )}
         </div >

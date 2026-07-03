@@ -580,6 +580,7 @@ export function usePartSearch() {
         sameValueParams?: {
             values: string[]
             op: 'Contains' | 'Equals'
+            limit?: number
         }
     ) => {
         setIsSearching(true)
@@ -695,7 +696,7 @@ export function usePartSearch() {
                     if (batchItems.length === 0) continue
 
                     try {
-                        const res = await searchBatch(tokenId, realTableName, batchItems, returnColumns.length > 0 ? returnColumns : undefined, undefined, undefined)
+                        const res = await searchBatch(tokenId, realTableName, batchItems, returnColumns.length > 0 ? returnColumns : undefined, sameValueParams?.limit, undefined)
                         if (res.success && res.data) {
                             const batchRes = res.data as WpsBatchSearchResult
                             const allRecords: Record<string, unknown>[] = []

@@ -26,6 +26,12 @@ interface PasteQueryModalProps {
     batchProgress?: string
     initialData?: PasteQueryData
     onDataChange?: (tableKey: string, data: PasteQueryData) => void
+    matchMode: 'fuzzy' | 'exact'
+    onMatchModeChange: (val: 'fuzzy' | 'exact') => void
+    batchSize: number
+    onBatchSizeChange: (val: number) => void
+    batchLimit: number
+    onBatchLimitChange: (val: number) => void
 }
 
 export function PasteQueryModal({
@@ -37,22 +43,19 @@ export function PasteQueryModal({
     isSearching,
     batchProgress,
     initialData,
-    onDataChange
+    onDataChange,
+    matchMode,
+    onMatchModeChange,
+    batchSize,
+    onBatchSizeChange,
+    batchLimit,
+    onBatchLimitChange
 }: PasteQueryModalProps) {
     // 使用 initialData 初始化状态，如果没有则使用默认值
     const [rows, setRows] = useState<RowData[]>(
         initialData?.rows && initialData.rows.length > 0
             ? initialData.rows
             : [{ id: '1', values: {} }]
-    )
-    const [matchMode, setMatchMode] = useState<'fuzzy' | 'exact'>(
-        initialData?.matchMode || 'exact'
-    )
-    const [batchSize, setBatchSize] = useState<number>(
-        initialData?.batchSize || 50
-    )
-    const [batchLimit, setBatchLimit] = useState<number>(
-        initialData?.batchLimit || 30
     )
 
     const tableRef = useRef<HTMLDivElement>(null)
@@ -115,9 +118,6 @@ export function PasteQueryModal({
             setRows(initialData.rows && initialData.rows.length > 0
                 ? initialData.rows
                 : [{ id: '1', values: {} }])
-            setMatchMode(initialData.matchMode || 'exact')
-            setBatchSize(initialData.batchSize || 50)
-            setBatchLimit(initialData.batchLimit || 30)
         }
     }, [isOpen, tableKey]) // 添加 tableKey 作为依赖，确保切换表时能正确加载数据
 
@@ -372,23 +372,21 @@ export function PasteQueryModal({
                         {/* Match Mode Selector */}
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-[var(--foreground)]">查询模式：</span>
-                            <div className="flex gap-1">
+                            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
                                 <button
-                                    type="button"
-                                    onClick={() => setMatchMode('exact')}
-                                    className={`px-3 py-1 text-sm rounded-md transition-all ${matchMode === 'exact'
+                                    onClick={() => onMatchModeChange('exact')}
+                                    className={`px-3 py-1.5 text-sm transition-all ${matchMode === 'exact'
                                         ? 'bg-[#667eea] text-white font-medium'
-                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]'
                                         }`}
                                 >
                                     精确
                                 </button>
                                 <button
-                                    type="button"
-                                    onClick={() => setMatchMode('fuzzy')}
-                                    className={`px-3 py-1 text-sm rounded-md transition-all ${matchMode === 'fuzzy'
+                                    onClick={() => onMatchModeChange('fuzzy')}
+                                    className={`px-3 py-1.5 text-sm transition-all ${matchMode === 'fuzzy'
                                         ? 'bg-[#667eea] text-white font-medium'
-                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]'
                                         }`}
                                 >
                                     模糊
@@ -407,7 +405,7 @@ export function PasteQueryModal({
                                     min="1"
                                     max="100"
                                     value={batchSize}
-                                    onChange={(e) => setBatchSize(Number(e.target.value))}
+                                    onChange={(e) => onBatchSizeChange(Number(e.target.value))}
                                     className="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
                                 />
                                 <input
@@ -417,7 +415,7 @@ export function PasteQueryModal({
                                     value={batchSize}
                                     onChange={(e) => {
                                         const val = Math.max(1, Math.min(100, Number(e.target.value)))
-                                        setBatchSize(val)
+                                        onBatchSizeChange(val)
                                     }}
                                     className="w-14 px-2 py-0.5 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
                                 />
@@ -435,7 +433,7 @@ export function PasteQueryModal({
                                     min="1"
                                     max="200"
                                     value={batchLimit}
-                                    onChange={(e) => setBatchLimit(Number(e.target.value))}
+                                    onChange={(e) => onBatchLimitChange(Number(e.target.value))}
                                     className="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
                                 />
                                 <input
@@ -445,7 +443,7 @@ export function PasteQueryModal({
                                     value={batchLimit}
                                     onChange={(e) => {
                                         const val = Math.max(1, Math.min(500, Number(e.target.value)))
-                                        setBatchLimit(val)
+                                        onBatchLimitChange(val)
                                     }}
                                     className="w-14 px-2 py-0.5 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
                                 />
