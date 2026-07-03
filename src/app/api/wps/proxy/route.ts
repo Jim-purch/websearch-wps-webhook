@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { WpsLogger } from '@/lib/wps-logger'
+import { handleGoogleSheetsAction } from '@/lib/googlesheets'
 
 /**
  * WPS Webhook 代理 API
@@ -136,7 +137,38 @@ export async function POST(request: NextRequest) {
 
 
 
-        // 代理请求到 WPS
+        // ==========================================
+        // 根据 Token 类型分流：Google Sheets 或 WPS
+        // ==========================================
+        const isGoogleSheets = token.webhook_url.startsWith('gsheet://')
+
+        if (isGoogleSheets) {
+            // Google Sheets 模式
+            const spreadsheetId = token.webhook_url.replace('gsheet://', '').trim()
+            if (!spreadsheetId) {
+                return NextResponse.json(
+                    { success: false, error: 'Google Sheets Spreadsheet ID 无效' },
+                    { status: 400 }
+                )
+            }
+
+            const gsResult = await handleGoogleSheetsAction(
+                token.token_value,
+                spreadsheetId,
+                argv
+            )
+
+            // 包装为与 WPS 代理一致的响应格式
+            // WPS 代理返回的是 { data: { result: JSON字符串, logs: [] } }
+            // 但 parser.ts 也支持直接返回 data 中的对象
+            return NextResponse.json({
+                data: {
+                    result: JSON.stringify(gsResult)
+                }
+            })
+        }
+
+        // WPS 模式（原有逻辑不变）
         const wpsResponse = await fetch(token.webhook_url, {
             method: 'POST',
             headers: {

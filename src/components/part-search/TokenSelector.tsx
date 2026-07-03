@@ -63,14 +63,18 @@ export function TokenSelector({ tokens, selectedToken, isLoading, onSelect, forc
                         disabled={isLoading}
                     >
                         <option value="">-- 请选择一个 Token --</option>
-                        {tokens.map((token) => (
-                            <option key={token.id} value={token.id}>
-                                {token._isShared ? '📥 ' : '🔑 '}
-                                {token.name}
-                                {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
-                                {!token._isShared && token.description ? ` (${token.description})` : ''}
-                            </option>
-                        ))}
+                        {tokens.map((token) => {
+                            const isGSheet = token.webhook_url?.startsWith('gsheet://')
+                            const typeIcon = token._isShared ? '📥' : (isGSheet ? '📗' : '🔑')
+                            const typeSuffix = isGSheet ? ' [Google Sheets]' : ''
+                            return (
+                                <option key={token.id} value={token.id}>
+                                    {typeIcon} {token.name}{typeSuffix}
+                                    {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
+                                    {!token._isShared && token.description ? ` (${token.description})` : ''}
+                                </option>
+                            )
+                        })}
                     </select>
                     {tokens.length === 0 && !isLoading && (
                         <p className="text-sm text-[var(--text-muted)] mt-2">
