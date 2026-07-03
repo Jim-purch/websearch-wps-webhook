@@ -93,16 +93,10 @@ export default function PartSearchPage() {
     const [step3ExpandedCounter, setStep3ExpandedCounter] = useState(0) // 步骤3展开
     const [step4ExpandedCounter, setStep4ExpandedCounter] = useState(0) // 步骤4展开
 
-    // 当 selectedTokens 变化时，加载对应的预设
+    // 始终加载所有预设
     useEffect(() => {
-        if (selectedTokens.length > 0) {
-            fetchPresets(selectedTokens.map(t => t.id))
-            setActivePresetId(null)
-        } else {
-            clearPresets()
-            setActivePresetId(null)
-        }
-    }, [selectedTokens, fetchPresets, clearPresets])
+        fetchPresets()
+    }, [fetchPresets])
 
     // 当加载列信息后，自动展开步骤3
     useEffect(() => {
@@ -128,16 +122,20 @@ export default function PartSearchPage() {
         (sum, cols) => sum + cols.length, 0
     )
 
-    // 保存预设
+    // 保存预设 (自动保存步骤1选中的Token以及步骤2选中的表)
     const handleSavePreset = useCallback(async (name: string) => {
-        if (!selectedToken?.id) {
+        if (selectedTokens.length === 0) {
             return { error: '请先选择 Token' }
         }
 
+        const tokenKeys = selectedTokens.map(t => `token::${t.id}`)
+        const tableKeys = Array.from(selectedTableNames)
+        const combinedTableNames = [...tokenKeys, ...tableKeys]
+
         const result = await createPreset({
-            token_id: selectedToken.id,
+            token_id: selectedTokens[0]?.id || '',
             name,
-            selected_table_names: Array.from(selectedTableNames),
+            selected_table_names: combinedTableNames,
             columns_data: columnsData as Record<string, unknown[]>,
             selected_columns: selectedColumns,
             column_configs: columnConfigs
@@ -148,7 +146,7 @@ export default function PartSearchPage() {
         }
 
         return { error: result.error }
-    }, [selectedToken?.id, selectedTableNames, columnsData, selectedColumns, columnConfigs, createPreset])
+    }, [selectedTokens, selectedTableNames, columnsData, selectedColumns, columnConfigs, createPreset])
 
     // 更新预设名称
     const handleUpdatePresetName = useCallback(async (id: string, name: string) => {
@@ -158,14 +156,18 @@ export default function PartSearchPage() {
 
     // 更新预设配置（覆盖保存）
     const handleUpdatePresetConfig = useCallback(async (id: string) => {
+        const tokenKeys = selectedTokens.map(t => `token::${t.id}`)
+        const tableKeys = Array.from(selectedTableNames)
+        const combinedTableNames = [...tokenKeys, ...tableKeys]
+
         const result = await updatePreset(id, {
-            selected_table_names: Array.from(selectedTableNames),
+            selected_table_names: combinedTableNames,
             columns_data: columnsData as Record<string, unknown[]>,
             selected_columns: selectedColumns,
             column_configs: columnConfigs
         })
         return { error: result.error }
-    }, [selectedTableNames, columnsData, selectedColumns, columnConfigs, updatePreset])
+    }, [selectedTokens, selectedTableNames, columnsData, selectedColumns, columnConfigs, updatePreset])
 
     // 加载预设（支持切换取消）
     const handleLoadPreset = useCallback((preset: SearchPreset) => {
@@ -185,14 +187,22 @@ export default function PartSearchPage() {
             return
         }
 
-        // 查找预设对应的 Token 并选中它
-        const matchedToken = tokens.find(t => t.id === preset.token_id)
-        if (matchedToken) {
-            setSelectedTokens([matchedToken])
+        // 解析并恢复选中的 Token 列表 (步骤1)
+        const savedTokenIds = preset.selected_table_names
+            .filter(name => name.startsWith('token::'))
+            .map(name => name.replace('token::', ''))
+        
+        // 兼容旧版本预设 (fallback 到单个 token_id)
+        if (savedTokenIds.length === 0 && preset.token_id) {
+            savedTokenIds.push(preset.token_id)
         }
 
-        // 设置选中的表名
-        setSelectedTableNames(new Set(preset.selected_table_names))
+        const matchedTokens = tokens.filter(t => savedTokenIds.includes(t.id))
+        setSelectedTokens(matchedTokens)
+
+        // 提取并恢复选中的表名列表 (步骤2)
+        const savedTableNames = preset.selected_table_names.filter(name => !name.startsWith('token::'))
+        setSelectedTableNames(new Set(savedTableNames))
 
         // 设置列数据
         setColumnsData(preset.columns_data as Record<string, WpsColumn[]>)
@@ -245,16 +255,14 @@ export default function PartSearchPage() {
                         件号快速查找
                     </h1>
                     {/* 预设栏 */}
-                    {selectedToken && (
-                        <PresetBar
-                            presets={presets}
-                            activePresetId={activePresetId}
-                            isLoading={isLoadingPresets}
-                            onLoadPreset={handleLoadPreset}
-                            onEditPreset={handleEditPreset}
-                            onDeletePreset={handleDeletePreset}
-                        />
-                    )}
+                    <PresetBar
+                        presets={presets}
+                        activePresetId={activePresetId}
+                        isLoading={isLoadingPresets}
+                        onLoadPreset={handleLoadPreset}
+                        onEditPreset={handleEditPreset}
+                        onDeletePreset={handleDeletePreset}
+                    />
                 </div>
                 <p className="text-[var(--text-muted)]">
                     在 WPS 表格 / Google Sheets 中搜索件号和配件信息
