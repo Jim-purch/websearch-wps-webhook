@@ -718,6 +718,72 @@ function updateRow(sheetName, rowIndex, rowData) {
 }
 
 /**
+ * 批量删除指定行
+ * @param {string} sheetName - 工作表名称
+ * @param {Array<number>} rowNumbers - 行号数组
+ * @returns {Object} 操作结果
+ */
+function deleteRows(sheetName, rowNumbers) {
+    console.log("删除行数据: 表=" + sheetName + ", 行数=" + (rowNumbers ? rowNumbers.length : 0))
+
+    if (!sheetName) {
+        return {
+            success: false,
+            error: "缺少参数: sheetName",
+            message: "请提供工作表名称"
+        }
+    }
+
+    if (!rowNumbers || !Array.isArray(rowNumbers)) {
+        return {
+            success: false,
+            error: "缺少参数: rowNumbers 必须为数组",
+            message: "请提供行号数组"
+        }
+    }
+
+    try {
+        const workbook = Application.ActiveWorkbook
+        let sheet
+
+        try {
+            sheet = workbook.Sheets.Item(sheetName)
+        } catch (e) {
+            return {
+                success: false,
+                error: "未找到工作表: " + sheetName
+            }
+        }
+
+        // 按降序排序行号，避免前面的行删除影响后面行的索引
+        const sortedRowNumbers = [...rowNumbers].sort((a, b) => b - a)
+        let deletedCount = 0
+
+        for (let i = 0; i < sortedRowNumbers.length; i++) {
+            const rowIndex = sortedRowNumbers[i]
+            if (rowIndex && rowIndex >= 1) {
+                sheet.Rows(rowIndex).Delete()
+                deletedCount++
+            }
+        }
+
+        return {
+            success: true,
+            sheetName: sheetName,
+            deletedCount: deletedCount,
+            message: "行删除成功"
+        }
+    } catch (error) {
+        console.error("删除行失败: " + error)
+        return {
+            success: false,
+            error: String(error),
+            message: "删除行时发生错误"
+        }
+    }
+}
+
+/**
  * 智能追加数据（支持自动分表）
  * @param {string} baseName - 表名基础名称（如"登录记录"）
  * @param {Object} rowData - 行数据对象
@@ -857,6 +923,9 @@ if (action === "appendRow") {
 } else if (action === "updateRow") {
     // 更新指定行的数据
     result = updateRow(argv.sheetName, argv.rowIndex, argv.rowData)
+} else if (action === "deleteRows") {
+    // 批量删除指定行
+    result = deleteRows(argv.sheetName, argv.rowNumbers)
 } else if (action === "smartAppend") {
     // 智能追加
     result = smartAppend(argv.sheetBaseName, argv.rowData, argv.rowLimit)
@@ -864,7 +933,7 @@ if (action === "appendRow") {
     result = {
         success: false,
         error: "未知操作: " + action,
-        message: "支持的操作: appendRow, appendRows, insertRow, setCellValue, setRangeValues, updateRow, smartAppend"
+        message: "支持的操作: appendRow, appendRows, insertRow, setCellValue, setRangeValues, updateRow, deleteRows, smartAppend"
     }
 }
 

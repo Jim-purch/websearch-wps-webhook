@@ -12,11 +12,12 @@ interface ResultTableProps {
     autoLoadImages?: boolean  // 自动加载图片
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void // 图片加载回调
     imageUrlCache?: Record<string, string> // 图片缓存
-    onExportSingle?: (result: TableSearchResult) => void // 导出单个结果的回调
+    onExportSingle?: (result: TableSearchResult, selectedRowIndices?: number[]) => void // 导出单个结果的回调
     modifiedCells?: Record<string, any>
     updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void
     revertChanges?: () => void
     saveChanges?: () => Promise<void>
+    onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -275,7 +276,8 @@ function ResultCard({
     imageUrlCache,
     onExportSingle,
     modifiedCells,
-    updateCell
+    updateCell,
+    onDeleteRows
 }: {
     result: TableSearchResult;
     index: number;
@@ -283,14 +285,18 @@ function ResultCard({
     autoLoadImages?: boolean;
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void;
     imageUrlCache?: Record<string, string>;
-    onExportSingle?: (result: TableSearchResult) => void;
+    onExportSingle?: (result: TableSearchResult, selectedRowIndices?: number[]) => void;
     modifiedCells?: Record<string, any>;
     updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void;
+    onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>;
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
     const [copyToast, setCopyToast] = useState(false)
     const [mounted, setMounted] = useState(false)
+    
+    // 复选框勾选状态
+    const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
     
     // 双击编辑状态
     const [editingCell, setEditingCell] = useState<{ rowIdx: number; colIdx: number } | null>(null)
@@ -300,6 +306,56 @@ function ResultCard({
     useEffect(() => {
         setMounted(true)
     }, [])
+
+    // 当结果数据变化时清空选择
+    useEffect(() => {
+        setSelectedRows(new Set())
+    }, [result.records])
+
+    const handleBatchExport = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (onExportSingle) {
+            onExportSingle(result, Array.from(selectedRows))
+        }
+    }
+
+    const handleBatchDelete = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (!onDeleteRows) return
+        
+        const confirmDelete = window.confirm(`确定要删除选中的 ${selectedRows.size} 行数据吗？此操作无法撤销。`)
+        if (!confirmDelete) return
+        
+        try {
+            await onDeleteRows(index, Array.from(selectedRows))
+            setSelectedRows(new Set())
+        } catch (err) {
+            alert(err instanceof Error ? err.message : '删除失败')
+        }
+    }
+
+    const handleSingleDelete = async (rowIdx: number) => {
+        if (!onDeleteRows) return
+        const confirmDelete = window.confirm('确定要删除这一行数据吗？此操作无法撤销。')
+        if (!confirmDelete) return
+        
+        try {
+            await onDeleteRows(index, [rowIdx])
+            const next = new Set(selectedRows)
+            next.delete(rowIdx)
+            const adjustedSelected = new Set<number>()
+            for (const idx of selectedRows) {
+                if (idx < rowIdx) {
+                    adjustedSelected.add(idx)
+                } else if (idx > rowIdx) {
+                    adjustedSelected.add(idx - 1)
+                }
+            }
+            setSelectedRows(adjustedSelected)
+        } catch (err) {
+            alert(err instanceof Error ? err.message : '删除失败')
+        }
+    }
 
     // 排序状态: { key: 列名, direction: 'asc' | 'desc' | null }
     const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' | null }>({
@@ -576,12 +632,55 @@ function ResultCard({
                         </div>
                     )}
 
+                    {/* 批量操作工具栏 */}
+                    {selectedRows.size > 0 && (
+                        <div className="mb-4 px-4 py-2.5 bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.2)] rounded-lg flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                                <span className="text-[#eab308] font-medium">已选中 {selectedRows.size} 行</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleBatchExport}
+                                    className="text-xs px-3 py-1.5 rounded bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--hover-bg)] text-[var(--text-main)] transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                    title="导出选中行到 Excel"
+                                >
+                                    <span>📤</span> 导出选中行
+                                </button>
+                                {updateCell && onDeleteRows && (
+                                    <button
+                                        type="button"
+                                        onClick={handleBatchDelete}
+                                        className="text-xs px-3 py-1.5 rounded bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.2)] text-[#ef4444] hover:bg-[#ef4444] hover:text-white transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                                        title="删除选中行"
+                                    >
+                                        <span>🗑️</span> 批量删除
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {rows.length === 0 ? (
                         <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
                     ) : (
                         <table className="w-full border-collapse text-sm">
                             <thead>
                                 <tr>
+                                    <th className="px-3 py-2 border-b border-[var(--border)] w-10 text-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={rows.length > 0 && selectedRows.size === rows.length}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setSelectedRows(new Set(rows.map((_, i) => i)))
+                                                } else {
+                                                    setSelectedRows(new Set())
+                                                }
+                                            }}
+                                            className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
+                                        />
+                                    </th>
                                     {displayColumns.map((col, colIdx) => (
                                         <th
                                             key={col}
@@ -619,6 +718,22 @@ function ResultCard({
                             <tbody>
                                 {rows.map((row, rowIdx) => (
                                     <tr key={rowIdx} className="transition-colors">
+                                        <td className="px-3 py-2 border-b border-[var(--border)] text-center w-10">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedRows.has(rowIdx)}
+                                                onChange={(e) => {
+                                                    const next = new Set(selectedRows)
+                                                    if (e.target.checked) {
+                                                        next.add(rowIdx)
+                                                    } else {
+                                                        next.delete(rowIdx)
+                                                    }
+                                                    setSelectedRows(next)
+                                                }}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
+                                            />
+                                        </td>
                                         {displayColumns.map((col, colIdx) => {
                                             const val = row[col]
                                             const cellKey = `${index}-${rowIdx}-${col}`
@@ -836,15 +951,28 @@ function ResultCard({
                                                 </td>
                                             )
                                         })}
-                                        <td className="px-3 py-2 border-b border-[var(--border)]">
+                                        <td className="px-3 py-2 border-b border-[var(--border)] whitespace-nowrap">
                                             <button
                                                 type="button"
                                                 onClick={() => handleCopyRow(row)}
-                                                className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white transition-colors"
+                                                className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white transition-colors cursor-pointer"
                                                 title="复制整行"
                                             >
                                                 📋
                                             </button>
+                                            {updateCell && onDeleteRows && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleSingleDelete(rowIdx)
+                                                    }}
+                                                    className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[#ef4444] hover:border-[#ef4444] hover:text-white transition-colors ml-1 cursor-pointer"
+                                                    title="删除此行"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -868,7 +996,8 @@ export function ResultTable({
     modifiedCells,
     updateCell,
     revertChanges,
-    saveChanges
+    saveChanges,
+    onDeleteRows
 }: ResultTableProps) {
     const modifiedCount = modifiedCells ? Object.keys(modifiedCells).length : 0
     const [isSavingLocal, setIsSavingLocal] = useState(false)
@@ -938,8 +1067,8 @@ export function ResultTable({
                         >
                             {isSavingLocal ? (
                                 <>
-                                    <span className="spinner w-3 h-3 border-black border-t-transparent"></span>
-                                    正在保存...
+                                     <span className="spinner w-3 h-3 border-black border-t-transparent"></span>
+                                     正在保存...
                                 </>
                             ) : '保存修改到云端 ☁️'}
                         </button>
@@ -959,6 +1088,7 @@ export function ResultTable({
                     onExportSingle={onExportSingle}
                     modifiedCells={modifiedCells}
                     updateCell={updateCell}
+                    onDeleteRows={onDeleteRows}
                 />
             ))}
         </div>

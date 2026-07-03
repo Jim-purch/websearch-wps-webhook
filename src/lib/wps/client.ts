@@ -300,3 +300,18 @@ export async function updateRow(
         rowData
     })
 }
+
+/**
+ * 批量删除指定行
+ */
+export async function deleteRows(
+    tokenId: string,
+    sheetName: string,
+    rowNumbers: number[]
+): Promise<ParsedWpsResult<{ sheetName: string; deletedCount: number; message: string }>> {
+    return await callWpsProxy<{ sheetName: string; deletedCount: number; message: string }>(tokenId, {
+        action: 'deleteRows',
+        sheetName,
+        rowNumbers
+    })
+}

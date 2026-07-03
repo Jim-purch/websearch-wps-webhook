@@ -875,7 +875,7 @@ export function usePartSearch() {
     }, [searchResults, selectedToken, imageUrlCache, handleImageLoad])
 
     // 导出单个结果到 Excel
-    const exportSingleResult = useCallback(async (result: TableSearchResult) => {
+    const exportSingleResult = useCallback(async (result: TableSearchResult, selectedRowIndices?: number[]) => {
         if (!result.records || result.records.length === 0) {
             setSearchError('没有可导出的数据')
             return
@@ -887,8 +887,13 @@ export function usePartSearch() {
 
             const workbook = new ExcelJS.Workbook()
 
+            // 过滤选中行
+            const recordsToExport = selectedRowIndices && selectedRowIndices.length > 0
+                ? result.records.filter((_, idx) => selectedRowIndices.includes(idx))
+                : result.records
+
             // 处理数据，展平字段
-            const flatRecords = result.records.map(r => {
+            const flatRecords = recordsToExport.map(r => {
                 if (r.fields && typeof r.fields === 'object') {
                     return r.fields as Record<string, unknown>
                 }
@@ -1743,6 +1748,87 @@ export function usePartSearch() {
         }
     }, [selectedToken, modifiedCells])
 
+    // 批量删除行
+    const deleteRows = useCallback(async (resultIndex: number, rowIndices: number[]) => {
+        if (!selectedToken) {
+            throw new Error('请先选择 Token')
+        }
+
+        // 校验是否有未保存修改
+        const hasUnsavedChanges = Object.values(modifiedCells).some(
+            m => m.resultIndex === resultIndex
+        )
+        if (hasUnsavedChanges) {
+            throw new Error('当前表格有未保存的本地修改，请先保存或撤销修改再进行删除操作')
+        }
+
+        const result = searchResults[resultIndex]
+        if (!result) {
+            throw new Error('未找到对应的搜索结果')
+        }
+
+        const sheetName = result.realTableName || result.tableName
+
+        // 收集待删除行的绝对行号
+        const rowNumbers: number[] = []
+        for (const idx of rowIndices) {
+            const record = result.records[idx]
+            if (record) {
+                const rowNum = (record._rowNumber || record.row) as number
+                if (!rowNum) {
+                    throw new Error(`第 ${idx + 1} 行没有行号信息，无法删除`)
+                }
+                rowNumbers.push(rowNum)
+            }
+        }
+
+        if (rowNumbers.length === 0) return
+
+        setIsSearching(true)
+        setSearchError(null)
+
+        try {
+            const { deleteRows: clientDeleteRows } = await import('@/lib/wps')
+            const apiResult = await clientDeleteRows(selectedToken.id, sheetName, rowNumbers)
+
+            if (!apiResult.success) {
+                throw new Error(apiResult.error || '删除行失败')
+            }
+
+            // 更新前端状态，并调整后续行的行号以维持正确索引
+            setSearchResults(prevResults => {
+                const nextResults = [...prevResults]
+                const curResult = { ...nextResults[resultIndex] }
+
+                // 过滤已删除记录
+                const remainingRecords = curResult.records.filter((_, idx) => !rowIndices.includes(idx))
+
+                // 对剩余记录重新计算绝对行号
+                curResult.records = remainingRecords.map(record => {
+                    const nextRecord = { ...record }
+                    const oldRow = (nextRecord._rowNumber || nextRecord.row) as number
+                    if (oldRow) {
+                        const shift = rowNumbers.filter(deletedNum => deletedNum < oldRow).length
+                        const newRow = oldRow - shift
+                        if ('_rowNumber' in nextRecord) nextRecord._rowNumber = newRow
+                        if ('row' in nextRecord) nextRecord.row = newRow
+                    }
+                    return nextRecord
+                })
+
+                curResult.totalCount = curResult.records.length
+                nextResults[resultIndex] = curResult
+                return nextResults
+            })
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : '删除失败'
+            setSearchError(msg)
+            throw err
+        } finally {
+            setIsSearching(false)
+        }
+    }, [selectedToken, searchResults, modifiedCells])
+
     return {
         // Token
         tokens: allTokens,
@@ -1802,6 +1888,7 @@ export function usePartSearch() {
         modifiedCells,
         updateCell,
         revertChanges,
-        saveChanges
+        saveChanges,
+        deleteRows
     }
 }

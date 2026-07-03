@@ -992,6 +992,62 @@ export async function updateRow(
 }
 
 /**
+ * 批量删除指定行
+ */
+export async function deleteRows(
+    tokenValue: string,
+    spreadsheetId: string,
+    sheetName: string,
+    rowNumbers: number[]
+) {
+    try {
+        const auth = await resolveAuth(tokenValue)
+        const metadata = await getSpreadsheetMetadata(spreadsheetId, auth)
+        const sheet = metadata.sheets.find(s => s.properties.title === sheetName)
+        if (!sheet) {
+            throw new Error(`未找到工作表: ${sheetName}`)
+        }
+        const sheetId = sheet.properties.sheetId
+
+        // 按降序排序行号，避免前面的行删除影响后面行的索引
+        const sortedRowNumbers = [...rowNumbers].sort((a, b) => b - a)
+
+        const requests = sortedRowNumbers.map(rowNum => ({
+            deleteDimension: {
+                range: {
+                    sheetId: sheetId,
+                    dimension: 'ROWS',
+                    startIndex: rowNum - 1,
+                    endIndex: rowNum
+                }
+            }
+        }))
+
+        await callSheetsApi(
+            `/${spreadsheetId}:batchUpdate`,
+            auth,
+            undefined,
+            'POST',
+            { requests }
+        )
+
+        return {
+            success: true,
+            sheetName,
+            deletedCount: rowNumbers.length,
+            message: '行删除成功'
+        }
+    } catch (error) {
+        console.error('deleteRows failed:', error)
+        return {
+            success: false,
+            error: String(error),
+            message: '删除行时发生错误'
+        }
+    }
+}
+
+/**
  * 根据 action 派发请求（统一入口，与 WPS AirScript 的 action 路由匹配）
  */
 export async function handleGoogleSheetsAction(
@@ -1069,6 +1125,14 @@ export async function handleGoogleSheetsAction(
                 argv.rowData as Record<string, any>
             )
 
+        case 'deleteRows':
+            return await deleteRows(
+                tokenValue,
+                spreadsheetId,
+                argv.sheetName as string,
+                argv.rowNumbers as number[]
+            )
+
         case 'getImageUrl':
             return {
                 success: true,
@@ -1083,7 +1147,7 @@ export async function handleGoogleSheetsAction(
             return {
                 success: false,
                 error: '未知操作: ' + action,
-                message: '支持的操作: getAll, search, searchMulti, searchBatch, getData, setCellValue, setRangeValues, updateRow'
+                message: '支持的操作: getAll, search, searchMulti, searchBatch, getData, setCellValue, setRangeValues, updateRow, deleteRows'
             }
     }
 }

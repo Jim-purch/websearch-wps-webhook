@@ -62,7 +62,8 @@ export default function PartSearchPage() {
         modifiedCells,
         updateCell,
         revertChanges,
-        saveChanges
+        saveChanges,
+        deleteRows
     } = usePartSearch()
 
     const {
@@ -343,6 +344,7 @@ export default function PartSearchPage() {
                     updateCell={updateCell}
                     revertChanges={revertChanges}
                     saveChanges={saveChanges}
+                    onDeleteRows={deleteRows}
                 />
             </div>
 
