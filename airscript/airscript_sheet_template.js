@@ -771,7 +771,7 @@ if (action === "getAll") {
     result = getImageUrlFromCell(argv.sheetName, argv.cellAddress, argv.cells)
 } else if (action === "searchBatch") {
     // 批量搜索
-    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns)
+    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns, argv.limit)
 } else {
     result = {
         success: false,
@@ -787,8 +787,8 @@ if (action === "getAll") {
  * @param {Array} returnColumns - (可选) 指定返回的列名数组
  * @returns {Object} 包含所有查询结果的对象
  */
-function searchBatch(sheetName, batchCriteria, returnColumns) {
-    console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
+function searchBatch(sheetName, batchCriteria, returnColumns, limitVal) {
+    console.log("开始批量搜索: 表=" + sheetName + ", limit=" + limitVal)
 
     if (!sheetName) {
         return {
@@ -885,7 +885,7 @@ function searchBatch(sheetName, batchCriteria, returnColumns) {
             // 简单起见，且为了保证一致性，我们在这里实现一个简化的 searchMultiCriteria 变体，
             // 复用已经获取的 resources (sheet, imageMap, columnMap)
 
-            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, outputColumns, imageMap, hasImages, headerRow)
+            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, outputColumns, imageMap, hasImages, headerRow, limitVal)
 
             batchResults.push({
                 id: queryId,
@@ -924,7 +924,7 @@ function searchBatch(sheetName, batchCriteria, returnColumns) {
  * 内部复用的多条件搜索逻辑 (接收预处理好的Sheet对象和映射)
  * 优化：使用 Excel Find 方法，不再做值清理，所有清理逻辑移到客户端
  */
-function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow) {
+function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow, limitVal) {
     if (!criteria || criteria.length === 0) {
         return { success: false, error: "无搜索条件", records: [] }
     }
@@ -951,7 +951,7 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
 
     // 使用 Excel Find 方法进行搜索
     const records = []
-    const MAX_RECORDS = 30 // 批量搜索时，单次查询限制更严格一些
+    const MAX_RECORDS = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 30 // 批量搜索时，单次查询限制更严格一些
 
     const firstCrit = validCriteria[0]
     const searchColumn = sheet.Columns(firstCrit.colIndex)

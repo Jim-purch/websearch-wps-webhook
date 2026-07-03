@@ -13,6 +13,7 @@ export interface PasteQueryData {
     rows: RowData[]
     matchMode: 'fuzzy' | 'exact'
     batchSize?: number
+    batchLimit?: number
 }
 
 interface PasteQueryModalProps {
@@ -20,7 +21,7 @@ interface PasteQueryModalProps {
     onClose: () => void
     tableKey: string
     columns: string[]
-    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize: number) => void
+    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize: number, batchLimit: number) => void
     isSearching: boolean
     batchProgress?: string
     initialData?: PasteQueryData
@@ -49,6 +50,9 @@ export function PasteQueryModal({
     )
     const [batchSize, setBatchSize] = useState<number>(
         initialData?.batchSize || 50
+    )
+    const [batchLimit, setBatchLimit] = useState<number>(
+        initialData?.batchLimit || 30
     )
 
     const tableRef = useRef<HTMLDivElement>(null)
@@ -113,15 +117,16 @@ export function PasteQueryModal({
                 : [{ id: '1', values: {} }])
             setMatchMode(initialData.matchMode || 'exact')
             setBatchSize(initialData.batchSize || 50)
+            setBatchLimit(initialData.batchLimit || 30)
         }
     }, [isOpen, tableKey]) // 添加 tableKey 作为依赖，确保切换表时能正确加载数据
 
     // 当数据变化时通知外部组件保存
     useEffect(() => {
         if (isOpen && onDataChange) {
-            onDataChange(tableKey, { rows, matchMode, batchSize })
+            onDataChange(tableKey, { rows, matchMode, batchSize, batchLimit })
         }
-    }, [rows, matchMode, batchSize, isOpen, tableKey, onDataChange])
+    }, [rows, matchMode, batchSize, batchLimit, isOpen, tableKey, onDataChange])
 
     // 处理单元格粘贴事件 - 从当前单元格位置开始粘贴
     const handleCellPaste = useCallback((e: React.ClipboardEvent, startRowIndex: number, startColIndex: number) => {
@@ -219,8 +224,8 @@ export function PasteQueryModal({
             return
         }
 
-        onSearch(validRows, matchMode, batchSize)
-    }, [rows, matchMode, batchSize, onSearch])
+        onSearch(validRows, matchMode, batchSize, batchLimit)
+    }, [rows, matchMode, batchSize, batchLimit, onSearch])
 
     // 获取显示名称
     const displayName = tableKey.includes('__copy_')
@@ -413,6 +418,34 @@ export function PasteQueryModal({
                                     onChange={(e) => {
                                         const val = Math.max(1, Math.min(100, Number(e.target.value)))
                                         setBatchSize(val)
+                                    }}
+                                    className="w-14 px-2 py-0.5 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="h-4 w-[1px] bg-[var(--border)]"></div>
+
+                        {/* Batch Limit Selector */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-[var(--foreground)]" title="每个数据项最大返回的结果条数">单项最大返回数：</span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="200"
+                                    value={batchLimit}
+                                    onChange={(e) => setBatchLimit(Number(e.target.value))}
+                                    className="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
+                                />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="500"
+                                    value={batchLimit}
+                                    onChange={(e) => {
+                                        const val = Math.max(1, Math.min(500, Number(e.target.value)))
+                                        setBatchLimit(val)
                                     }}
                                     className="w-14 px-2 py-0.5 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
                                 />

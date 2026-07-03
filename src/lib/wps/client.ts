@@ -232,13 +232,15 @@ export async function searchBatch(
     tokenId: string,
     sheetName: string,
     batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>,
-    returnColumns?: string[] // 新增参数
+    returnColumns?: string[], // 新增参数
+    limit?: number
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     const result = await callWpsProxy<WpsBatchSearchResult>(tokenId, {
         action: 'searchBatch',
         sheetName,
         batchCriteria,
-        returnColumns // 传递给后端
+        returnColumns, // 传递给后端
+        limit
     })
 
     return result

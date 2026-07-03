@@ -685,8 +685,8 @@ function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offse
  * @param {Array} globalReturnColumns - (可选) 全局指定返回的列名数组
  * @returns {Object} 包含所有查询结果的对象
  */
-function searchBatch(sheetName, batchCriteria, globalReturnColumns) {
-    console.log("开始批量搜索: 表=" + sheetName + ", 查询行数=" + (batchCriteria ? batchCriteria.length : 0))
+function searchBatch(sheetName, batchCriteria, globalReturnColumns, limitVal) {
+    console.log("开始批量搜索: 表=" + sheetName + ", limit=" + limitVal)
 
     if (!sheetName) {
         return {
@@ -783,7 +783,7 @@ function searchBatch(sheetName, batchCriteria, globalReturnColumns) {
             }
 
             // 执行查询
-            var MAX_RECORDS = 20 // 批量搜索单次限制
+            var MAX_RECORDS = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 20 // 批量搜索单次限制
             let allRecords = []
             let offset = null
             let truncated = false
@@ -880,7 +880,7 @@ if (action === "getAll") {
     result = getTableDetails(argv.sheetName, argv.sampleSize)
 } else if (action === "searchBatch") {
     // 批量搜索
-    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns)
+    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns, argv.limit)
 } else {
     result = {
         success: false,

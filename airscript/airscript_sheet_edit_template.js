@@ -491,7 +491,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offse
 /**
  * 内部复用的多条件搜索逻辑 (接收预处理好的Sheet对象和映射，含 _rowNumber 写入)
  */
-function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow) {
+function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, imageMap, hasImages, headerRow, limitVal) {
     if (!criteria || criteria.length === 0) {
         return { success: false, error: "无搜索条件", records: [] }
     }
@@ -513,7 +513,7 @@ function searchMultiCriteriaInternal(sheet, criteria, columnMap, allColumns, ima
     }
 
     const records = []
-    const MAX_RECORDS = 30
+    const MAX_RECORDS = (typeof limitVal !== 'undefined' && limitVal !== null) ? Number(limitVal) : 30
 
     const firstCrit = validCriteria[0]
     const searchColumn = sheet.Columns(firstCrit.colIndex)
@@ -644,8 +644,8 @@ function getImageUrlFromCell(sheetName, cellAddress, cells) {
 /**
  * 批量搜索
  */
-function searchBatch(sheetName, batchCriteria, returnColumns) {
-    console.log("开始批量搜索: 表=" + sheetName)
+function searchBatch(sheetName, batchCriteria, returnColumns, limitVal) {
+    console.log("开始批量搜索: 表=" + sheetName + ", limit=" + limitVal)
 
     if (!sheetName) {
         return { success: false, error: "缺少参数: sheetName" }
@@ -709,7 +709,7 @@ function searchBatch(sheetName, batchCriteria, returnColumns) {
             const queryId = queryItem.id || ("q_" + i)
             const criteria = queryItem.criteria
 
-            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, outputColumns, imageMap, hasImages, headerRow)
+            const itemResult = searchMultiCriteriaInternal(sheet, criteria, columnMap, outputColumns, imageMap, hasImages, headerRow, limitVal)
 
             batchResults.push({
                 id: queryId,
@@ -1185,7 +1185,7 @@ if (action === "getAll") {
 } else if (action === "getImageUrl") {
     result = getImageUrlFromCell(argv.sheetName, argv.cellAddress, argv.cells)
 } else if (action === "searchBatch") {
-    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns)
+    result = searchBatch(argv.sheetName, argv.batchCriteria, argv.returnColumns, argv.limit)
 } 
 // 编辑 actions
 else if (action === "appendRow") {

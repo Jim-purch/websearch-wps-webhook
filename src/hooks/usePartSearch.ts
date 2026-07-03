@@ -1494,7 +1494,8 @@ export function usePartSearch() {
     const performBatchSearch = useCallback(async (
         file: File,
         matchMode: 'fuzzy' | 'exact' = 'exact',
-        batchSize: number = 50
+        batchSize: number = 50,
+        batchLimit: number = 30
     ) => {
         if (selectedTokens.length === 0) {
             setSearchError('请先选择 Token')
@@ -1667,7 +1668,7 @@ export function usePartSearch() {
                         // 显示列顺序
                         const displayColumns = returnColumns
 
-                        const res = await searchBatch(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined)
+                        const res = await searchBatch(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit)
 
                         let newResult: TableSearchResult
 
@@ -1763,7 +1764,8 @@ export function usePartSearch() {
         tableKey: string,
         data: Array<{ id: string; values: Record<string, string> }>,
         matchMode: 'fuzzy' | 'exact' = 'exact',
-        batchSize: number = 50
+        batchSize: number = 50,
+        batchLimit: number = 30
     ) => {
         if (selectedTokens.length === 0) {
             setSearchError('请先选择 Token')
@@ -1856,7 +1858,7 @@ export function usePartSearch() {
                 // 显示列顺序
                 const displayColumns = returnColumns
 
-                const res = await searchBatch(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined)
+                const res = await searchBatch(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit)
 
                 let newResult: TableSearchResult
 

@@ -17,9 +17,9 @@ interface SearchFormProps {
     onAutoLoadImagesChange: (value: boolean) => void
     // Batch Search Props
     onDownloadTemplate?: () => void
-    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact', batchSize?: number) => void
+    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number) => void
     isBatchSearching?: boolean
-    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number) => void
+    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number) => void
     batchProgress?: string
     columnConfigs: Record<string, any[]> // 添加列配置用于识别同值搜索字段
     // Preset Props
@@ -107,6 +107,7 @@ export function SearchForm({
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
     const [batchMatchMode, setBatchMatchMode] = useState<'fuzzy' | 'exact'>('exact')
     const [batchSize, setBatchSize] = useState<number>(50) // 默认 50
+    const [batchLimit, setBatchLimit] = useState<number>(30) // 默认 30
     const [pasteModalTableKey, setPasteModalTableKey] = useState<string | null>(null)
     const [pasteData, setPasteData] = useState<Record<string, PasteQueryData>>({})
 
@@ -181,7 +182,7 @@ export function SearchForm({
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file && onBatchSearch) {
-            onBatchSearch(file, batchMatchMode, batchSize)
+            onBatchSearch(file, batchMatchMode, batchSize, batchLimit)
             e.target.value = ''
             setIsBatchModalOpen(false)
         }
@@ -557,6 +558,32 @@ export function SearchForm({
                                         />
                                     </div>
                                 </div>
+
+                                {/* 单项最大返回数设置 */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
+                                    <span className="text-sm font-medium text-[var(--foreground)]" title="批量查询时每个数据项最大返回的结果行数">单项最大返回数：</span>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="200"
+                                            value={batchLimit}
+                                            onChange={(e) => setBatchLimit(Number(e.target.value))}
+                                            className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#667eea]"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="500"
+                                            value={batchLimit}
+                                            onChange={(e) => {
+                                                const val = Math.max(1, Math.min(500, Number(e.target.value)))
+                                                setBatchLimit(val)
+                                            }}
+                                            className="w-14 px-2 py-1 text-sm border border-[var(--border)] rounded bg-[var(--card-bg)] text-center"
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">
@@ -610,8 +637,8 @@ export function SearchForm({
                     onClose={() => setPasteModalTableKey(null)}
                     tableKey={pasteModalTableKey}
                     columns={selectedColumns[pasteModalTableKey] || []}
-                    onSearch={(data, matchMode, size) => {
-                        onPasteSearch(pasteModalTableKey, data, matchMode, size)
+                    onSearch={(data, matchMode, size, limit) => {
+                        onPasteSearch(pasteModalTableKey, data, matchMode, size, limit)
                         setPasteModalTableKey(null)
                     }}
                     isSearching={isBatchSearching}
