@@ -38,6 +38,7 @@ export interface WpsSearchCriteria {
     searchValue: string
     searchValueClean?: string  // 清理后的搜索值（用于匹配验证）
     op: 'Contains' | 'Equals'
+    clean?: boolean
 }
 
 export interface WpsSearchResult {

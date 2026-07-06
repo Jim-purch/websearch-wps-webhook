@@ -23,6 +23,7 @@ export interface SearchCondition {
     columnName: string
     searchValue: string
     op: 'Contains' | 'Equals'
+    clean?: boolean
 }
 
 export interface ColumnConfig {
@@ -124,9 +125,18 @@ function matchesAllCriteria(
             : record
 
         const cellValue = fields[crit.columnName]
-        const cellValueClean = cleanValue(cellValue)
-        // 优先使用预先计算好的清理值
-        const searchValueClean = crit.searchValueClean || cleanValue(crit.searchValue)
+        const isClean = crit.clean !== false
+
+        let cellValueClean: string
+        let searchValueClean: string
+
+        if (isClean) {
+            cellValueClean = cleanValue(cellValue)
+            searchValueClean = crit.searchValueClean || cleanValue(crit.searchValue)
+        } else {
+            cellValueClean = cellValue === null || cellValue === undefined ? '' : String(cellValue).trim().toLowerCase()
+            searchValueClean = (crit.searchValueClean !== undefined ? crit.searchValueClean : crit.searchValue).trim().toLowerCase()
+        }
 
         if (crit.op === 'Equals') {
             if (cellValueClean !== searchValueClean) return false
@@ -631,6 +641,7 @@ export function usePartSearch() {
             values: string[]
             op: 'Contains' | 'Equals'
             limit?: number
+            clean?: boolean
         }
     ) => {
         setIsSearching(true)
@@ -697,12 +708,16 @@ export function usePartSearch() {
                 const displayColumns = returnColumns
 
                 // 独立条件过滤
-                const tableIndependentConds = (conditionsByTableKey[tableKey] || []).map(c => ({
-                    columnName: c.columnName,
-                    searchValue: cleanValue(c.searchValue),
-                    searchValueClean: cleanValue(c.searchValue),
-                    op: c.op
-                } as WpsSearchCriteria))
+                const tableIndependentConds = (conditionsByTableKey[tableKey] || []).map(c => {
+                    const clean = c.clean ?? true
+                    return {
+                        columnName: c.columnName,
+                        searchValue: clean ? cleanValue(c.searchValue) : c.searchValue.trim(),
+                        searchValueClean: clean ? cleanValue(c.searchValue) : c.searchValue.trim(),
+                        op: c.op,
+                        clean
+                    } as WpsSearchCriteria
+                })
 
                 const isSameValueSearchForTable = tablesWithSameValue.includes(tableKey)
 
@@ -716,8 +731,9 @@ export function usePartSearch() {
 
                     // 构造批量检索 criteria (多字段 OR 使用单次 batch 检索合并)
                     const batchItems: Array<{ id: string; criteria: WpsSearchCriteria[] }> = []
+                    const cleanSameValue = sameValueParams?.clean ?? true
                     for (const val of sameValueValues) {
-                        const cleanedVal = cleanValue(val)
+                        const cleanedVal = cleanSameValue ? cleanValue(val) : val.trim()
                         if (!cleanedVal) continue
                         for (const col of tableSameValueCols) {
                             batchItems.push({
@@ -727,7 +743,8 @@ export function usePartSearch() {
                                         columnName: col,
                                         searchValue: cleanedVal,
                                         searchValueClean: cleanedVal,
-                                        op: sameValueOp
+                                        op: sameValueOp,
+                                        clean: cleanSameValue
                                     },
                                     ...tableIndependentConds
                                 ]

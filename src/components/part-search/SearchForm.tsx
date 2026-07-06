@@ -10,7 +10,7 @@ import type { Token } from '@/types'
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
-    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals'; limit?: number }) => void
+    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals'; limit?: number; clean?: boolean }) => void
     selectedTokens?: Token[]
     onExport?: () => void
     isExporting?: boolean
@@ -32,6 +32,7 @@ interface SearchFormProps {
 interface InputState {
     value: string
     op: 'Contains' | 'Equals'
+    clean?: boolean
 }
 
 export function SearchForm({
@@ -117,6 +118,7 @@ export function SearchForm({
 
     // 同值批量搜索状态
     const [sameValueInput, setSameValueInput] = useState('')
+    const [batchCleanMode, setBatchCleanMode] = useState<boolean>(true)
 
     // 处理粘贴数据变化
     const handlePasteDataChange = useCallback((tableKey: string, data: PasteQueryData) => {
@@ -136,14 +138,21 @@ export function SearchForm({
     const handleInputChange = (key: string, value: string) => {
         setInputs(prev => ({
             ...prev,
-            [key]: { ...prev[key], value, op: prev[key]?.op || 'Contains' }
+            [key]: { ...prev[key], value, op: prev[key]?.op || 'Contains', clean: prev[key]?.clean ?? true }
         }))
     }
 
     const handleOpChange = (key: string, op: 'Contains' | 'Equals') => {
         setInputs(prev => ({
             ...prev,
-            [key]: { ...prev[key], op, value: prev[key]?.value || '' }
+            [key]: { ...prev[key], op, value: prev[key]?.value || '', clean: prev[key]?.clean ?? true }
+        }))
+    }
+
+    const handleCleanChange = (key: string, clean: boolean) => {
+        setInputs(prev => ({
+            ...prev,
+            [key]: { ...prev[key], clean, value: prev[key]?.value || '', op: prev[key]?.op || 'Contains' }
         }))
     }
 
@@ -156,7 +165,8 @@ export function SearchForm({
                     tableName,
                     columnName,
                     searchValue: input?.value || '',
-                    op: input?.op || 'Contains'
+                    op: input?.op || 'Contains',
+                    clean: input?.clean !== false
                 }
             })
             .filter(c => c.searchValue.trim() !== '') as SearchCondition[]
@@ -173,7 +183,8 @@ export function SearchForm({
         onSearch(getConditions(), {
             values: sameValueValues,
             op: batchMatchMode === 'exact' ? 'Equals' : 'Contains',
-            limit: batchLimit
+            limit: batchLimit,
+            clean: batchCleanMode
         })
     }
 
@@ -275,6 +286,35 @@ export function SearchForm({
                                             </div>
                                         </div>
 
+                                        {/* 过滤模式 */}
+                                        <div className="flex items-center gap-1.5 border-l border-[var(--border)] pl-3">
+                                            <span className="text-xs text-[var(--text-muted)]">过滤机制：</span>
+                                            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBatchCleanMode(true)}
+                                                    className={`px-2.5 py-1 text-xs transition-all ${batchCleanMode
+                                                        ? 'bg-[#eab308] text-black font-semibold'
+                                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                    }`}
+                                                    title="过滤标点字符和多余空格"
+                                                >
+                                                    过滤
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBatchCleanMode(false)}
+                                                    className={`px-2.5 py-1 text-xs transition-all ${!batchCleanMode
+                                                        ? 'bg-[#eab308] text-black font-semibold'
+                                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
+                                                    }`}
+                                                    title="保留标点与空格，仅进行两端 trim"
+                                                >
+                                                    原始
+                                                </button>
+                                            </div>
+                                        </div>
+
                                         {/* WPS表单项最大返回数 */}
                                         <div className="flex items-center gap-1.5 border-l border-[var(--border)] pl-3">
                                             <span className="text-xs text-[var(--text-muted)]" title="批量查询时，每个值在每张表中最大返回的行数">单项最大返回数：</span>
@@ -369,37 +409,57 @@ export function SearchForm({
                                             <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                                                 {visibleColumns.map((columnName) => {
                                                     const key = `${tableKey}__${columnName}`
-                                                    const input = inputs[key] || { value: '', op: 'Contains' }
+                                                    const input = inputs[key] || { value: '', op: 'Contains', clean: true }
                                                     const isExact = input.op === 'Equals'
+                                                    const isClean = input.clean !== false
 
                                                     return (
                                                         <div
                                                             key={key}
                                                             className="flex flex-col gap-1.5"
                                                         >
-                                                            <div
-                                                                onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
-                                                                className="cursor-pointer flex items-center gap-2 select-none group w-fit"
-                                                                title="点击切换模糊/精确搜索"
-                                                            >
-                                                                <span className={`
-                                                                    text-sm font-medium transition-colors
-                                                                    ${isExact
-                                                                        ? 'text-[#667eea] font-bold'
-                                                                        : 'text-[var(--text-muted)] group-hover:text-[var(--foreground)]'
-                                                                    }
-                                                                `}>
+                                                            <div className="flex items-center gap-1.5 select-none w-fit flex-wrap">
+                                                                <span 
+                                                                    onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
+                                                                    className={`
+                                                                        text-sm font-medium transition-colors cursor-pointer
+                                                                        ${isExact
+                                                                            ? 'text-[#667eea] font-bold'
+                                                                            : 'text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                                                                        }
+                                                                    `}
+                                                                    title="点击切换模糊/精确搜索"
+                                                                >
                                                                     {columnName}
                                                                 </span>
-                                                                <span className={`
-                                                                    text-[10px] px-1.5 py-0.5 rounded border transition-all
-                                                                    ${isExact
-                                                                        ? 'bg-[rgba(102,126,234,0.1)] text-[#667eea] border-[#667eea]'
-                                                                        : 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
-                                                                    }
-                                                                `}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
+                                                                    className={`
+                                                                        text-[10px] px-1.5 py-0.5 rounded border transition-all
+                                                                        ${isExact
+                                                                            ? 'bg-[rgba(102,126,234,0.1)] text-[#667eea] border-[#667eea]'
+                                                                            : 'bg-transparent text-[var(--text-muted)] border-[var(--border)] hover:border-[var(--text-muted)]'
+                                                                        }
+                                                                    `}
+                                                                    title="点击切换模糊/精确搜索"
+                                                                >
                                                                     {isExact ? '精确' : '模糊'}
-                                                                </span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCleanChange(key, !isClean)}
+                                                                    className={`
+                                                                        text-[10px] px-1.5 py-0.5 rounded border transition-all
+                                                                        ${isClean
+                                                                            ? 'bg-[rgba(234,179,8,0.1)] text-[#eab308] border-[#eab308]'
+                                                                            : 'bg-transparent text-[var(--text-muted)] border-[var(--border)] hover:border-[var(--text-muted)]'
+                                                                        }
+                                                                    `}
+                                                                    title="点击切换是否过滤标点字符和多余空格（默认启动过滤）"
+                                                                >
+                                                                    {isClean ? '过滤' : '原始'}
+                                                                </button>
                                                             </div>
                                                             <input
                                                                 type="text"
