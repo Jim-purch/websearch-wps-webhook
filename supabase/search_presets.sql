@@ -95,8 +95,6 @@ CREATE POLICY "Users can delete received preset shares" ON preset_shares
   FOR DELETE USING (auth.uid() = shared_with AND share_code IS NULL);
 
 DROP POLICY IF EXISTS "Admins can view all preset shares" ON preset_shares;
-CREATE POLICY "Admins can view all preset shares" ON preset_shares
-  FOR SELECT USING (public.is_admin());
 
 -- 更新 search_presets 的 SELECT 策略，允许被分享的用户查看
 DROP POLICY IF EXISTS "Users can view shared presets" ON search_presets;
@@ -112,8 +110,6 @@ CREATE POLICY "Users can view shared presets" ON search_presets
   );
 
 DROP POLICY IF EXISTS "Admins can view all presets" ON search_presets;
-CREATE POLICY "Admins can view all presets" ON search_presets
-  FOR SELECT USING (public.is_admin());
 
 -- =====================================================
 -- RPC: Claim a shared preset via code (Multi-user support)
@@ -130,6 +126,7 @@ DECLARE
   new_share_id UUID;
   current_user_id UUID;
   preset_name TEXT;
+  received_count INTEGER;
 BEGIN
   current_user_id := auth.uid();
   IF current_user_id IS NULL THEN
@@ -163,6 +160,15 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', '您已经拥有此搜索预设的权限');
   END IF;
 
+  -- 3.5 Check received presets limit (maximum 50)
+  SELECT COUNT(*) INTO received_count
+  FROM preset_shares
+  WHERE shared_with = current_user_id;
+
+  IF received_count >= 50 THEN
+    RETURN jsonb_build_object('success', false, 'error', '已达到接收共享预设的上限（最多 50 个）');
+  END IF;
+
   -- 4. Create new share record
   INSERT INTO preset_shares (
     preset_id,
@@ -179,4 +185,119 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'share_id', new_share_id, 'preset_name', target_share.preset_name);
 END;
 $$;
+
+
+-- =====================================================
+-- 触发器：限制用户能创建的预设上限为 20（管理员除外）
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION public.check_preset_limit()
+RETURNS TRIGGER AS $$
+DECLARE
+  preset_count INTEGER;
+  user_role TEXT;
+BEGIN
+  -- 仅限制通过客户端用户发起的操作，避免在删除用户迁移预设等后台管理操作中触发错误
+  IF auth.uid() IS NOT NULL AND auth.uid() = NEW.user_id THEN
+    -- 查询用户的角色
+    SELECT role INTO user_role 
+    FROM public.user_profiles 
+    WHERE id = NEW.user_id;
+
+    -- 如果用户不是管理员，则校验创建预设上限
+    IF user_role IS DISTINCT FROM 'admin' THEN
+      SELECT COUNT(*) INTO preset_count
+      FROM public.search_presets
+      WHERE user_id = NEW.user_id;
+
+      IF preset_count >= 20 THEN
+        RAISE EXCEPTION '已达到创建预设的上限（最多 20 个）';
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 创建 BEFORE INSERT 触发器
+DROP TRIGGER IF EXISTS trg_check_preset_limit ON public.search_presets;
+CREATE TRIGGER trg_check_preset_limit
+  BEFORE INSERT ON public.search_presets
+  FOR EACH ROW EXECUTE FUNCTION public.check_preset_limit();
+
+
+
+-- =====================================================
+-- 触发器：用户被删除时继承数据
+-- 管理员账户不需要了解其他用户的预设情况，删除用户时，
+-- 该用户的token需要迁移给管理员用户进行管理，
+-- 被删除用户的预设需要迁移给全部管理员用户，
+-- 确保该用户的预设和token在用户被删除时被继承
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION public.handle_user_deletion()
+RETURNS TRIGGER AS $$
+DECLARE
+  target_admin_id UUID;
+  admin_rec RECORD;
+BEGIN
+  -- 1. 查找要继承 token 的管理员用户（最先创建的管理员）
+  SELECT id INTO target_admin_id 
+  FROM public.user_profiles 
+  WHERE role = 'admin' 
+  ORDER BY created_at ASC 
+  LIMIT 1;
+
+  -- 如果有可用的管理员，且该管理员不是被删除的账户自身
+  IF target_admin_id IS NOT NULL AND target_admin_id <> OLD.id THEN
+    -- 2. 将被删除用户的预设迁移复制给所有管理员用户，名称中附加来源用户名
+    FOR admin_rec IN (
+      SELECT id FROM public.user_profiles WHERE role = 'admin'
+    ) LOOP
+      INSERT INTO public.search_presets (
+        user_id,
+        token_id,
+        name,
+        selected_table_names,
+        columns_data,
+        selected_columns,
+        column_configs
+      )
+      SELECT 
+        admin_rec.id,
+        sp.token_id,
+        sp.name || ' (来自: ' || COALESCE(up.display_name, up.email) || ')',
+        sp.selected_table_names,
+        sp.columns_data,
+        sp.selected_columns,
+        sp.column_configs
+      FROM public.search_presets sp
+      JOIN public.user_profiles up ON up.id = sp.user_id
+      WHERE sp.user_id = OLD.id;
+    END LOOP;
+
+    -- 3. 将被删除用户的 token 转移所有权给指定的管理员进行管理
+    UPDATE public.tokens 
+    SET user_id = target_admin_id, updated_at = NOW() 
+    WHERE user_id = OLD.id;
+  END IF;
+
+  -- 4. 清理相关的分享关联记录，防止外键约束报错
+  DELETE FROM public.token_shares WHERE shared_by = OLD.id OR shared_with = OLD.id;
+  DELETE FROM public.preset_shares WHERE shared_by = OLD.id OR shared_with = OLD.id;
+  
+  -- 5. 将该用户修改过的系统设置字段置为空值
+  UPDATE public.system_settings SET updated_by = NULL WHERE updated_by = OLD.id;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 创建 BEFORE DELETE 触发器
+DROP TRIGGER IF EXISTS on_user_profile_deleted ON public.user_profiles;
+CREATE TRIGGER on_user_profile_deleted
+  BEFORE DELETE ON public.user_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.handle_user_deletion();
+
+
 
