@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { parseTableKey } from '@/hooks/usePartSearch'
 import type { WpsColumn } from '@/lib/wps'
 import type { ColumnConfig } from '@/hooks/usePartSearch'
 import type { Token } from '@/types'
@@ -62,22 +63,16 @@ export function ColumnSelector({
 
     // 获取显示名称 (包含 Token 归属前缀)
     const getDisplayName = (tableKey: string) => {
-        let name = tableKey
-        let tokenId = ''
-        if (tableKey.includes('::')) {
-            const parts = tableKey.split('::')
-            tokenId = parts[0]
-            name = parts[1]
-        }
+        const { tokenId, tableName } = parseTableKey(tableKey)
         
         let tokenName = ''
         if (tokenId && selectedTokens) {
             tokenName = selectedTokens.find(t => t.id === tokenId)?.name || ''
         }
 
-        const baseDisplayName = name.includes('__copy_')
-            ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
-            : name
+        const baseDisplayName = tableName.includes('__copy_')
+            ? `${tableName.split('__copy_')[0]} (副本${tableName.split('__copy_')[1]})`
+            : tableName
 
         if (tokenName) {
             return `[${tokenName}] ${baseDisplayName}`
@@ -202,6 +197,10 @@ export function ColumnSelector({
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     {currentConfig.map((colConfig, index) => {
+                                        const { tokenId } = parseTableKey(tableKey)
+                                        const isShared = tokenId.startsWith('preset::')
+                                        if (isShared && !colConfig.fetch) return null
+
                                         const isSelected = selected.includes(colConfig.name)
                                         const uniqueKey = `${tableKey}-${colConfig.name}`
 

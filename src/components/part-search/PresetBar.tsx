@@ -10,6 +10,7 @@ interface PresetBarProps {
     onLoadPreset: (preset: SearchPreset) => void
     onEditPreset: (preset: SearchPreset) => void
     onDeletePreset: (presetId: string) => void
+    currentUserId?: string | null
 }
 
 export function PresetBar({
@@ -18,7 +19,8 @@ export function PresetBar({
     isLoading,
     onLoadPreset,
     onEditPreset,
-    onDeletePreset
+    onDeletePreset,
+    currentUserId
 }: PresetBarProps) {
     if (isLoading) {
         return (
@@ -44,6 +46,7 @@ export function PresetBar({
                     onLoad={() => onLoadPreset(preset)}
                     onEdit={() => onEditPreset(preset)}
                     onDelete={() => onDeletePreset(preset.id)}
+                    isOwner={currentUserId ? preset.user_id === currentUserId : true}
                 />
             ))}
         </div>

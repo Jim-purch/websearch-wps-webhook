@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTokens } from '@/hooks/useTokens'
 import { useSharedTokens } from '@/hooks/useSharedTokens'
+import { usePresetShares } from '@/hooks/usePresetShares'
+import { useSearchPresets } from '@/hooks/useSearchPresets'
 import type { TokenShare, CreateShareInput, Token, UserProfile } from '@/types'
 
 export default function SharesPage() {
@@ -24,7 +26,34 @@ export default function SharesPage() {
     const [claimError, setClaimError] = useState('')
     const [claimSuccess, setClaimSuccess] = useState('')
 
+    // 预设分享相关状态与 Hook
+    const {
+        createdShares: presetCreatedShares,
+        receivedShares: presetReceivedShares,
+        isLoading: isLoadingPresetShares,
+        error: presetError,
+        fetchCreatedShares: fetchPresetCreatedShares,
+        fetchReceivedShares: fetchPresetReceivedShares,
+        createPresetShare,
+        claimPresetShare,
+        deletePresetShare,
+        togglePresetShareActive
+    } = usePresetShares()
+
+    const { presets, fetchPresets } = useSearchPresets()
+    const [activeTab, setActiveTab] = useState<'tokens' | 'presets'>('tokens')
+    const [selectedPresetId, setSelectedPresetId] = useState('')
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
     const supabase = createClient()
+
+    useEffect(() => {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) {
+                setCurrentUserId(user.id)
+            }
+        })
+    }, [supabase])
 
     const fetchShares = useCallback(async () => {
         const { data: { user } } = await supabase.auth.getUser()
@@ -50,12 +79,21 @@ export default function SharesPage() {
     }, [supabase])
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchShares()
     }, [fetchShares])
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault()
+    // 当切换到预设 Tab 时，加载数据
+    useEffect(() => {
+        if (activeTab === 'presets') {
+            fetchPresetCreatedShares()
+            fetchPresetReceivedShares()
+            fetchPresets()
+        }
+    }, [activeTab, fetchPresetCreatedShares, fetchPresetReceivedShares, fetchPresets])
+
+    const ownPresets = presets.filter(p => p.user_id === currentUserId)
+
+    const handleCreateTokenShare = async () => {
         if (!newShare.token_id) {
             setError('请选择要分享的 Token')
             return
@@ -67,7 +105,6 @@ export default function SharesPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // 生成分享码
         const shareCode = Math.random().toString(36).substring(2, 10).toUpperCase()
 
         const { error } = await supabase
@@ -88,17 +125,36 @@ export default function SharesPage() {
         setIsSubmitting(false)
     }
 
-    const handleClaim = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!claimCode.trim()) {
-            setClaimError('请输入分享码')
+    const handleCreatePresetShare = async () => {
+        if (!selectedPresetId) {
+            setError('请选择要分享的搜索预设')
             return
         }
 
-        setIsClaiming(true)
-        setClaimError('')
-        setClaimSuccess('')
+        setIsSubmitting(true)
+        setError('')
 
+        const result = await createPresetShare(selectedPresetId)
+
+        if (result.success) {
+            setShowNewForm(false)
+            setSelectedPresetId('')
+        } else {
+            setError(result.error || '创建分享失败')
+        }
+        setIsSubmitting(false)
+    }
+
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (activeTab === 'presets') {
+            await handleCreatePresetShare()
+        } else {
+            await handleCreateTokenShare()
+        }
+    }
+
+    const handleClaimTokenShare = async () => {
         const result = await claimShare(claimCode.trim())
 
         if (result.success) {
@@ -110,6 +166,39 @@ export default function SharesPage() {
             }, 2000)
         } else {
             setClaimError(result.error || '领取失败')
+        }
+    }
+
+    const handleClaimPresetShare = async () => {
+        const result = await claimPresetShare(claimCode.trim())
+
+        if (result.success) {
+            setClaimSuccess(`成功领取搜索预设: ${result.presetName}`)
+            setClaimCode('')
+            setTimeout(() => {
+                setShowClaimForm(false)
+                setClaimSuccess('')
+            }, 2000)
+        } else {
+            setClaimError(result.error || '领取失败')
+        }
+    }
+
+    const handleClaim = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!claimCode.trim()) {
+            setClaimError('请输入分享码')
+            return
+        }
+
+        setIsClaiming(true)
+        setClaimError('')
+        setClaimSuccess('')
+
+        if (activeTab === 'presets') {
+            await handleClaimPresetShare()
+        } else {
+            await handleClaimTokenShare()
         }
 
         setIsClaiming(false)
@@ -154,7 +243,7 @@ export default function SharesPage() {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-2xl font-bold">分享管理</h1>
-                    <p className="text-[var(--text-muted)]">管理您的 Token 分享和接收的分享</p>
+                    <p className="text-[var(--text-muted)]">管理您的 Token 分享和搜索预设分享</p>
                 </div>
                 <div className="flex gap-3">
                     <button onClick={() => setShowClaimForm(true)} className="btn-secondary flex items-center gap-2">
@@ -166,10 +255,34 @@ export default function SharesPage() {
                 </div>
             </div>
 
+            {/* Tab 切换 */}
+            <div className="flex border-b border-[var(--border)] mb-6">
+                <button
+                    onClick={() => { setActiveTab('tokens'); setShowNewForm(false); setShowClaimForm(false); setError(''); setClaimError(''); setClaimSuccess(''); }}
+                    className={`py-3 px-6 font-medium text-sm border-b-2 transition-all ${
+                        activeTab === 'tokens'
+                            ? 'border-[#10b981] text-[#10b981]'
+                            : 'border-transparent text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                    }`}
+                >
+                    🔑 Token 分享
+                </button>
+                <button
+                    onClick={() => { setActiveTab('presets'); setShowNewForm(false); setShowClaimForm(false); setError(''); setClaimError(''); setClaimSuccess(''); }}
+                    className={`py-3 px-6 font-medium text-sm border-b-2 transition-all ${
+                        activeTab === 'presets'
+                            ? 'border-[#10b981] text-[#10b981]'
+                            : 'border-transparent text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                    }`}
+                >
+                    📋 搜索预设分享
+                </button>
+            </div>
+
             {/* 领取分享码表单 */}
             {showClaimForm && (
                 <div className="card p-6 mb-6">
-                    <h2 className="text-lg font-bold mb-4">添加分享码</h2>
+                    <h2 className="text-lg font-bold mb-4">添加分享码 ({activeTab === 'presets' ? '搜索预设' : 'Token'})</h2>
                     {claimError && <div className="alert alert-error mb-4">{claimError}</div>}
                     {claimSuccess && <div className="alert alert-success mb-4">{claimSuccess}</div>}
                     <form onSubmit={handleClaim} className="space-y-4">
@@ -185,7 +298,7 @@ export default function SharesPage() {
                                 required
                             />
                             <p className="text-sm text-[var(--text-muted)] mt-1">
-                                输入他人分享给您的分享码，领取后可在系统内使用该 Token
+                                输入他人分享给您的分享码，领取后可在系统内使用该{activeTab === 'presets' ? '搜索预设' : 'Token'}
                             </p>
                         </div>
                         <div className="flex gap-3">
@@ -203,28 +316,45 @@ export default function SharesPage() {
             {/* 新建分享表单 */}
             {showNewForm && (
                 <div className="card p-6 mb-6">
-                    <h2 className="text-lg font-bold mb-4">创建分享链接</h2>
+                    <h2 className="text-lg font-bold mb-4">创建分享链接 ({activeTab === 'presets' ? '搜索预设' : 'Token'})</h2>
                     {error && <div className="alert alert-error mb-4">{error}</div>}
                     <form onSubmit={handleCreate} className="space-y-4">
-                        <div>
-                            <label className="label">选择 Token *</label>
-                            <select
-                                value={newShare.token_id}
-                                onChange={(e) => setNewShare({ ...newShare, token_id: e.target.value })}
-                                className="input"
-                                required
-                            >
-                                <option value="">请选择...</option>
-                                {tokens.map((token) => (
-                                    <option key={token.id} value={token.id}>{token.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {activeTab === 'presets' ? (
+                            <div>
+                                <label className="label">选择搜索预设 *</label>
+                                <select
+                                    value={selectedPresetId}
+                                    onChange={(e) => setSelectedPresetId(e.target.value)}
+                                    className="input"
+                                    required
+                                >
+                                    <option value="">请选择...</option>
+                                    {ownPresets.map((preset) => (
+                                        <option key={preset.id} value={preset.id}>{preset.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="label">选择 Token *</label>
+                                <select
+                                    value={newShare.token_id}
+                                    onChange={(e) => setNewShare({ ...newShare, token_id: e.target.value })}
+                                    className="input"
+                                    required
+                                >
+                                    <option value="">请选择...</option>
+                                    {tokens.map((token) => (
+                                        <option key={token.id} value={token.id}>{token.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div className="flex gap-3">
                             <button type="submit" disabled={isSubmitting} className="btn-primary">
                                 {isSubmitting ? '创建中...' : '创建分享'}
                             </button>
-                            <button type="button" onClick={() => setShowNewForm(false)} className="btn-secondary">
+                            <button type="button" onClick={() => { setShowNewForm(false); setError(''); }} className="btn-secondary">
                                 取消
                             </button>
                         </div>
@@ -232,135 +362,264 @@ export default function SharesPage() {
                 </div>
             )}
 
-            {/* 已接收的分享 */}
-            <div className="card mb-6">
-                <div className="p-4 border-b border-[var(--border)]">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                        <span>📥</span> 已接收的分享
-                    </h2>
-                </div>
-                {isLoadingShared ? (
-                    <div className="p-8 text-center">
-                        <div className="spinner mx-auto mb-4" />
-                        <p className="text-[var(--text-muted)]">加载中...</p>
+            {activeTab === 'tokens' ? (
+                <>
+                    {/* 已接收的 Token 分享 */}
+                    <div className="card mb-6">
+                        <div className="p-4 border-b border-[var(--border)]">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <span>📥</span> 已接收的 Token 分享
+                            </h2>
+                        </div>
+                        {isLoadingShared ? (
+                            <div className="p-8 text-center">
+                                <div className="spinner mx-auto mb-4" />
+                                <p className="text-[var(--text-muted)]">加载中...</p>
+                            </div>
+                        ) : sharedTokens.length === 0 ? (
+                            <div className="p-8 text-center">
+                                <div className="text-4xl mb-4">📭</div>
+                                <p className="text-[var(--text-muted)]">暂无接收的 Token 分享</p>
+                                <p className="text-sm text-[var(--text-muted)] mt-2">
+                                    点击上方&quot;添加分享码&quot;按钮，输入他人的分享码来接收 Token
+                                </p>
+                            </div>
+                        ) : (
+                            <ul className="file-list">
+                                {sharedTokens.map((share) => (
+                                    <li key={share.id} className="file-item">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <span className="text-xl">🔑</span>
+                                                <span className="font-medium">{share.token?.name || '未知 Token'}</span>
+                                                <span className={`badge ${share.token?.is_active ? 'badge-success' : 'badge-warning'}`}>
+                                                    {share.token?.is_active ? 'Token有效' : 'Token已停用'}
+                                                </span>
+                                                <span className="badge badge-info">
+                                                    {share.permission === 'use' ? '可使用' : '仅查看'}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-[var(--text-muted)] ml-8">
+                                                来自: {share.sharer_email || '未知用户'}
+                                                {share.token?.description && ` · ${share.token.description}`}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => handleRemoveShared(share.id)}
+                                                className="text-red-500 hover:text-red-600 p-2"
+                                                title="移除此分享"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
-                ) : sharedTokens.length === 0 ? (
-                    <div className="p-8 text-center">
-                        <div className="text-4xl mb-4">📭</div>
-                        <p className="text-[var(--text-muted)]">暂无接收的分享</p>
-                        <p className="text-sm text-[var(--text-muted)] mt-2">
-                            点击上方&quot;添加分享码&quot;按钮，输入他人的分享码来接收 Token
-                        </p>
-                    </div>
-                ) : (
-                    <ul className="file-list">
-                        {sharedTokens.map((share) => (
-                            <li key={share.id} className="file-item">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <span className="text-xl">🔑</span>
-                                        <span className="font-medium">{share.token?.name || '未知 Token'}</span>
-                                        <span className={`badge ${share.token?.is_active ? 'badge-success' : 'badge-warning'}`}>
-                                            {share.token?.is_active ? 'Token有效' : 'Token已停用'}
-                                        </span>
-                                        <span className="badge badge-info">
-                                            {share.permission === 'use' ? '可使用' : '仅查看'}
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-[var(--text-muted)] ml-8">
-                                        来自: {share.sharer_email || '未知用户'}
-                                        {share.token?.description && ` · ${share.token.description}`}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => handleRemoveShared(share.id)}
-                                        className="text-red-500 hover:text-red-600 p-2"
-                                        title="移除此分享"
-                                    >
-                                        🗑️
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
 
-            {/* 我创建的分享 */}
-            <div className="card">
-                <div className="p-4 border-b border-[var(--border)]">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                        <span>📤</span> 我创建的分享
-                    </h2>
-                </div>
-                {isLoading ? (
-                    <div className="p-8 text-center">
-                        <div className="spinner mx-auto mb-4" />
-                        <p className="text-[var(--text-muted)]">加载中...</p>
+                    {/* 我创建的 Token 分享 */}
+                    <div className="card">
+                        <div className="p-4 border-b border-[var(--border)]">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <span>📤</span> 我创建的 Token 分享
+                            </h2>
+                        </div>
+                        {isLoading ? (
+                            <div className="p-8 text-center">
+                                <div className="spinner mx-auto mb-4" />
+                                <p className="text-[var(--text-muted)]">加载中...</p>
+                            </div>
+                        ) : shares.length === 0 ? (
+                            <div className="p-8 text-center">
+                                <div className="text-4xl mb-4">🔗</div>
+                                <p className="text-[var(--text-muted)]">暂无分享链接</p>
+                            </div>
+                        ) : (
+                            <ul className="file-list">
+                                {shares.map((share) => (
+                                    <li key={share.id} className="file-item">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <span className="text-xl">🔗</span>
+                                                <span className="font-medium">{share.token?.name || '未知 Token'}</span>
+                                                <span className={`badge ${share.is_active ? 'badge-success' : 'badge-warning'}`}>
+                                                    {share.is_active ? '有效' : '已停用'}
+                                                </span>
+                                                <span className="badge badge-info">
+                                                    {share.permission === 'use' ? '可使用' : '仅查看'}
+                                                </span>
+                                                {share.shared_with && (
+                                                    <span className="badge badge-success">已被领取</span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-muted)] ml-8">
+                                                分享码: <code className="bg-[var(--code-bg)] text-[var(--code-text)] px-2 py-0.5 rounded">{share.share_code}</code>
+                                                {share.recipient && (
+                                                    <span className="ml-3">
+                                                        · 已分享给: <strong className="text-[var(--foreground)]">{share.recipient.display_name || '未设置名称'}</strong>
+                                                        <span className="text-[var(--text-muted)] ml-1">({share.recipient.email})</span>
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => share.share_code && copyShareCode(share.share_code)}
+                                                className="btn-secondary text-sm px-3 py-1"
+                                            >
+                                                复制码
+                                            </button>
+                                            <button
+                                                onClick={() => share.share_code && copyShareLink(share.share_code)}
+                                                className="btn-secondary text-sm px-3 py-1"
+                                            >
+                                                复制链接
+                                            </button>
+                                            <button
+                                                onClick={() => handleToggleActive(share.id, share.is_active)}
+                                                className={`toggle ${share.is_active ? 'active' : ''}`}
+                                            />
+                                            <button
+                                                onClick={() => handleDelete(share.id)}
+                                                className="text-red-500 hover:text-red-600 p-2"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
-                ) : shares.length === 0 ? (
-                    <div className="p-8 text-center">
-                        <div className="text-4xl mb-4">🔗</div>
-                        <p className="text-[var(--text-muted)]">暂无分享链接</p>
+                </>
+            ) : (
+                <>
+                    {/* 已接收的搜索预设分享 */}
+                    <div className="card mb-6">
+                        <div className="p-4 border-b border-[var(--border)]">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <span>📥</span> 已接收的搜索预设
+                            </h2>
+                        </div>
+                        {isLoadingPresetShares ? (
+                            <div className="p-8 text-center">
+                                <div className="spinner mx-auto mb-4" />
+                                <p className="text-[var(--text-muted)]">加载中...</p>
+                            </div>
+                        ) : presetReceivedShares.length === 0 ? (
+                            <div className="p-8 text-center">
+                                <div className="text-4xl mb-4">📭</div>
+                                <p className="text-[var(--text-muted)]">暂无接收的搜索预设</p>
+                                <p className="text-sm text-[var(--text-muted)] mt-2">
+                                    点击上方&quot;添加分享码&quot;按钮，输入他人的分享码来接收预设
+                                </p>
+                            </div>
+                        ) : (
+                            <ul className="file-list">
+                                {presetReceivedShares.map((share) => (
+                                    <li key={share.id} className="file-item">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <span className="text-xl">📋</span>
+                                                <span className="font-medium">{share.preset?.name || '未知预设'}</span>
+                                                <span className={`badge ${share.is_active ? 'badge-success' : 'badge-warning'}`}>
+                                                    {share.is_active ? '有效' : '已失效'}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-[var(--text-muted)] ml-8">
+                                                来自: {share.sharer?.email || '未知用户'}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => deletePresetShare(share.id, false)}
+                                                className="text-red-500 hover:text-red-600 p-2"
+                                                title="移除此分享"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
-                ) : (
-                    <ul className="file-list">
-                        {shares.map((share) => (
-                            <li key={share.id} className="file-item">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <span className="text-xl">🔗</span>
-                                        <span className="font-medium">{share.token?.name || '未知 Token'}</span>
-                                        <span className={`badge ${share.is_active ? 'badge-success' : 'badge-warning'}`}>
-                                            {share.is_active ? '有效' : '已停用'}
-                                        </span>
-                                        <span className="badge badge-info">
-                                            {share.permission === 'use' ? '可使用' : '仅查看'}
-                                        </span>
-                                        {share.shared_with && (
-                                            <span className="badge badge-success">已被领取</span>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-[var(--text-muted)] ml-8">
-                                        分享码: <code className="bg-[var(--code-bg)] text-[var(--code-text)] px-2 py-0.5 rounded">{share.share_code}</code>
-                                        {share.recipient && (
-                                            <span className="ml-3">
-                                                · 已分享给: <strong className="text-[var(--foreground)]">{share.recipient.display_name || '未设置名称'}</strong>
-                                                <span className="text-[var(--text-muted)] ml-1">({share.recipient.email})</span>
-                                            </span>
-                                        )}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => share.share_code && copyShareCode(share.share_code)}
-                                        className="btn-secondary text-sm px-3 py-1"
-                                    >
-                                        复制码
-                                    </button>
-                                    <button
-                                        onClick={() => share.share_code && copyShareLink(share.share_code)}
-                                        className="btn-secondary text-sm px-3 py-1"
-                                    >
-                                        复制链接
-                                    </button>
-                                    <button
-                                        onClick={() => handleToggleActive(share.id, share.is_active)}
-                                        className={`toggle ${share.is_active ? 'active' : ''}`}
-                                    />
-                                    <button
-                                        onClick={() => handleDelete(share.id)}
-                                        className="text-red-500 hover:text-red-600 p-2"
-                                    >
-                                        🗑️
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+
+                    {/* 我创建的搜索预设分享 */}
+                    <div className="card">
+                        <div className="p-4 border-b border-[var(--border)]">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <span>📤</span> 我创建的搜索预设分享
+                            </h2>
+                        </div>
+                        {isLoadingPresetShares ? (
+                            <div className="p-8 text-center">
+                                <div className="spinner mx-auto mb-4" />
+                                <p className="text-[var(--text-muted)]">加载中...</p>
+                            </div>
+                        ) : presetCreatedShares.length === 0 ? (
+                            <div className="p-8 text-center">
+                                <div className="text-4xl mb-4">🔗</div>
+                                <p className="text-[var(--text-muted)]">暂无分享的搜索预设</p>
+                            </div>
+                        ) : (
+                            <ul className="file-list">
+                                {presetCreatedShares.map((share) => (
+                                    <li key={share.id} className="file-item">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <span className="text-xl">📋</span>
+                                                <span className="font-medium">{share.preset?.name || '未知预设'}</span>
+                                                <span className={`badge ${share.is_active ? 'badge-success' : 'badge-warning'}`}>
+                                                    {share.is_active ? '有效' : '已停用'}
+                                                </span>
+                                                {share.shared_with && (
+                                                    <span className="badge badge-success">已被领取</span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-muted)] ml-8">
+                                                分享码: <code className="bg-[var(--code-bg)] text-[var(--code-text)] px-2 py-0.5 rounded">{share.share_code}</code>
+                                                {share.recipient && (
+                                                    <span className="ml-3">
+                                                        · 已分享给: <strong className="text-[var(--foreground)]">{share.recipient.display_name || '未设置名称'}</strong>
+                                                        <span className="text-[var(--text-muted)] ml-1">({share.recipient.email})</span>
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => share.share_code && copyShareCode(share.share_code)}
+                                                className="btn-secondary text-sm px-3 py-1"
+                                            >
+                                                复制码
+                                            </button>
+                                            <button
+                                                onClick={() => share.share_code && copyShareLink(share.share_code)}
+                                                className="btn-secondary text-sm px-3 py-1"
+                                            >
+                                                复制链接
+                                            </button>
+                                            <button
+                                                onClick={() => togglePresetShareActive(share.id, share.is_active)}
+                                                className={`toggle ${share.is_active ? 'active' : ''}`}
+                                            />
+                                            <button
+                                                onClick={() => deletePresetShare(share.id, true)}
+                                                className="text-red-500 hover:text-red-600 p-2"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     )
 }

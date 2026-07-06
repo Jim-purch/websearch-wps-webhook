@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { usePartSearch } from '@/hooks/usePartSearch'
+import { usePartSearch, parseTableKey } from '@/hooks/usePartSearch'
 import { useSearchPresets } from '@/hooks/useSearchPresets'
+import { useAuth } from '@/hooks/useAuth'
 import {
     TokenSelector,
     TableSelector,
@@ -16,6 +17,7 @@ import type { SearchPreset } from '@/types'
 import type { WpsColumn } from '@/lib/wps'
 
 export default function PartSearchPage() {
+    const { user: currentUser } = useAuth()
     const {
         tokens,
         isLoadingTokens,
@@ -225,29 +227,32 @@ export default function PartSearchPage() {
         const newColumnConfigs: Record<string, { name: string; fetch: boolean; sameValue?: boolean }[]> = {}
         const newSelectedColumns: Record<string, string[]> = {}
 
-        // 初始化预设中所有表的默认配置
-        for (const [key, value] of Object.entries(preset.columns_data)) {
-            newColumnsData[key] = value as WpsColumn[]
-        }
-        for (const [key, value] of Object.entries(preset.column_configs)) {
-            newColumnConfigs[key] = value
-        }
-        for (const [key, value] of Object.entries(preset.selected_columns)) {
-            newSelectedColumns[key] = value
+        const isShared = preset.user_id !== currentUser?.id
+        const mapKey = (key: string) => {
+            if (!isShared) return key
+            const { tableName } = parseTableKey(key)
+            return `preset::${preset.id}::${tableName}`
         }
 
-        const savedTableNames = preset.selected_table_names.filter(name => !name.startsWith('token::'))
+        // 初始化预设中所有表的默认配置
+        for (const [key, value] of Object.entries(preset.columns_data)) {
+            newColumnsData[mapKey(key)] = value as WpsColumn[]
+        }
+        for (const [key, value] of Object.entries(preset.column_configs)) {
+            newColumnConfigs[mapKey(key)] = value
+        }
+        for (const [key, value] of Object.entries(preset.selected_columns)) {
+            newSelectedColumns[mapKey(key)] = value
+        }
+
+        const savedTableNames = preset.selected_table_names
+            .filter(name => !name.startsWith('token::'))
+            .map(mapKey)
         const addedColNames: string[] = []
         const renamedColNames: string[] = []
 
         for (const tableKey of savedTableNames) {
-            let tokenId = ''
-            let tableName = tableKey
-            if (tableKey.includes('::')) {
-                const parts = tableKey.split('::')
-                tokenId = parts[0]
-                tableName = parts[1]
-            }
+            const { tokenId, tableName } = parseTableKey(tableKey)
 
             const remoteTable = tables.find(t => t.name === tableName && (!tokenId || t.tokenId === tokenId))
             if (!remoteTable || !remoteTable.columns || remoteTable.columns.length === 0) {
@@ -255,9 +260,12 @@ export default function PartSearchPage() {
             }
 
             const remoteCols = remoteTable.columns
-            const savedCols = (preset.columns_data[tableKey] || []) as WpsColumn[]
-            const savedConfigs = preset.column_configs[tableKey] || []
-            const savedSelected = preset.selected_columns[tableKey] || []
+            const originalTableKey = isShared 
+                ? Object.keys(preset.columns_data).find(k => parseTableKey(k).tableName === tableName) || tableKey 
+                : tableKey
+            const savedCols = (preset.columns_data[originalTableKey] || []) as WpsColumn[]
+            const savedConfigs = preset.column_configs[originalTableKey] || []
+            const savedSelected = preset.selected_columns[originalTableKey] || []
 
             const savedConfigMap = new Map(savedConfigs.map(c => [c.name, c]))
             const savedColMap = new Map(savedCols.map(c => [c.name, c]))
@@ -386,17 +394,63 @@ export default function PartSearchPage() {
             savedTokenIds.push(preset.token_id)
         }
 
-        const matchedTokens = tokens.filter(t => savedTokenIds.includes(t.id))
+        let matchedTokens = tokens.filter(t => savedTokenIds.includes(t.id))
+        
+        // 如果是分享给当前用户的预设且原 Token 未在 Token 列表中，则生成一个虚拟 Mock Token
+        if (matchedTokens.length === 0 && preset.user_id !== currentUser?.id) {
+            matchedTokens = [{
+                id: `preset::${preset.id}`,
+                name: `${preset.name} (共享预设)`,
+                token_value: '', // 不暴露真实 Token 值
+                webhook_url: 'preset-webhook', // 哑 Webhook 占位
+                is_active: true,
+                user_id: preset.user_id,
+                description: `来自搜索预设分享`
+            } as any]
+        }
+        
         setSelectedTokens(matchedTokens)
 
         // 提取并恢复选中的表名列表 (步骤2)
-        const savedTableNames = preset.selected_table_names.filter(name => !name.startsWith('token::'))
+        let savedTableNames = preset.selected_table_names.filter(name => !name.startsWith('token::'))
+        let savedColumnsData = preset.columns_data as Record<string, WpsColumn[]>
+        let savedSelectedColumns = preset.selected_columns as Record<string, string[]>
+        let savedColumnConfigs = preset.column_configs as Record<string, any[]>
+
+        // 如果是他人分享的预设，将表名主键映射到虚拟预设 Token ID
+        if (preset.user_id !== currentUser?.id) {
+            const mapKey = (key: string) => {
+                const { tableName } = parseTableKey(key)
+                return `preset::${preset.id}::${tableName}`
+            }
+
+            savedTableNames = savedTableNames.map(mapKey)
+
+            const mappedColumnsData: Record<string, WpsColumn[]> = {}
+            for (const [key, val] of Object.entries(savedColumnsData)) {
+                mappedColumnsData[mapKey(key)] = val
+            }
+            savedColumnsData = mappedColumnsData
+
+            const mappedSelectedColumns: Record<string, string[]> = {}
+            for (const [key, val] of Object.entries(savedSelectedColumns)) {
+                mappedSelectedColumns[mapKey(key)] = val
+            }
+            savedSelectedColumns = mappedSelectedColumns
+
+            const mappedColumnConfigs: Record<string, any[]> = {}
+            for (const [key, val] of Object.entries(savedColumnConfigs)) {
+                mappedColumnConfigs[mapKey(key)] = val
+            }
+            savedColumnConfigs = mappedColumnConfigs
+        }
+
         setSelectedTableNames(new Set(savedTableNames))
 
         // 先恢复缓存中的预设配置（让UI立刻展现）
-        setColumnsData(preset.columns_data as Record<string, WpsColumn[]>)
-        setSelectedColumns(preset.selected_columns)
-        setColumnConfigs(preset.column_configs)
+        setColumnsData(savedColumnsData)
+        setSelectedColumns(savedSelectedColumns)
+        setColumnConfigs(savedColumnConfigs)
         setActivePresetId(preset.id)
 
         // 记录 pendingSync, 以便在 table list 刷新/获取后同步
@@ -409,7 +463,7 @@ export default function PartSearchPage() {
 
         // 强制收起步骤1、2、3
         setForceCollapsedCounter(prev => prev + 1)
-    }, [activePresetId, tokens, setSelectedTokens, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs, refreshTables])
+    }, [activePresetId, tokens, setSelectedTokens, setSelectedTableNames, setColumnsData, setSelectedColumns, setColumnConfigs, refreshTables, currentUser])
 
     // 编辑预设
     const handleEditPreset = useCallback((preset: SearchPreset) => {
@@ -453,6 +507,7 @@ export default function PartSearchPage() {
                         onLoadPreset={handleLoadPreset}
                         onEditPreset={handleEditPreset}
                         onDeletePreset={handleDeletePreset}
+                        currentUserId={currentUser?.id}
                     />
                 </div>
                 <p className="text-[var(--text-muted)]">

@@ -2,6 +2,7 @@
 
 import type { WpsTable } from '@/lib/wps'
 import { useState, useEffect, useMemo } from 'react'
+import { parseTableKey } from '@/hooks/usePartSearch'
 
 interface TableSelectorProps {
     tables: WpsTable[]
@@ -73,7 +74,7 @@ export function TableSelector({
 
     const getShortDisplayNames = () => {
         return Array.from(selectedTableNames)
-            .map(key => key.includes('::') ? key.split('::')[1] : key)
+            .map(key => parseTableKey(key).tableName)
             .slice(0, 3)
             .join(', ')
     }

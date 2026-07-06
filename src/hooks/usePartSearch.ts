@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { useTokens } from './useTokens'
 import { useSharedTokens } from './useSharedTokens'
 import {
@@ -137,6 +138,29 @@ function matchesAllCriteria(
     return true
 }
 
+export function parseTableKey(tableKey: string) {
+    let tokenId = ''
+    let tableName = tableKey
+
+    if (tableKey.startsWith('preset::')) {
+        const remaining = tableKey.slice(8) // remove 'preset::'
+        const index = remaining.indexOf('::')
+        if (index !== -1) {
+            tokenId = 'preset::' + remaining.slice(0, index)
+            tableName = remaining.slice(index + 2)
+        } else {
+            tokenId = 'preset::' + remaining
+            tableName = ''
+        }
+    } else if (tableKey.includes('::')) {
+        const index = tableKey.indexOf('::')
+        tokenId = tableKey.slice(0, index)
+        tableName = tableKey.slice(index + 2)
+    }
+
+    return { tokenId, tableName }
+}
+
 export function usePartSearch() {
     const { tokens, isLoading: isLoadingTokens } = useTokens()
     const { isLoading: isLoadingShared, getUsableSharedTokens } = useSharedTokens()
@@ -189,7 +213,49 @@ export function usePartSearch() {
         })
     }, [])
 
-    // 合并自己的 Token 和分享的 Token
+    const supabase = useMemo(() => createClient(), [])
+
+    // 预设分享的虚拟 Mock Token 列表
+    const [receivedPresetTokens, setReceivedPresetTokens] = useState<Token[]>([])
+
+    // 自动加载接收到的预设分享，生成对应的 Mock Token 并合并到可用列表中
+    useEffect(() => {
+        const fetchReceivedPresetTokens = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
+            const { data, error } = await supabase
+                .from('preset_shares')
+                .select(`
+                    id,
+                    preset:search_presets(id, name, user_profiles(email))
+                `)
+                .eq('shared_with', user.id)
+                .eq('is_active', true)
+
+            if (!error && data) {
+                const mapped = data.map((share: any) => {
+                    const preset = (share as any).preset
+                    if (!preset) return null
+                    return {
+                        id: `preset::${preset.id}`,
+                        name: `${preset.name} (预设限制使用)`,
+                        token_value: '',
+                        webhook_url: 'preset-webhook',
+                        is_active: true,
+                        description: `来自 ${preset.user_profiles?.email || '未知用户'} 的预设分享`,
+                        _isShared: true,
+                        _sharerEmail: preset.user_profiles?.email
+                    } as any
+                }).filter(Boolean) as Token[]
+                setReceivedPresetTokens(mapped)
+            }
+        }
+
+        fetchReceivedPresetTokens()
+    }, [supabase])
+
+    // 合并自己的 Token、分享的 Token 以及被分享预设产生的限制 Token
     const allTokens = useMemo(() => {
         // 先获取自己的有效 Token
         const ownTokens = tokens.filter(t =>
@@ -209,8 +275,8 @@ export function usePartSearch() {
                 _sharerEmail: s.sharer_email
             } as Token & { _isShared?: boolean; _sharerEmail?: string }))
 
-        return [...ownTokens, ...sharedUsableTokens]
-    }, [tokens, getUsableSharedTokens])
+        return [...ownTokens, ...sharedUsableTokens, ...receivedPresetTokens]
+    }, [tokens, getUsableSharedTokens, receivedPresetTokens])
 
     // 刷新表列表
     const refreshTables = useCallback(async (customTokens?: Token[]) => {
@@ -366,10 +432,7 @@ export function usePartSearch() {
     const loadColumnsForSelected = useCallback(async () => {
         // 查找哪些选中的表需要刷新缓存
         const tablesToRefresh = Array.from(selectedTableNames).filter(tableKey => {
-            let tokenId = ''
-            if (tableKey.includes('::')) {
-                tokenId = tableKey.split('::')[0]
-            }
+            const { tokenId } = parseTableKey(tableKey)
             const table = tables.find(t => `${t.tokenId}::${t.name}` === tableKey)
             return table?.isGoogleSheets && refreshTokensCache[tokenId]
         })
@@ -379,13 +442,7 @@ export function usePartSearch() {
             setTablesError(null)
             try {
                 const refreshPromises = tablesToRefresh.map(async (tableKey) => {
-                    let tokenId = ''
-                    let tableName = tableKey
-                    if (tableKey.includes('::')) {
-                        const parts = tableKey.split('::')
-                        tokenId = parts[0]
-                        tableName = parts[1]
-                    }
+                    const { tokenId, tableName } = parseTableKey(tableKey)
                     
                     const res = await refreshGsheetCache(tokenId, tableName)
                     if (res.success && res.data) {
@@ -414,9 +471,8 @@ export function usePartSearch() {
                 setRefreshTokensCache(prev => {
                     const next = { ...prev }
                     for (const tableKey of tablesToRefresh) {
-                        if (tableKey.includes('::')) {
-                            next[tableKey.split('::')[0]] = false
-                        }
+                        const { tokenId } = parseTableKey(tableKey)
+                        next[tokenId] = false
                     }
                     return next
                 })
@@ -440,13 +496,7 @@ export function usePartSearch() {
             let hasChanges = false
 
             for (const tableKey of selectedTableNames) {
-                let tokenId = ''
-                let tableName = tableKey
-                if (tableKey.includes('::')) {
-                    const parts = tableKey.split('::')
-                    tokenId = parts[0]
-                    tableName = parts[1]
-                }
+                const { tokenId, tableName } = parseTableKey(tableKey)
 
                 const table = tables.find(t => t.name === tableName && (!tokenId || t.tokenId === tokenId))
                 if (table && table.columns && table.columns.length > 0) {
@@ -631,16 +681,8 @@ export function usePartSearch() {
                     ? tableKey.split('__copy_')[0]
                     : tableKey
                 
-                let realTableName = tableKeyWithoutCopy
-                let tokenId = selectedTokens[0]?.id || ''
-                let tokenName = selectedTokens[0]?.name || ''
-
-                if (tableKeyWithoutCopy.includes('::')) {
-                    const parts = tableKeyWithoutCopy.split('::')
-                    tokenId = parts[0]
-                    realTableName = parts[1]
-                    tokenName = selectedTokens.find(t => t.id === tokenId)?.name || ''
-                }
+                const { tokenId, tableName: realTableName } = parseTableKey(tableKeyWithoutCopy)
+                const tokenName = selectedTokens.find(t => t.id === tokenId)?.name || ''
 
                 const displayTableName = tableKey.includes('__copy_')
                     ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
@@ -1711,13 +1753,7 @@ export function usePartSearch() {
 
                 // 解析 tableKey 对应的 tokenId 和 realTableName
                 const tableKeyWithoutCopy = tableKey.includes('__copy_') ? tableKey.split('__copy_')[0] : tableKey
-                let tableRealName = realTableName
-                let tokenId = selectedToken?.id || ''
-                if (tableKeyWithoutCopy.includes('::')) {
-                    const parts = tableKeyWithoutCopy.split('::')
-                    tokenId = parts[0]
-                    tableRealName = parts[1]
-                }
+                const { tokenId, tableName: tableRealName } = parseTableKey(tableKeyWithoutCopy)
 
                 const displayTableName = tableKey.includes('__copy_')
                     ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`
@@ -1865,13 +1901,7 @@ export function usePartSearch() {
                 ? tableKey.split('__copy_')[0]
                 : tableKey
 
-            let realTableName = tableKeyWithoutCopy
-            let tokenId = selectedToken?.id || ''
-            if (tableKeyWithoutCopy.includes('::')) {
-                const parts = tableKeyWithoutCopy.split('::')
-                tokenId = parts[0]
-                realTableName = parts[1]
-            }
+            const { tokenId, tableName: realTableName } = parseTableKey(tableKeyWithoutCopy)
 
             const displayTableName = tableKey.includes('__copy_')
                 ? `${realTableName} (副本${tableKey.split('__copy_')[1]})`

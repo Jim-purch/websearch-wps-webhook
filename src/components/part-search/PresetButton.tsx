@@ -9,6 +9,7 @@ interface PresetButtonProps {
     onLoad: () => void
     onEdit: () => void
     onDelete: () => void
+    isOwner?: boolean
 }
 
 export function PresetButton({
@@ -16,7 +17,8 @@ export function PresetButton({
     isActive,
     onLoad,
     onEdit,
-    onDelete
+    onDelete,
+    isOwner
 }: PresetButtonProps) {
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
@@ -74,19 +76,21 @@ export function PresetButton({
                 <span className="text-xs">📋</span>
                 <span className="max-w-[100px] truncate">{preset.name}</span>
                 {/* 三点菜单在按钮内部 */}
-                <span
-                    onClick={handleMenuClick}
-                    className={`
-                        ml-1 px-1 rounded transition-colors cursor-pointer
-                        ${isActive
-                            ? 'hover:bg-white/20'
-                            : 'hover:bg-[var(--border)]'
-                        }
-                    `}
-                    title="更多操作"
-                >
-                    ⋮
-                </span>
+                {isOwner !== false && (
+                    <span
+                        onClick={handleMenuClick}
+                        className={`
+                            ml-1 px-1 rounded transition-colors cursor-pointer
+                            ${isActive
+                                ? 'hover:bg-white/20'
+                                : 'hover:bg-[var(--border)]'
+                            }
+                        `}
+                        title="更多操作"
+                    >
+                        ⋮
+                    </span>
+                )}
             </button>
 
             {/* 下拉菜单 */}

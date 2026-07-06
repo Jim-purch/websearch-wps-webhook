@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { WpsLogger } from '@/lib/wps-logger'
 import { handleGoogleSheetsAction } from '@/lib/googlesheets'
+import { parseWpsResponse } from '@/lib/wps/parser'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 /**
  * WPS Webhook 代理 API
@@ -30,18 +32,134 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // 从数据库获取 Token 信息 (提前获取以用于日志)
-        const { data: token, error: tokenError } = await supabase
-            .from('tokens')
-            .select('name, webhook_url, token_value')
-            .eq('id', tokenId)
-            .single()
+        let token: { name: string; webhook_url: string; token_value: string } | null = null
+        let presetFilter: { selected_table_names: string[]; column_configs: Record<string, any[]> } | null = null
+        const action = argv.action
 
-        if (tokenError || !token) {
-            return NextResponse.json(
-                { success: false, error: 'Token 不存在' },
-                { status: 404 }
+        // 1. 获取 Token 信息 (支持预设分享拦截)
+        if (typeof tokenId === 'string' && tokenId.startsWith('preset::')) {
+            const presetId = tokenId.replace('preset::', '')
+            
+            // 使用当前用户 client（遵循 RLS）查询预设详情，从而验证用户是否有该预设的查看权限
+            const { data: presetData, error: presetError } = await supabase
+                .from('search_presets')
+                .select('id, token_id, selected_table_names, columns_data, column_configs')
+                .eq('id', presetId)
+                .single()
+
+            if (presetError || !presetData) {
+                return NextResponse.json(
+                    { success: false, error: '没有该预设的使用权限或预设不存在' },
+                    { status: 403 }
+                )
+            }
+
+            // 如果是 getAll，直接从预设的 columns_data 中构造返回，不需要请求远程 WPS/GS API
+            if (action === 'getAll') {
+                const columnsData = (presetData.columns_data as Record<string, any>) || {}
+                const columnConfigs = (presetData.column_configs as Record<string, any>) || {}
+                const selectedTableNames = Array.isArray(presetData.selected_table_names) ? presetData.selected_table_names : []
+                
+                const tables: any[] = []
+                for (const fullTableKey of Object.keys(columnsData)) {
+                    if (!selectedTableNames.includes(fullTableKey)) continue
+                    
+                    const tableName = extractTableName(fullTableKey)
+                    if (tableName === '') continue
+                    
+                    const configs = columnConfigs[fullTableKey] || []
+                    const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+                    
+                    tables.push({
+                        name: tableName,
+                        columns: allowedCols.length > 0 ? allowedCols : (columnsData[fullTableKey] || []).map((c: any) => typeof c === 'string' ? c : c.name)
+                    })
+                }
+                
+                return NextResponse.json({
+                    success: true,
+                    data: {
+                        result: JSON.stringify({ tables })
+                    }
+                })
+            }
+
+            // 对于其他行为 (searchMulti, searchBatch, updateRow等)，动态定位数据表对应的原始 Token ID
+            let targetTokenId = presetData.token_id
+            const sheetName = argv.sheetName
+            if (sheetName) {
+                const columnsData = (presetData.columns_data as Record<string, any>) || {}
+                const matchedKey = Object.keys(columnsData).find(key => {
+                    const name = extractTableName(key)
+                    return name === sheetName
+                })
+                if (matchedKey) {
+                    if (matchedKey.includes('::') && !matchedKey.startsWith('preset::')) {
+                        const index = matchedKey.indexOf('::')
+                        targetTokenId = matchedKey.slice(0, index)
+                    }
+                }
+            }
+
+            // 使用 Service Role Client 获取所属 Token 的敏感信息，避免暴露给客户端 RPC
+            const adminSupabase = createSupabaseClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.SUPABASE_SERVICE_ROLE_KEY!
             )
+            const { data: tokenData, error: tokenError } = await adminSupabase
+                .from('tokens')
+                .select('name, webhook_url, token_value')
+                .eq('id', targetTokenId)
+                .single()
+
+            if (tokenError || !tokenData) {
+                return NextResponse.json(
+                    { success: false, error: '预设所关联的 Token 不存在或已失效' },
+                    { status: 404 }
+                )
+            }
+
+            token = {
+                name: tokenData.name,
+                webhook_url: tokenData.webhook_url,
+                token_value: tokenData.token_value
+            }
+
+            const rawTableNames = Array.isArray(presetData.selected_table_names) ? presetData.selected_table_names : []
+            // 把 presetFilter 里的 selected_table_names 做映射，使得 sheetName 直接匹配
+            const allowedTables = rawTableNames.map((name: string) => {
+                return extractTableName(name)
+            }).filter((name: string) => name !== '')
+
+            // 同样需要映射 column_configs 的键，使得匹配 sheetName 时不需要带有前缀
+            const mappedConfigs: Record<string, any[]> = {}
+            const rawConfigs = (presetData.column_configs as Record<string, any[]>) || {}
+            for (const [key, val] of Object.entries(rawConfigs)) {
+                const name = extractTableName(key)
+                if (name !== '') {
+                    mappedConfigs[name] = val
+                }
+            }
+
+            presetFilter = {
+                selected_table_names: allowedTables,
+                column_configs: mappedConfigs
+            }
+        } else {
+            // 从数据库获取 Token 信息 (普通 Token)
+            const { data: tokenData, error: tokenError } = await supabase
+                .from('tokens')
+                .select('name, webhook_url, token_value')
+                .eq('id', tokenId)
+                .single()
+
+            if (tokenError || !tokenData) {
+                return NextResponse.json(
+                    { success: false, error: 'Token 不存在' },
+                    { status: 404 }
+                )
+            }
+            token = tokenData
         }
 
         if (!token.webhook_url) {
@@ -49,6 +167,78 @@ export async function POST(request: NextRequest) {
                 { success: false, error: 'Token 没有配置 Webhook URL' },
                 { status: 400 }
             )
+        }
+
+        // ==========================================
+        // 预设权限限制验证
+        // ==========================================
+        if (presetFilter) {
+            const action = argv.action
+            if (action !== 'getAll') {
+                // 预设模式下禁用 setCellValue 和 setRangeValues，以防通过行列物理地址绕过字段限制
+                if (action === 'setCellValue' || action === 'setRangeValues') {
+                    return NextResponse.json(
+                        { success: false, error: '预设限制模式下不支持直接设定单元格/区域值，请使用受控的行更新' },
+                        { status: 403 }
+                    )
+                }
+
+                const sheetName = argv.sheetName
+                if (!sheetName || !presetFilter.selected_table_names.includes(sheetName)) {
+                    return NextResponse.json(
+                        { success: false, error: `无权访问数据表: ${sheetName || '未指定'}` },
+                        { status: 403 }
+                    )
+                }
+
+                // 获取该表允许的列名
+                const configs = presetFilter.column_configs[sheetName] || []
+                const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+
+                // 验证 searchMulti 查询字段
+                if (action === 'searchMulti' && Array.isArray(argv.criteria)) {
+                    for (const crit of argv.criteria) {
+                        if (!allowedCols.includes(crit.columnName)) {
+                            return NextResponse.json(
+                                { success: false, error: `无权检索字段: ${crit.columnName}` },
+                                { status: 403 }
+                            )
+                        }
+                    }
+                    // 强制指定返回列为允许的列
+                    argv.returnColumns = allowedCols
+                }
+
+                // 验证 searchBatch 查询字段
+                if (action === 'searchBatch' && Array.isArray(argv.batchCriteria)) {
+                    for (const item of argv.batchCriteria) {
+                        if (Array.isArray(item.criteria)) {
+                            for (const crit of item.criteria) {
+                                if (!allowedCols.includes(crit.columnName)) {
+                                    return NextResponse.json(
+                                        { success: false, error: `无权检索字段: ${crit.columnName}` },
+                                        { status: 403 }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    // 强制指定返回列为允许的列
+                    argv.returnColumns = allowedCols
+                }
+
+                // 验证 updateRow 修改字段
+                if (action === 'updateRow' && argv.rowData) {
+                    for (const colName of Object.keys(argv.rowData)) {
+                        if (!allowedCols.includes(colName)) {
+                            return NextResponse.json(
+                                { success: false, error: `无权修改字段: ${colName}` },
+                                { status: 403 }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // ==========================================
@@ -87,12 +277,11 @@ export async function POST(request: NextRequest) {
                 const batchCriteria = argv.batchCriteria || []
                 const count = Array.isArray(batchCriteria) ? batchCriteria.length : 0
 
-                // 提取字段名和搜索值摘要
+                // 提取字段名 and 搜索值摘要
                 let fieldsStr = ''
                 let valuesStr = ''
                 if (count > 0 && batchCriteria[0].criteria) {
                     fieldsStr = batchCriteria[0].criteria.map((c: any) => c.columnName).join(', ')
-                    // 收集所有搜索值
                     const allValues = batchCriteria.map((item: any) => {
                         return item.criteria ? item.criteria.map((c: any) => c.searchValue).join('&') : ''
                     }).filter((v: string) => v)
@@ -109,7 +298,6 @@ export async function POST(request: NextRequest) {
                     '对应的记录值': `Sheet: ${argv.sheetName}, 批量查询数量: ${count}`
                 }
 
-                // 处理搜索值过长的情况，分字段存储
                 const CHUNK_SIZE = 2000
                 if (!valuesStr) {
                     logPayload['搜索值'] = ''
@@ -135,7 +323,6 @@ export async function POST(request: NextRequest) {
                     const newValue = rowData[col]
                     const oldValue = oldRowData ? oldRowData[col] : undefined
 
-                    // 只有当值实际发生改变时才记录操作历史
                     if (String(newValue) !== String(oldValue ?? '')) {
                         await WpsLogger.log('history', {
                             '原纪录': String(oldValue ?? ''),
@@ -196,11 +383,8 @@ export async function POST(request: NextRequest) {
             }
         } catch (logErr) {
             console.error('WPS Log Error:', logErr)
-            // 日志失败不影响主流程
         }
         // ==========================================
-
-
 
         // ==========================================
         // 根据 Token 类型分流：Google Sheets 或 WPS
@@ -223,17 +407,19 @@ export async function POST(request: NextRequest) {
                 argv
             )
 
-            // 包装为与 WPS 代理一致的响应格式
-            // WPS 代理返回的是 { data: { result: JSON字符串, logs: [] } }
-            // 但 parser.ts 也支持直接返回 data 中的对象
+            let finalGsResult = gsResult
+            if (presetFilter) {
+                finalGsResult = filterResponseData(argv.action, gsResult, presetFilter)
+            }
+
             return NextResponse.json({
                 data: {
-                    result: JSON.stringify(gsResult)
+                    result: JSON.stringify(finalGsResult)
                 }
             })
         }
 
-        // WPS 模式（原有逻辑不变）
+        // WPS 模式
         const wpsResponse = await fetch(token.webhook_url, {
             method: 'POST',
             headers: {
@@ -256,7 +442,13 @@ export async function POST(request: NextRequest) {
         }
 
         const wpsData = await wpsResponse.json()
-        return NextResponse.json(wpsData)
+
+        let finalWpsData = wpsData
+        if (presetFilter) {
+            finalWpsData = filterWpsResponse(argv.action, wpsData, presetFilter)
+        }
+
+        return NextResponse.json(finalWpsData)
 
     } catch (err) {
         console.error('WPS Proxy Error:', err)
@@ -270,3 +462,146 @@ export async function POST(request: NextRequest) {
     }
 }
 
+/**
+ * 过滤 WPS 响应结果 (针对序列化 JSON 的 WPS 格式)
+ */
+function filterWpsResponse(action: string, wpsData: any, presetFilter: any) {
+    const parsed = parseWpsResponse<any>(wpsData)
+    if (!parsed.success || !parsed.data) {
+        return wpsData
+    }
+
+    const filteredData = filterResponseData(action, parsed.data, presetFilter)
+
+    return {
+        data: {
+            result: JSON.stringify(filteredData)
+        }
+    }
+}
+
+/**
+ * 过滤结构化响应数据
+ */
+function filterResponseData(action: string, data: any, presetFilter: any) {
+    if (!data) return data
+
+    if (action === 'getAll') {
+        const tables = data.tables || data.sheets || []
+        const filteredTables = tables
+            .filter((table: any) => presetFilter.selected_table_names.includes(table.name))
+            .map((table: any) => {
+                const configs = presetFilter.column_configs[table.name] || []
+                const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+
+                const filteredColumns = (table.columns || []).filter((col: any) => {
+                    const colName = typeof col === 'string' ? col : col.name
+                    return allowedCols.includes(colName)
+                })
+
+                return {
+                    ...table,
+                    columns: filteredColumns
+                }
+            })
+
+        return data.tables ? { ...data, tables: filteredTables } : { ...data, sheets: filteredTables }
+    } else if (action === 'getData') {
+        const sheetName = data.sheetName || ''
+        const configs = presetFilter.column_configs[sheetName] || []
+        const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+
+        let filteredColumns = data.columns || []
+        if (Array.isArray(data.columns)) {
+            filteredColumns = data.columns.filter((c: any) => {
+                const colName = typeof c === 'string' ? c : c.name
+                return allowedCols.includes(colName)
+            })
+        }
+        let filteredTableColumns = data.table?.columns || []
+        if (data.table?.columns) {
+            filteredTableColumns = data.table.columns.filter((c: any) => allowedCols.includes(c.name))
+        }
+
+        return {
+            ...data,
+            columns: filteredColumns,
+            table: data.table ? { ...data.table, columns: filteredTableColumns } : undefined
+        }
+    } else if (action === 'searchMulti') {
+        const sheetName = data.sheetName || ''
+        const configs = presetFilter.column_configs[sheetName] || []
+        const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+
+        let filteredRecords = data.records || []
+        if (Array.isArray(data.records)) {
+            filteredRecords = data.records.map((record: any) => {
+                const filteredRecord: Record<string, any> = {}
+                for (const col of allowedCols) {
+                    if (col in record) {
+                        filteredRecord[col] = record[col]
+                    }
+                }
+                if ('_rowNumber' in record) filteredRecord['_rowNumber'] = record['_rowNumber']
+                if ('rowNumber' in record) filteredRecord['rowNumber'] = record['rowNumber']
+                if ('id' in record) filteredRecord['id'] = record['id']
+                return filteredRecord
+            })
+        }
+        return {
+            ...data,
+            records: filteredRecords
+        }
+    } else if (action === 'searchBatch') {
+        const sheetName = data.sheetName || ''
+        const configs = presetFilter.column_configs[sheetName] || []
+        const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
+
+        let filteredResults = data.results || []
+        if (Array.isArray(data.results)) {
+            filteredResults = data.results.map((res: any) => {
+                if (Array.isArray(res.records)) {
+                    const filteredRecords = res.records.map((record: any) => {
+                        const filteredRecord: Record<string, any> = {}
+                        for (const col of allowedCols) {
+                            if (col in record) {
+                                filteredRecord[col] = record[col]
+                            }
+                        }
+                        if ('_rowNumber' in record) filteredRecord['_rowNumber'] = record['_rowNumber']
+                        if ('rowNumber' in record) filteredRecord['rowNumber'] = record['rowNumber']
+                        if ('id' in record) filteredRecord['id'] = record['id']
+                        return filteredRecord
+                    })
+                    return { ...res, records: filteredRecords }
+                }
+                return res
+            })
+        }
+        return {
+            ...data,
+            results: filteredResults
+        }
+    }
+
+    return data
+}
+
+/**
+ * 从不同前缀格式的表主键中提取纯净的表名 (如: preset::[id]::Sheet1 或 token-123::Sheet1 -> Sheet1)
+ */
+function extractTableName(fullKey: string): string {
+    if (fullKey.startsWith('token::')) {
+        return '';
+    }
+    if (fullKey.startsWith('preset::')) {
+        const remaining = fullKey.slice(8); // remove 'preset::'
+        const index = remaining.indexOf('::');
+        return index !== -1 ? remaining.slice(index + 2) : remaining;
+    }
+    if (fullKey.includes('::')) {
+        const index = fullKey.indexOf('::');
+        return fullKey.slice(index + 2);
+    }
+    return fullKey;
+}

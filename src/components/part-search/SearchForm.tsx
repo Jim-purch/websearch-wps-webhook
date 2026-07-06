@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { SearchCondition } from '@/hooks/usePartSearch'
+import { parseTableKey } from '@/hooks/usePartSearch'
 import { PasteQueryModal, type PasteQueryData } from './PasteQueryModal'
 import type { Token } from '@/types'
 
@@ -59,21 +60,19 @@ export function SearchForm({
             const configs = columnConfigs[tableKey] || []
             
             // 格式化表名：增加 Token 名称前缀
-            let name = tableKey
-            let tokenId = ''
-            if (tableKey.includes('::')) {
-                const parts = tableKey.split('::')
-                tokenId = parts[0]
-                name = parts[1]
-            }
-            const baseName = name.includes('__copy_')
-                ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
-                : name
+            const { tokenId, tableName } = parseTableKey(tableKey)
+            const baseName = tableName.includes('__copy_')
+                ? `${tableName.split('__copy_')[0]} (副本${tableName.split('__copy_')[1]})`
+                : tableName
             const tokenName = selectedTokens.find(t => t.id === tokenId)?.name
             const tableDisplayName = tokenName ? `[${tokenName}] ${baseName}` : baseName
 
+            const isShared = tokenId.startsWith('preset::')
             for (const columnName of columns) {
                 const config = configs.find(c => c.name === columnName)
+                if (isShared && config && !config.fetch) {
+                    continue
+                }
                 if (config && config.sameValue) {
                     cols.push({
                         tableKey,
@@ -90,9 +89,14 @@ export function SearchForm({
     const inputKeys = useMemo(() => {
         const keys: Array<{ tableName: string; columnName: string }> = []
         for (const [tableName, columns] of Object.entries(selectedColumns)) {
+            const { tokenId } = parseTableKey(tableName)
+            const isShared = tokenId.startsWith('preset::')
             const configs = columnConfigs[tableName] || []
             for (const columnName of columns) {
                 const config = configs.find(c => c.name === columnName)
+                if (isShared && config && !config.fetch) {
+                    continue
+                }
                 if (config && config.sameValue) {
                     continue // 同值批量字段跳过常规网格显示
                 }
@@ -293,7 +297,7 @@ export function SearchForm({
                                 <div className="flex flex-wrap gap-2 items-center">
                                     <span className="text-xs text-[var(--text-muted)]">生效字段:</span>
                                     {sameValueCols.map(col => (
-                                        <span key={col.displayName} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[rgba(234,179,8,0.15)] border border-[rgba(234,179,8,0.3)] text-[#eab308]">
+                                        <span key={`${col.tableKey}__${col.columnName}`} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[rgba(234,179,8,0.15)] border border-[rgba(234,179,8,0.3)] text-[#eab308]">
                                             <span>📊</span>
                                             {col.displayName}
                                         </span>
@@ -320,23 +324,20 @@ export function SearchForm({
                             <div className="space-y-4 mb-6">
                                 {Object.entries(selectedColumns).map(([tableKey, columns]) => {
                                     // 检查该表是否含有处于常规检索下的字段
+                                    const { tokenId: sTokenId } = parseTableKey(tableKey)
+                                    const isShared = sTokenId.startsWith('preset::')
                                     const visibleColumns = columns.filter(colName => {
                                         const config = columnConfigs[tableKey]?.find(c => c.name === colName)
+                                        if (isShared && config && !config.fetch) return false
                                         return !config || !config.sameValue
                                     })
                                     if (visibleColumns.length === 0) return null
 
                                     // 格式化表名 (加上 Token 归属)
-                                    let name = tableKey
-                                    let tokenId = ''
-                                    if (tableKey.includes('::')) {
-                                        const parts = tableKey.split('::')
-                                        tokenId = parts[0]
-                                        name = parts[1]
-                                    }
-                                    const baseName = name.includes('__copy_')
-                                        ? `${name.split('__copy_')[0]} (副本${name.split('__copy_')[1]})`
-                                        : name
+                                    const { tokenId, tableName } = parseTableKey(tableKey)
+                                    const baseName = tableName.includes('__copy_')
+                                        ? `${tableName.split('__copy_')[0]} (副本${tableName.split('__copy_')[1]})`
+                                        : tableName
                                     const tokenName = selectedTokens.find(t => t.id === tokenId)?.name
                                     const displayName = tokenName ? `[${tokenName}] ${baseName}` : baseName
 
