@@ -202,10 +202,89 @@ async function getSpreadsheetMetadata(
 interface CacheEntry {
     values: string[][]
     cachedAt: number
+    lastAccessedAt: number
+}
+
+class GoogleSheetsCacheManager {
+    private cache = new Map<string, CacheEntry>()
+    private maxEntries: number
+    private ttlMs: number
+
+    constructor(maxEntries = 20, ttlMs = 10 * 60 * 1000) {
+        const envMax = process.env.GOOGLE_SHEETS_CACHE_MAX_SIZE
+        const envTtl = process.env.GOOGLE_SHEETS_CACHE_TTL_SECONDS
+
+        this.maxEntries = envMax ? parseInt(envMax, 10) : maxEntries
+        this.ttlMs = envTtl ? parseInt(envTtl, 10) * 1000 : ttlMs
+    }
+
+    get(key: string): CacheEntry | undefined {
+        const entry = this.cache.get(key)
+        if (!entry) return undefined
+
+        if (Date.now() - entry.cachedAt > this.ttlMs) {
+            this.cache.delete(key)
+            console.log(`[GoogleSheets Cache] Expired (TTL): ${key}`)
+            return undefined
+        }
+
+        entry.lastAccessedAt = Date.now()
+        return entry
+    }
+
+    set(key: string, values: string[][]) {
+        this.evictExpired()
+
+        if (this.cache.size >= this.maxEntries && !this.cache.has(key)) {
+            this.evictLRU()
+        }
+
+        const now = Date.now()
+        this.cache.set(key, {
+            values,
+            cachedAt: now,
+            lastAccessedAt: now
+        })
+    }
+
+    private evictExpired() {
+        const now = Date.now()
+        for (const [key, entry] of this.cache.entries()) {
+            if (now - entry.cachedAt > this.ttlMs) {
+                this.cache.delete(key)
+                console.log(`[GoogleSheets Cache] Evicted (Expired): ${key}`)
+            }
+        }
+    }
+
+    private evictLRU() {
+        let oldestKey: string | null = null
+        let oldestTime = Infinity
+
+        for (const [key, entry] of this.cache.entries()) {
+            if (entry.lastAccessedAt < oldestTime) {
+                oldestTime = entry.lastAccessedAt
+                oldestKey = key
+            }
+        }
+
+        if (oldestKey) {
+            this.cache.delete(oldestKey)
+            console.log(`[GoogleSheets Cache] Evicted (LRU due to size limit): ${oldestKey}`)
+        }
+    }
+
+    peek(key: string): CacheEntry | undefined {
+        return this.cache.get(key)
+    }
+
+    clear() {
+        this.cache.clear()
+    }
 }
 
 // 全局内存缓存
-const googleSheetsCache = new Map<string, CacheEntry>()
+const googleSheetsCache = new GoogleSheetsCacheManager()
 // 正在进行中的请求缓存，防止并发冲突
 const activeFetches = new Map<string, Promise<string[][]>>()
 // 强制刷新最小间隔，防止高频刷新 (30秒)
@@ -250,10 +329,7 @@ async function getSheetValues(
                 { valueRenderOption: 'FORMATTED_VALUE' }
             )
             const values = data.values || []
-            googleSheetsCache.set(cacheKey, {
-                values,
-                cachedAt: Date.now()
-            })
+            googleSheetsCache.set(cacheKey, values)
             return values
         } finally {
             activeFetches.delete(cacheKey)
@@ -336,7 +412,7 @@ export async function getAllSheetsInfo(tokenValue: string, spreadsheetId: string
             }
 
             const cachedKey = `${spreadsheetId}::'${sheetName}'`
-            const cached = googleSheetsCache.get(cachedKey)
+            const cached = googleSheetsCache.peek(cachedKey)
             const cacheTime = cached
                 ? new Date(cached.cachedAt).toLocaleString('zh-CN', { hour12: false })
                 : null
@@ -1173,7 +1249,7 @@ export async function handleGoogleSheetsAction(
 
             // 获取最新缓存时间
             const rCacheKey = `${spreadsheetId}::'${refreshSheetName}'`
-            const rCached = googleSheetsCache.get(rCacheKey)
+            const rCached = googleSheetsCache.peek(rCacheKey)
             const rCacheTime = rCached
                 ? new Date(rCached.cachedAt).toLocaleString('zh-CN', { hour12: false })
                 : null
