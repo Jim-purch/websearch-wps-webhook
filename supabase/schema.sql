@@ -127,11 +127,15 @@ CREATE POLICY "Users can view shared tokens" ON tokens
     EXISTS (
       SELECT 1 FROM token_shares 
       WHERE token_shares.token_id = tokens.id 
-      AND (token_shares.shared_with = auth.uid() OR token_shares.share_code IS NOT NULL)
+      AND token_shares.shared_with = auth.uid()
       AND token_shares.is_active = true
       AND (token_shares.expires_at IS NULL OR token_shares.expires_at > NOW())
     )
   );
+
+-- 管理员可以查看所有 token
+CREATE POLICY "Admins can view all tokens" ON tokens
+  FOR SELECT USING (public.is_admin());
 
 -- token_shares 策略
 -- 用户可以查看自己创建的分享
@@ -167,6 +171,48 @@ CREATE POLICY "Users can delete own shares" ON token_shares
 -- Users can delete (leave) shares that are shared with them (but NOT the template share)
 CREATE POLICY "Users can delete received shares" ON token_shares
   FOR DELETE USING (auth.uid() = shared_with AND share_code IS NULL);
+
+-- 管理员可以查看所有分享记录
+CREATE POLICY "Admins can view all shares" ON token_shares
+  FOR SELECT USING (public.is_admin());
+
+-- =====================================================
+-- RPC: Get public share details by code (Security definer to bypass RLS)
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION get_share_by_code(share_code TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  result JSONB;
+BEGIN
+  SELECT 
+    jsonb_build_object(
+      'id', ts.id,
+      'token_id', ts.token_id,
+      'shared_by', ts.shared_by,
+      'permission', ts.permission,
+      'expires_at', ts.expires_at,
+      'token', jsonb_build_object(
+        'name', t.name,
+        'description', t.description,
+        'webhook_url', t.webhook_url,
+        -- 仅当权限为使用时，才返回 Token 值以防泄露
+        'token_value', CASE WHEN ts.permission = 'use' THEN t.token_value ELSE NULL END
+      )
+    ) INTO result
+  FROM token_shares ts
+  JOIN tokens t ON t.id = ts.token_id
+  WHERE ts.share_code = get_share_by_code.share_code
+    AND ts.is_active = true
+    AND (ts.expires_at IS NULL OR ts.expires_at > NOW());
+
+  RETURN result;
+END;
+$$;
 
 -- =====================================================
 -- RPC: Claims a shared token via code (Multi-user support)

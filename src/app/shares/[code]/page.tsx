@@ -16,22 +16,18 @@ export default function ShareAccessPage({ params }: { params: Promise<{ code: st
     useEffect(() => {
         const fetchShare = async () => {
             const { data, error } = await supabase
-                .from('token_shares')
-                .select('*, token:tokens(*)')
-                .eq('share_code', code)
-                .eq('is_active', true)
-                .single()
+                .rpc('get_share_by_code', { share_code: code })
 
             if (error || !data) {
                 setError('分享链接无效或已过期')
             } else {
+                const shareData = data as any
                 // 检查是否过期
-                if (data.expires_at && new Date(data.expires_at) < new Date()) {
+                if (shareData.expires_at && new Date(shareData.expires_at) < new Date()) {
                     setError('分享链接已过期')
                 } else {
-                    setShare(data as TokenShare)
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    setToken((data as any).token as Token)
+                    setShare(shareData as TokenShare)
+                    setToken(shareData.token as Token)
                 }
             }
             setIsLoading(false)
