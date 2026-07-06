@@ -278,6 +278,19 @@ class GoogleSheetsCacheManager {
         return this.cache.get(key)
     }
 
+    invalidate(spreadsheetId: string, sheetName: string) {
+        const prefix = `${spreadsheetId}::`
+        for (const key of this.cache.keys()) {
+            if (key.startsWith(prefix)) {
+                const parts = key.slice(prefix.length)
+                if (parts.includes(sheetName) || parts.includes(`'${sheetName}'`)) {
+                    this.cache.delete(key)
+                    console.log(`[GoogleSheets Cache] Invalidated: ${key}`)
+                }
+            }
+        }
+    }
+
     clear() {
         this.cache.clear()
     }
@@ -1260,40 +1273,60 @@ export async function handleGoogleSheetsAction(
                 cacheTime: rCacheTime
             }
 
-        case 'setCellValue':
-            return await setCellValue(
+        case 'setCellValue': {
+            const result = await setCellValue(
                 tokenValue,
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.cellAddress as string,
                 argv.value
             )
+            if (result.success) {
+                googleSheetsCache.invalidate(spreadsheetId, argv.sheetName as string)
+            }
+            return result
+        }
 
-        case 'setRangeValues':
-            return await setRangeValues(
+        case 'setRangeValues': {
+            const result = await setRangeValues(
                 tokenValue,
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.rangeAddress as string,
                 argv.values as any[][]
             )
+            if (result.success) {
+                googleSheetsCache.invalidate(spreadsheetId, argv.sheetName as string)
+            }
+            return result
+        }
 
-        case 'updateRow':
-            return await updateRow(
+        case 'updateRow': {
+            const result = await updateRow(
                 tokenValue,
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.rowIndex as number,
                 argv.rowData as Record<string, any>
             )
+            if (result.success) {
+                googleSheetsCache.invalidate(spreadsheetId, argv.sheetName as string)
+            }
+            return result
+        }
 
-        case 'deleteRows':
-            return await deleteRows(
+        case 'deleteRows': {
+            const result = await deleteRows(
                 tokenValue,
                 spreadsheetId,
                 argv.sheetName as string,
                 argv.rowNumbers as number[]
             )
+            if (result.success) {
+                googleSheetsCache.invalidate(spreadsheetId, argv.sheetName as string)
+            }
+            return result
+        }
 
         case 'getImageUrl':
             return {

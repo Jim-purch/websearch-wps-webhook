@@ -734,12 +734,17 @@ export function usePartSearch() {
 
                     if (tableSameValueCols.length === 0) continue
 
-                    // 构造批量检索 criteria (多字段 OR 使用单次 batch 检索合并)
+                    const cleanedSameValueValues: string[] = []
                     const batchItems: Array<{ id: string; criteria: WpsSearchCriteria[] }> = []
                     const cleanSameValue = sameValueParams?.clean ?? true
                     for (const val of sameValueValues) {
                         const cleanedVal = cleanSameValue ? cleanValue(val) : val.trim()
                         if (!cleanedVal) continue
+                        
+                        if (!cleanedSameValueValues.includes(cleanedVal)) {
+                            cleanedSameValueValues.push(cleanedVal)
+                        }
+                        
                         for (const col of tableSameValueCols) {
                             batchItems.push({
                                 id: `${cleanedVal}::${col}`,
@@ -760,7 +765,17 @@ export function usePartSearch() {
                     if (batchItems.length === 0) continue
 
                     try {
-                        const res = await searchBatch(tokenId, realTableName, batchItems, returnColumns.length > 0 ? returnColumns : undefined, sameValueParams?.limit, undefined)
+                        const res = await searchBatch(
+                            tokenId,
+                            realTableName,
+                            batchItems,
+                            returnColumns.length > 0 ? returnColumns : undefined,
+                            sameValueParams?.limit,
+                            undefined,
+                            true,
+                            tableSameValueCols,
+                            cleanedSameValueValues
+                        )
                         if (res.success && res.data) {
                             const batchRes = res.data as WpsBatchSearchResult
                             const allRecords: Record<string, unknown>[] = []

@@ -239,7 +239,10 @@ export async function searchBatch(
     batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>,
     returnColumns?: string[], // 新增参数
     limit?: number,
-    bypassCache?: boolean
+    bypassCache?: boolean,
+    isSameValueSearch?: boolean,
+    sameValueCols?: string[],
+    sameValueValues?: string[]
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     const result = await callWpsProxy<WpsBatchSearchResult>(tokenId, {
         action: 'searchBatch',
@@ -247,7 +250,10 @@ export async function searchBatch(
         batchCriteria,
         returnColumns, // 传递给后端
         limit,
-        bypassCache
+        bypassCache,
+        isSameValueSearch,
+        sameValueCols,
+        sameValueValues
     })
 
     return result

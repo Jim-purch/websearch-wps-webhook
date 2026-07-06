@@ -281,11 +281,32 @@ export async function POST(request: NextRequest) {
                 let fieldsStr = ''
                 let valuesStr = ''
                 if (count > 0 && batchCriteria[0].criteria) {
-                    fieldsStr = batchCriteria[0].criteria.map((c: any) => c.columnName).join(', ')
-                    const allValues = batchCriteria.map((item: any) => {
-                        return item.criteria ? item.criteria.map((c: any) => c.searchValue).join('&') : ''
-                    }).filter((v: string) => v)
-                    valuesStr = allValues.join(', ')
+                    if (argv.isSameValueSearch) {
+                        const sameValueCols = (argv.sameValueCols as string[]) || []
+                        const sameValueValues = (argv.sameValueValues as string[]) || []
+                        
+                        // 提取独立过滤条件对应的字段和搜索值
+                        const firstItemCriteria = batchCriteria[0].criteria || []
+                        const independentCriteria = firstItemCriteria.filter(
+                            (c: any) => !sameValueCols.includes(c.columnName)
+                        )
+                        const independentCols = independentCriteria.map((c: any) => c.columnName)
+                        const independentValues = independentCriteria.map((c: any) => c.searchValue)
+                        
+                        const allCols = [...sameValueCols, ...independentCols]
+                        fieldsStr = allCols.join(', ')
+                        
+                        valuesStr = sameValueValues.join(', ')
+                        if (independentValues.length > 0) {
+                            valuesStr += ' & ' + independentValues.join('&')
+                        }
+                    } else {
+                        fieldsStr = batchCriteria[0].criteria.map((c: any) => c.columnName).join(', ')
+                        const allValues = batchCriteria.map((item: any) => {
+                            return item.criteria ? item.criteria.map((c: any) => c.searchValue).join('&') : ''
+                        }).filter((v: string) => v)
+                        valuesStr = allValues.join(', ')
+                    }
                 }
 
                 const logPayload: Record<string, any> = {
