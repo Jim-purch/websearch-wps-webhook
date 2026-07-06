@@ -37,6 +37,24 @@ export function TableSelector({
 }: TableSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
 
+    // 将表按 Token 分组
+    const tablesByToken = useMemo(() => {
+        const groups: Record<string, { tokenName: string; tables: WpsTable[] }> = {}
+        for (const table of tables) {
+            const tokenId = table.tokenId || 'default'
+            const tokenName = table.tokenName || '未知 Token'
+            if (!groups[tokenId]) {
+                groups[tokenId] = { tokenName, tables: [] }
+            }
+            groups[tokenId].tables.push(table)
+        }
+        return groups
+    }, [tables])
+
+    const hasPresetRestrictedToken = useMemo(() => {
+        return Object.keys(tablesByToken).some(id => id.startsWith('preset::'))
+    }, [tablesByToken])
+
     // 当加载列信息后自动收起步骤2
     useEffect(() => {
         if (Object.keys(columnsData).length > 0) {
@@ -57,20 +75,6 @@ export function TableSelector({
             setIsOpen(true)
         }
     }, [forceExpanded])
-
-    // 将表按 Token 分组
-    const tablesByToken = useMemo(() => {
-        const groups: Record<string, { tokenName: string; tables: WpsTable[] }> = {}
-        for (const table of tables) {
-            const tokenId = table.tokenId || 'default'
-            const tokenName = table.tokenName || '未知 Token'
-            if (!groups[tokenId]) {
-                groups[tokenId] = { tokenName, tables: [] }
-            }
-            groups[tokenId].tables.push(table)
-        }
-        return groups
-    }, [tables])
 
     const getShortDisplayNames = () => {
         return Array.from(selectedTableNames)
@@ -148,16 +152,21 @@ export function TableSelector({
                                                 {group.tables.map((table) => {
                                                     const tableKey = `${table.tokenId}::${table.name}`
                                                     const isSelected = selectedTableNames.has(tableKey)
+                                                    const isRestricted = table.tokenId?.startsWith('preset::')
                                                     return (
                                                         <button
                                                             key={tableKey}
                                                             type="button"
-                                                            onClick={() => onToggle(tableKey)}
+                                                            disabled={isRestricted}
+                                                            onClick={isRestricted ? undefined : () => onToggle(tableKey)}
                                                             className={`
                                                                 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all
+                                                                ${isRestricted ? 'cursor-default opacity-85' : 'cursor-pointer'}
                                                                 ${isSelected
                                                                     ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)] text-[#eab308]'
-                                                                    : 'border-[var(--border)] hover:border-[#667eea]'
+                                                                    : isRestricted
+                                                                        ? 'border-[var(--border)] text-[var(--text-muted)]'
+                                                                        : 'border-[var(--border)] hover:border-[#667eea]'
                                                                 }
                                                             `}
                                                         >
@@ -191,10 +200,11 @@ export function TableSelector({
                                 })}
                             </div>
 
-                            <div className="flex gap-2">
+                             <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={onSelectAll}
+                                    disabled={hasPresetRestrictedToken}
                                     className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全选
@@ -202,6 +212,7 @@ export function TableSelector({
                                 <button
                                     type="button"
                                     onClick={onDeselectAll}
+                                    disabled={hasPresetRestrictedToken}
                                     className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全不选

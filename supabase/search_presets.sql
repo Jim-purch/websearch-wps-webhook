@@ -73,7 +73,13 @@ DROP POLICY IF EXISTS "Users can create preset shares" ON preset_shares;
 CREATE POLICY "Users can create preset shares" ON preset_shares
   FOR INSERT WITH CHECK (
     auth.uid() = shared_by AND
-    EXISTS (SELECT 1 FROM search_presets WHERE search_presets.id = preset_id AND search_presets.user_id = auth.uid())
+    EXISTS (
+      SELECT 1 FROM search_presets
+      JOIN tokens ON tokens.id = search_presets.token_id
+      WHERE search_presets.id = preset_id 
+        AND search_presets.user_id = auth.uid()
+        AND tokens.user_id = auth.uid()
+    )
   );
 
 DROP POLICY IF EXISTS "Users can update own preset shares" ON preset_shares;

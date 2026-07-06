@@ -238,7 +238,7 @@ export function usePartSearch() {
                 .from('preset_shares')
                 .select(`
                     id,
-                    preset:search_presets(id, name, user_profiles(email))
+                    preset:search_presets(id, name, token_id, user_profiles(email))
                 `)
                 .eq('shared_with', user.id)
                 .eq('is_active', true)
@@ -249,6 +249,7 @@ export function usePartSearch() {
                     if (!preset) return null
                     return {
                         id: `preset::${preset.id}`,
+                        originalTokenId: preset.token_id, // 保存原始的 Token ID，供匹配使用
                         name: `${preset.name} (预设限制使用)`,
                         token_value: '',
                         webhook_url: 'preset-webhook',
@@ -511,28 +512,41 @@ export function usePartSearch() {
             if (table && table.columns && table.columns.length > 0) {
                 newSelectedColumns[tableKey] = [] // 重置已选的搜索列，以清空步骤4
 
-                // 初始化列配置（如果不存在）
+                 // 初始化列配置（如果不存在）
                 if (!nextConfigs[tableKey] || nextConfigs[tableKey].length === 0) {
-                    nextConfigs[tableKey] = table.columns.map(col => ({
-                        name: col.name,
-                        fetch: true // 默认获取
-                    }))
+                    nextConfigs[tableKey] = table.columns.map(col => {
+                        const colName = typeof col === 'string' ? col : col.name
+                        return {
+                            name: colName,
+                            fetch: true // 默认获取
+                        }
+                    })
                     configsChanged = true
                 } else {
                     // 如果已存在，检查是否有新列需要添加
                     const existingNames = new Set(nextConfigs[tableKey].map(c => c.name))
-                    const newCols = table.columns.filter(c => !existingNames.has(c.name))
+                    const newCols = table.columns.filter(c => {
+                        const colName = typeof c === 'string' ? c : c.name
+                        return !existingNames.has(colName)
+                    })
                     if (newCols.length > 0) {
                         nextConfigs[tableKey] = [
                             ...nextConfigs[tableKey],
-                            ...newCols.map(c => ({ name: c.name, fetch: true }))
+                            ...newCols.map(c => {
+                                const colName = typeof c === 'string' ? c : c.name
+                                return { name: colName, fetch: true }
+                            })
                         ]
                         configsChanged = true
                     }
                 }
 
                 // 根据 nextConfigs[tableKey] 的顺序对 columns 进行排序并存入 newColumnsData
-                const colMap = new Map(table.columns.map(c => [c.name, c]))
+                const colMap = new Map(table.columns.map(c => {
+                    const colName = typeof c === 'string' ? c : c.name
+                    const colObj = typeof c === 'string' ? { name: c, type: 'string' } : c
+                    return [colName, colObj]
+                }))
                 newColumnsData[tableKey] = nextConfigs[tableKey]
                     .map(cfg => colMap.get(cfg.name))
                     .filter((c): c is WpsColumn => !!c)

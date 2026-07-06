@@ -7,5 +7,6 @@ export {
     searchBatch,
     setCellValue,
     setRangeValues,
-    updateRow
+    updateRow,
+    getGoogleSheetsCacheTime
 } from './googlesheets'

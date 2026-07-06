@@ -94,6 +94,14 @@ export default function PartSearchPage() {
     const [activePresetId, setActivePresetId] = useState<string | null>(null)
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
     const [editingPreset, setEditingPreset] = useState<SearchPreset | null>(null)
+
+    // 包装回调函数以清除当前预设的激活状态
+    const withResetPreset = useCallback(<T extends (...args: any[]) => any>(fn: T): T => {
+        return ((...args: any[]) => {
+            setActivePresetId(null)
+            return fn(...args)
+        }) as T
+    }, [])
     const [forceCollapsedCounter, setForceCollapsedCounter] = useState(0)
     const [forceExpandedCounter, setForceExpandedCounter] = useState(0) // 步骤2展开
     const [step3ExpandedCounter, setStep3ExpandedCounter] = useState(0) // 步骤3展开
@@ -134,12 +142,20 @@ export default function PartSearchPage() {
             return { error: '请先选择 Token' }
         }
 
-        const tokenKeys = selectedTokens.map(t => `token::${t.id}`)
+        const tokenKeys = selectedTokens.map(t => {
+            const realId = (t && 'originalTokenId' in t) ? (t as any).originalTokenId : t.id
+            return `token::${realId}`
+        })
         const tableKeys = Array.from(selectedTableNames)
         const combinedTableNames = [...tokenKeys, ...tableKeys]
 
+        const primaryToken = selectedTokens[0]
+        const tokenId = (primaryToken && 'originalTokenId' in primaryToken)
+            ? (primaryToken as any).originalTokenId
+            : (primaryToken?.id || '')
+
         const result = await createPreset({
-            token_id: selectedTokens[0]?.id || '',
+            token_id: tokenId,
             name,
             selected_table_names: combinedTableNames,
             columns_data: columnsData as Record<string, unknown[]>,
@@ -162,7 +178,10 @@ export default function PartSearchPage() {
 
     // 更新预设配置（覆盖保存）
     const handleUpdatePresetConfig = useCallback(async (id: string) => {
-        const tokenKeys = selectedTokens.map(t => `token::${t.id}`)
+        const tokenKeys = selectedTokens.map(t => {
+            const realId = (t && 'originalTokenId' in t) ? (t as any).originalTokenId : t.id
+            return `token::${realId}`
+        })
         const tableKeys = Array.from(selectedTableNames)
         const combinedTableNames = [...tokenKeys, ...tableKeys]
 
@@ -405,13 +424,21 @@ export default function PartSearchPage() {
             savedTokenIds.push(preset.token_id)
         }
 
-        let matchedTokens = tokens.filter(t => savedTokenIds.includes(t.id))
+        let matchedTokens = tokens.filter(t => {
+            if (savedTokenIds.includes(t.id)) return true
+            // 如果是虚拟 Mock Token，检查其原始 Token ID 是否在保存的 ID 列表中
+            if (t.id.startsWith('preset::') && 'originalTokenId' in t) {
+                return savedTokenIds.includes((t as any).originalTokenId)
+            }
+            return false
+        })
         
-        // 如果是分享给当前用户的预设且原 Token 未在 Token 列表中，则生成一个虚拟 Mock Token
-        if (matchedTokens.length === 0 && preset.user_id !== currentUser?.id) {
+        // 如果原 Token 未在 Token 列表中 (说明使用的是他人的共享 Token)，则生成一个虚拟 Mock Token
+        if (matchedTokens.length === 0) {
             matchedTokens = [{
                 id: `preset::${preset.id}`,
-                name: `${preset.name} (共享预设)`,
+                originalTokenId: preset.token_id, // 保存原始的 Token ID，供以后保存/修改配置时使用
+                name: `${preset.name} (预设限制使用)`,
                 token_value: '', // 不暴露真实 Token 值
                 webhook_url: 'preset-webhook', // 哑 Webhook 占位
                 is_active: true,
@@ -428,11 +455,12 @@ export default function PartSearchPage() {
         let savedSelectedColumns = preset.selected_columns as Record<string, string[]>
         let savedColumnConfigs = preset.column_configs as Record<string, any[]>
 
-        // 如果是他人分享的预设，将表名主键映射到虚拟预设 Token ID
-        if (preset.user_id !== currentUser?.id) {
+        // 如果是使用虚拟预设 Token ID，将表名主键映射到虚拟预设 Token ID
+        const targetToken = matchedTokens[0]
+        if (targetToken && targetToken.id.startsWith('preset::')) {
             const mapKey = (key: string) => {
                 const { tableName } = parseTableKey(key)
-                return `preset::${preset.id}::${tableName}`
+                return `${targetToken.id}::${tableName}`
             }
 
             savedTableNames = savedTableNames.map(mapKey)
@@ -532,9 +560,9 @@ export default function PartSearchPage() {
                     tokens={tokens}
                     selectedTokens={selectedTokens}
                     isLoading={isLoadingTokens}
-                    onToggle={toggleToken}
-                    onSelectAll={selectAllTokens}
-                    onDeselectAll={deselectAllTokens}
+                    onToggle={withResetPreset(toggleToken)}
+                    onSelectAll={withResetPreset(selectAllTokens)}
+                    onDeselectAll={withResetPreset(deselectAllTokens)}
                     forceCollapsed={forceCollapsedCounter}
                 />
 
@@ -545,9 +573,9 @@ export default function PartSearchPage() {
                         selectedTableNames={selectedTableNames}
                         isLoading={isLoadingTables}
                         error={tablesError}
-                        onToggle={toggleTable}
-                        onSelectAll={selectAllTables}
-                        onDeselectAll={deselectAllTables}
+                        onToggle={withResetPreset(toggleTable)}
+                        onSelectAll={withResetPreset(selectAllTables)}
+                        onDeselectAll={withResetPreset(deselectAllTables)}
                         onLoadColumns={loadColumnsForSelected}
                         columnsData={columnsData}
                         forceCollapsed={forceCollapsedCounter}
@@ -564,8 +592,9 @@ export default function PartSearchPage() {
                         selectedColumns={selectedColumns}
                         columnConfigs={columnConfigs}
                         selectedTokens={selectedTokens}
-                        onToggle={toggleColumn}
+                        onToggle={withResetPreset(toggleColumn)}
                         onConfigChange={(tableKey, newConfig) => {
+                            setActivePresetId(null)
                             setColumnConfigs(prev => ({
                                 ...prev,
                                 [tableKey]: newConfig
@@ -584,12 +613,12 @@ export default function PartSearchPage() {
                                 }
                             })
                         }}
-                        onSelectAll={selectAllColumns}
-                        onDeselectAll={deselectAllColumns}
-                        onFetchAll={fetchAllColumns}
-                        onUnfetchAll={unfetchAllColumns}
-                        onDuplicate={duplicateTable}
-                        onRemove={removeTableCopy}
+                        onSelectAll={withResetPreset(selectAllColumns)}
+                        onDeselectAll={withResetPreset(deselectAllColumns)}
+                        onFetchAll={withResetPreset(fetchAllColumns)}
+                        onUnfetchAll={withResetPreset(unfetchAllColumns)}
+                        onDuplicate={withResetPreset(duplicateTable)}
+                        onRemove={withResetPreset(removeTableCopy)}
                         forceCollapsed={forceCollapsedCounter}
                         forceExpanded={step3ExpandedCounter}
                     />
@@ -654,7 +683,7 @@ export default function PartSearchPage() {
                 onUpdateConfig={handleUpdatePresetConfig}
                 onUpdateName={handleUpdatePresetName}
                 editingPreset={editingPreset}
-                existingPresets={presets}
+                existingPresets={presets.filter(p => p.user_id === currentUser?.id)}
                 selectedTablesCount={selectedTablesCount}
                 selectedColumnsCount={selectedColumnsCount}
             />

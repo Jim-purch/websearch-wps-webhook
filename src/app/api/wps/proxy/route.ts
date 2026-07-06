@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { WpsLogger } from '@/lib/wps-logger'
-import { handleGoogleSheetsAction } from '@/lib/googlesheets'
+import { handleGoogleSheetsAction, getGoogleSheetsCacheTime } from '@/lib/googlesheets'
 import { parseWpsResponse } from '@/lib/wps/parser'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
@@ -60,6 +60,25 @@ export async function POST(request: NextRequest) {
                 const columnConfigs = (presetData.column_configs as Record<string, any>) || {}
                 const selectedTableNames = Array.isArray(presetData.selected_table_names) ? presetData.selected_table_names : []
                 
+                // 为了获取 Google Sheets 的缓存时间，我们需要拉取关联的 token 信息
+                let isGoogleSheets = false
+                let spreadsheetId = ''
+                
+                const adminSupabase = createSupabaseClient(
+                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    process.env.SUPABASE_SERVICE_ROLE_KEY!
+                )
+                const { data: tokenData } = await adminSupabase
+                    .from('tokens')
+                    .select('webhook_url')
+                    .eq('id', presetData.token_id)
+                    .single()
+                
+                if (tokenData && tokenData.webhook_url?.startsWith('gsheet://')) {
+                    isGoogleSheets = true
+                    spreadsheetId = tokenData.webhook_url.replace('gsheet://', '').trim()
+                }
+
                 const tables: any[] = []
                 for (const fullTableKey of Object.keys(columnsData)) {
                     if (!selectedTableNames.includes(fullTableKey)) continue
@@ -70,10 +89,16 @@ export async function POST(request: NextRequest) {
                     const configs = columnConfigs[fullTableKey] || []
                     const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
                     
-                    tables.push({
+                    const tableObj: any = {
                         name: tableName,
                         columns: allowedCols.length > 0 ? allowedCols : (columnsData[fullTableKey] || []).map((c: any) => typeof c === 'string' ? c : c.name)
-                    })
+                    }
+
+                    if (isGoogleSheets && spreadsheetId) {
+                        tableObj.cacheTime = getGoogleSheetsCacheTime(spreadsheetId, tableName)
+                    }
+
+                    tables.push(tableObj)
                 }
                 
                 return NextResponse.json({
@@ -94,9 +119,29 @@ export async function POST(request: NextRequest) {
                     return name === sheetName
                 })
                 if (matchedKey) {
-                    if (matchedKey.includes('::') && !matchedKey.startsWith('preset::')) {
-                        const index = matchedKey.indexOf('::')
-                        targetTokenId = matchedKey.slice(0, index)
+                    if (matchedKey.includes('::')) {
+                        if (matchedKey.startsWith('preset::')) {
+                            const adminSupabase = createSupabaseClient(
+                                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                                process.env.SUPABASE_SERVICE_ROLE_KEY!
+                            )
+                            const remaining = matchedKey.slice(8)
+                            const index = remaining.indexOf('::')
+                            const refPresetId = index !== -1 ? remaining.slice(0, index) : remaining
+                            
+                            const { data: refPreset } = await adminSupabase
+                                .from('search_presets')
+                                .select('token_id')
+                                .eq('id', refPresetId)
+                                .single()
+                            
+                            if (refPreset?.token_id) {
+                                targetTokenId = refPreset.token_id
+                            }
+                        } else {
+                            const index = matchedKey.indexOf('::')
+                            targetTokenId = matchedKey.slice(0, index)
+                        }
                     }
                 }
             }

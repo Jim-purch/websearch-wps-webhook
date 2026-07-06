@@ -298,6 +298,18 @@ class GoogleSheetsCacheManager {
 
 // 全局内存缓存
 const googleSheetsCache = new GoogleSheetsCacheManager()
+
+/**
+ * 获取 Google Sheets 数据表当前在服务端的缓存时间
+ */
+export function getGoogleSheetsCacheTime(spreadsheetId: string, sheetName: string): string | null {
+    const cachedKey = `${spreadsheetId}::'${sheetName}'`
+    const cached = googleSheetsCache.peek(cachedKey)
+    return cached
+        ? new Date(cached.cachedAt).toLocaleString('zh-CN', { hour12: false })
+        : null
+}
+
 // 正在进行中的请求缓存，防止并发冲突
 const activeFetches = new Map<string, Promise<string[][]>>()
 // 强制刷新最小间隔，防止高频刷新 (30秒)

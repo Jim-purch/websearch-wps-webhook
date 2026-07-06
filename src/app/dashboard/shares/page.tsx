@@ -91,7 +91,7 @@ export default function SharesPage() {
         }
     }, [activeTab, fetchPresetCreatedShares, fetchPresetReceivedShares, fetchPresets])
 
-    const ownPresets = presets.filter(p => p.user_id === currentUserId)
+    const ownPresets = presets.filter(p => p.user_id === currentUserId && tokens.some(t => t.id === p.token_id))
 
     const handleCreateTokenShare = async () => {
         if (!newShare.token_id) {
