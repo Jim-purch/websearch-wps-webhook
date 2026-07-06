@@ -2097,32 +2097,48 @@ export function usePartSearch() {
         setSearchError(null)
 
         try {
-            // 按表名和行号分组修改数据，以减少 API 调用次数（一行只调用一次 updateRow）
-            const groups: Record<string, Record<number, Record<string, any>>> = {}
+            // 按 tokenId, 表名和行号分组修改数据，以减少 API 调用次数（一行只调用一次 updateRow）
+            const groups: Record<string, Record<string, Record<number, Record<string, any>>>> = {}
+            const oldGroups: Record<string, Record<string, Record<number, Record<string, any>>>> = {} // 记录修改前的数据以用于操作历史日志
             
             for (const mod of modifications) {
                 if (!mod.rowNumber) {
                     throw new Error(`表格 "${mod.tableName}" 第 ${mod.rowIdx + 1} 行没有行号信息，无法保存到云端`)
                 }
-                if (!groups[mod.tableName]) {
-                    groups[mod.tableName] = {}
+                const tokenId = mod.tokenId || selectedToken?.id
+                if (!tokenId) {
+                    throw new Error(`修改的数据 "${mod.tableName}" 缺少归属 Token 信息`)
                 }
-                if (!groups[mod.tableName][mod.rowNumber]) {
-                    groups[mod.tableName][mod.rowNumber] = {}
+
+                if (!groups[tokenId]) {
+                    groups[tokenId] = {}
+                    oldGroups[tokenId] = {}
                 }
-                groups[mod.tableName][mod.rowNumber][mod.columnName] = mod.newValue
+                if (!groups[tokenId][mod.tableName]) {
+                    groups[tokenId][mod.tableName] = {}
+                    oldGroups[tokenId][mod.tableName] = {}
+                }
+                if (!groups[tokenId][mod.tableName][mod.rowNumber]) {
+                    groups[tokenId][mod.tableName][mod.rowNumber] = {}
+                    oldGroups[tokenId][mod.tableName][mod.rowNumber] = {}
+                }
+                groups[tokenId][mod.tableName][mod.rowNumber][mod.columnName] = mod.newValue
+                oldGroups[tokenId][mod.tableName][mod.rowNumber][mod.columnName] = mod.originalValue
             }
 
             // 导入 wps 客户端的 updateRow 方法
             const { updateRow: clientUpdateRow } = await import('@/lib/wps')
 
             const promises = []
-            for (const [tableName, rows] of Object.entries(groups)) {
-                for (const [rowNumberStr, rowData] of Object.entries(rows)) {
-                    const rowNumber = parseInt(rowNumberStr, 10)
-                    promises.push(
-                        clientUpdateRow(selectedToken.id, tableName, rowNumber, rowData)
-                    )
+            for (const [tokenId, tables] of Object.entries(groups)) {
+                for (const [tableName, rows] of Object.entries(tables)) {
+                    for (const [rowNumberStr, rowData] of Object.entries(rows)) {
+                        const rowNumber = parseInt(rowNumberStr, 10)
+                        const oldRowData = oldGroups[tokenId][tableName][rowNumber]
+                        promises.push(
+                            clientUpdateRow(tokenId, tableName, rowNumber, rowData, oldRowData)
+                        )
+                    }
                 }
             }
 
@@ -2168,6 +2184,7 @@ export function usePartSearch() {
 
         // 收集待删除行的绝对行号
         const rowNumbers: number[] = []
+        const oldRowsData: Record<string, any>[] = []
         for (const idx of rowIndices) {
             const record = result.records[idx]
             if (record) {
@@ -2176,6 +2193,7 @@ export function usePartSearch() {
                     throw new Error(`第 ${idx + 1} 行没有行号信息，无法删除`)
                 }
                 rowNumbers.push(rowNum)
+                oldRowsData.push(record)
             }
         }
 
@@ -2186,7 +2204,7 @@ export function usePartSearch() {
 
         try {
             const { deleteRows: clientDeleteRows } = await import('@/lib/wps')
-            const apiResult = await clientDeleteRows(result.tokenId || selectedToken?.id || '', sheetName, rowNumbers)
+            const apiResult = await clientDeleteRows(result.tokenId || selectedToken?.id || '', sheetName, rowNumbers, oldRowsData)
 
             if (!apiResult.success) {
                 throw new Error(apiResult.error || '删除行失败')

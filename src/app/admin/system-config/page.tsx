@@ -101,7 +101,7 @@ export default function SystemConfigPage() {
                 </div>
 
                 <p className="mb-6 text-sm text-[var(--text-muted)]">
-                    启用后，系统登录记录、搜索记录将自动写入指定的 WPS 智能表格。
+                    启用后，系统登录记录、搜索记录和单元格操作历史将自动写入指定的 WPS 智能表格。
                     请确保已在 WPS AirScript 中部署了对应的脚本。
                 </p>
 

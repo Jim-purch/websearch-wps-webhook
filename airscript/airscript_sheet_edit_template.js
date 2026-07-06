@@ -1111,6 +1111,10 @@ function smartAppend(baseName, rowData, rowLimit) {
             try {
                 sheet = workbook.Sheets.Item(sheetName)
             } catch (e) {
+                sheet = null
+            }
+
+            if (!sheet) {
                 if (currentIndex === 1) {
                     try {
                         sheet = workbook.Sheets.Add(null, workbook.Sheets.Item(workbook.Sheets.Count))

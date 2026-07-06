@@ -128,9 +128,74 @@ export async function POST(request: NextRequest) {
                 }
 
                 await WpsLogger.log('batch', logPayload)
+            } else if (action === 'updateRow') {
+                const { sheetName, rowIndex, rowData, oldRowData } = argv
+                const changedCols = Object.keys(rowData || {})
+                for (const col of changedCols) {
+                    const newValue = rowData[col]
+                    const oldValue = oldRowData ? oldRowData[col] : undefined
+
+                    // 只有当值实际发生改变时才记录操作历史
+                    if (String(newValue) !== String(oldValue ?? '')) {
+                        await WpsLogger.log('history', {
+                            '原纪录': String(oldValue ?? ''),
+                            '新纪录': String(newValue ?? ''),
+                            '表': tokenName,
+                            'sheet': sheetName || '未知',
+                            '行': rowIndex || '未知',
+                            '用户名': userName,
+                            '时间': timeStr,
+                            '操作行为': `修改单元格 [${col}]`
+                        })
+                    }
+                }
+            } else if (action === 'setCellValue') {
+                const { sheetName, cellAddress, value, oldValue } = argv
+                if (String(value) !== String(oldValue ?? '')) {
+                    await WpsLogger.log('history', {
+                        '原纪录': String(oldValue ?? ''),
+                        '新纪录': String(value ?? ''),
+                        '表': tokenName,
+                        'sheet': sheetName || '未知',
+                        '行': cellAddress || '未知',
+                        '用户名': userName,
+                        '时间': timeStr,
+                        '操作行为': '修改单元格'
+                    })
+                }
+            } else if (action === 'setRangeValues') {
+                const { sheetName, rangeAddress, values, oldValues } = argv
+                await WpsLogger.log('history', {
+                    '原纪录': oldValues ? JSON.stringify(oldValues) : '',
+                    '新纪录': values ? JSON.stringify(values) : '',
+                    '表': tokenName,
+                    'sheet': sheetName || '未知',
+                    '行': rangeAddress || '未知',
+                    '用户名': userName,
+                    '时间': timeStr,
+                    '操作行为': '批量修改单元格'
+                })
+            } else if (action === 'deleteRows') {
+                const { sheetName, rowNumbers, oldRowsData } = argv
+                const rows = Array.isArray(rowNumbers) ? rowNumbers : []
+                for (let i = 0; i < rows.length; i++) {
+                    const rowNum = rows[i]
+                    const oldRow = oldRowsData?.[i]
+                    const oldRowStr = oldRow ? JSON.stringify(oldRow) : ''
+                    await WpsLogger.log('history', {
+                        '原纪录': oldRowStr,
+                        '新纪录': '',
+                        '表': tokenName,
+                        'sheet': sheetName || '未知',
+                        '行': rowNum || '未知',
+                        '用户名': userName,
+                        '时间': timeStr,
+                        '操作行为': '删除行'
+                    })
+                }
             }
         } catch (logErr) {
-            console.error('WPS Search Log Error:', logErr)
+            console.error('WPS Log Error:', logErr)
             // 日志失败不影响主流程
         }
         // ==========================================

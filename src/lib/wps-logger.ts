@@ -25,7 +25,7 @@ export class WpsLogger {
         return data.value as WpsLoggerConfig
     }
 
-    static async log(type: 'login' | 'search' | 'batch', data: Record<string, any>) {
+    static async log(type: 'login' | 'search' | 'batch' | 'history', data: Record<string, any>) {
         const config = await this.getConfig()
         if (!config || !config.enabled || !config.webhookUrl) return
 
@@ -39,6 +39,9 @@ export class WpsLogger {
                 break
             case 'batch':
                 sheetBaseName = '批量搜索记录'
+                break
+            case 'history':
+                sheetBaseName = '操作历史'
                 break
         }
 

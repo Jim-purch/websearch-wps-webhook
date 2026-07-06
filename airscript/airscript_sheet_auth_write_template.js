@@ -813,6 +813,10 @@ function smartAppend(baseName, rowData, rowLimit) {
             try {
                 sheet = workbook.Sheets.Item(sheetName)
             } catch (e) {
+                sheet = null
+            }
+
+            if (!sheet) {
                 // 当前序号表不存在
                 if (currentIndex === 1) {
                     // 如果连-1都不存在，尝试创建

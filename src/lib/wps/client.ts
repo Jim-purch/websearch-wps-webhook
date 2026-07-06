@@ -319,13 +319,15 @@ export async function updateRow(
     tokenId: string,
     sheetName: string,
     rowIndex: number,
-    rowData: Record<string, any>
+    rowData: Record<string, any>,
+    oldRowData?: Record<string, any>
 ): Promise<ParsedWpsResult<WpsWriteResult>> {
     return await callWpsProxy<WpsWriteResult>(tokenId, {
         action: 'updateRow',
         sheetName,
         rowIndex,
-        rowData
+        rowData,
+        oldRowData
     })
 }
 
@@ -335,11 +337,13 @@ export async function updateRow(
 export async function deleteRows(
     tokenId: string,
     sheetName: string,
-    rowNumbers: number[]
+    rowNumbers: number[],
+    oldRowsData?: Record<string, any>[]
 ): Promise<ParsedWpsResult<{ sheetName: string; deletedCount: number; message: string }>> {
     return await callWpsProxy<{ sheetName: string; deletedCount: number; message: string }>(tokenId, {
         action: 'deleteRows',
         sheetName,
-        rowNumbers
+        rowNumbers,
+        oldRowsData
     })
 }
