@@ -501,45 +501,50 @@ export function usePartSearch() {
         const newColumnsData: Record<string, WpsColumn[]> = {}
         const newSelectedColumns: Record<string, string[]> = {}
 
-        setColumnConfigs(prevConfigs => {
-            const nextConfigs = { ...prevConfigs }
-            let hasChanges = false
+        const nextConfigs = { ...columnConfigs }
+        let configsChanged = false
 
-            for (const tableKey of selectedTableNames) {
-                const { tokenId, tableName } = parseTableKey(tableKey)
+        for (const tableKey of selectedTableNames) {
+            const { tokenId, tableName } = parseTableKey(tableKey)
 
-                const table = tables.find(t => t.name === tableName && (!tokenId || t.tokenId === tokenId))
-                if (table && table.columns && table.columns.length > 0) {
-                    newColumnsData[tableKey] = table.columns
-                    newSelectedColumns[tableKey] = [] // 重置已选的搜索列，以清空步骤4
+            const table = tables.find(t => t.name === tableName && (!tokenId || t.tokenId === tokenId))
+            if (table && table.columns && table.columns.length > 0) {
+                newSelectedColumns[tableKey] = [] // 重置已选的搜索列，以清空步骤4
 
-                    // 初始化列配置（如果不存在）
-                    if (!nextConfigs[tableKey] || nextConfigs[tableKey].length === 0) {
-                        nextConfigs[tableKey] = table.columns.map(col => ({
-                            name: col.name,
-                            fetch: true // 默认获取
-                        }))
-                        hasChanges = true
-                    } else {
-                        // 如果已存在，检查是否有新列需要添加
-                        const existingNames = new Set(nextConfigs[tableKey].map(c => c.name))
-                        const newCols = table.columns.filter(c => !existingNames.has(c.name))
-                        if (newCols.length > 0) {
-                            nextConfigs[tableKey] = [
-                                ...nextConfigs[tableKey],
-                                ...newCols.map(c => ({ name: c.name, fetch: true }))
-                            ]
-                            hasChanges = true
-                        }
+                // 初始化列配置（如果不存在）
+                if (!nextConfigs[tableKey] || nextConfigs[tableKey].length === 0) {
+                    nextConfigs[tableKey] = table.columns.map(col => ({
+                        name: col.name,
+                        fetch: true // 默认获取
+                    }))
+                    configsChanged = true
+                } else {
+                    // 如果已存在，检查是否有新列需要添加
+                    const existingNames = new Set(nextConfigs[tableKey].map(c => c.name))
+                    const newCols = table.columns.filter(c => !existingNames.has(c.name))
+                    if (newCols.length > 0) {
+                        nextConfigs[tableKey] = [
+                            ...nextConfigs[tableKey],
+                            ...newCols.map(c => ({ name: c.name, fetch: true }))
+                        ]
+                        configsChanged = true
                     }
                 }
-            }
-            return hasChanges ? nextConfigs : prevConfigs
-        })
 
+                // 根据 nextConfigs[tableKey] 的顺序对 columns 进行排序并存入 newColumnsData
+                const colMap = new Map(table.columns.map(c => [c.name, c]))
+                newColumnsData[tableKey] = nextConfigs[tableKey]
+                    .map(cfg => colMap.get(cfg.name))
+                    .filter((c): c is WpsColumn => !!c)
+            }
+        }
+
+        if (configsChanged) {
+            setColumnConfigs(nextConfigs)
+        }
         setColumnsData(newColumnsData)
         setSelectedColumns(newSelectedColumns)
-    }, [selectedTableNames, tables, refreshTokensCache])
+    }, [selectedTableNames, tables, refreshTokensCache, columnConfigs])
 
     // 切换列选择 (tableName 为 tableKey)
     const toggleColumn = useCallback((tableName: string, columnName: string) => {

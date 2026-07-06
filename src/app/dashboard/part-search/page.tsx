@@ -269,17 +269,28 @@ export default function PartSearchPage() {
 
             const savedConfigMap = new Map(savedConfigs.map(c => [c.name, c]))
             const savedColMap = new Map(savedCols.map(c => [c.name, c]))
+            const savedConfigNames = new Set(savedConfigs.map(c => c.name))
 
             const finalCols: WpsColumn[] = []
             const finalConfigs: { name: string; fetch: boolean; sameValue?: boolean }[] = []
 
-            // 1. 未改变的列，按保存的顺序排列
-            for (const sc of savedCols) {
-                const rc = remoteCols.find(r => r.name === sc.name)
+            // 1. 未改变的列，按保存配置的顺序排列以维持自定义排序
+            for (const cfg of savedConfigs) {
+                const rc = remoteCols.find(r => r.name === cfg.name)
                 if (rc) {
-                    finalCols.push(rc) // 使用最新的 remote 属性（如最新的 columnIndex 等）
-                    const savedCfg = savedConfigMap.get(sc.name)
-                    finalConfigs.push(savedCfg || { name: rc.name, fetch: true })
+                    finalCols.push(rc) // 使用最新的 remote 属性
+                    finalConfigs.push(cfg)
+                }
+            }
+
+            // 备选防御：如果在 savedCols 中有未定义在 savedConfigs 中的列，拼接到最后
+            for (const sc of savedCols) {
+                if (!savedConfigNames.has(sc.name)) {
+                    const rc = remoteCols.find(r => r.name === sc.name)
+                    if (rc) {
+                        finalCols.push(rc)
+                        finalConfigs.push({ name: rc.name, fetch: true })
+                    }
                 }
             }
 
@@ -559,6 +570,19 @@ export default function PartSearchPage() {
                                 ...prev,
                                 [tableKey]: newConfig
                             }))
+                            // 同时对 columnsData 对应表格的列进行重新排序，保持与配置的自定义顺序一致
+                            setColumnsData(prev => {
+                                const cols = prev[tableKey]
+                                if (!cols) return prev
+                                const colMap = new Map(cols.map(c => [c.name, c]))
+                                const sortedCols = newConfig
+                                    .map(cfg => colMap.get(cfg.name))
+                                    .filter((c): c is WpsColumn => !!c)
+                                return {
+                                    ...prev,
+                                    [tableKey]: sortedCols
+                                }
+                            })
                         }}
                         onSelectAll={selectAllColumns}
                         onDeselectAll={deselectAllColumns}
