@@ -51,10 +51,6 @@ export function TableSelector({
         return groups
     }, [tables])
 
-    const hasPresetRestrictedToken = useMemo(() => {
-        return Object.keys(tablesByToken).some(id => id.startsWith('preset::'))
-    }, [tablesByToken])
-
     // 当加载列信息后自动收起步骤2
     useEffect(() => {
         if (Object.keys(columnsData).length > 0) {
@@ -152,21 +148,16 @@ export function TableSelector({
                                                 {group.tables.map((table) => {
                                                     const tableKey = `${table.tokenId}::${table.name}`
                                                     const isSelected = selectedTableNames.has(tableKey)
-                                                    const isRestricted = table.tokenId?.startsWith('preset::')
                                                     return (
                                                         <button
                                                             key={tableKey}
                                                             type="button"
-                                                            disabled={isRestricted}
-                                                            onClick={isRestricted ? undefined : () => onToggle(tableKey)}
+                                                            onClick={() => onToggle(tableKey)}
                                                             className={`
-                                                                flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all
-                                                                ${isRestricted ? 'cursor-default opacity-85' : 'cursor-pointer'}
+                                                                flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all cursor-pointer
                                                                 ${isSelected
                                                                     ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)] text-[#eab308]'
-                                                                    : isRestricted
-                                                                        ? 'border-[var(--border)] text-[var(--text-muted)]'
-                                                                        : 'border-[var(--border)] hover:border-[#667eea]'
+                                                                    : 'border-[var(--border)] hover:border-[#667eea]'
                                                                 }
                                                             `}
                                                         >
@@ -204,7 +195,6 @@ export function TableSelector({
                                 <button
                                     type="button"
                                     onClick={onSelectAll}
-                                    disabled={hasPresetRestrictedToken}
                                     className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全选
@@ -212,7 +202,6 @@ export function TableSelector({
                                 <button
                                     type="button"
                                     onClick={onDeselectAll}
-                                    disabled={hasPresetRestrictedToken}
                                     className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全不选

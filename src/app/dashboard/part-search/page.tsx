@@ -232,9 +232,11 @@ export default function PartSearchPage() {
             savedTokenIds.push(preset.token_id)
         }
 
-        // 检查 preset 对应的全部 Token 表是否已加载完成
+        // 检查 preset 对应的全部 Token 表是否已加载完成 (兼容虚拟 Mock Token 的 ID)
         const loadedTokenIds = new Set(tables.map(t => t.tokenId).filter(Boolean))
-        const allTokensLoaded = savedTokenIds.every(id => loadedTokenIds.has(id))
+        const allTokensLoaded = savedTokenIds.every(id => 
+            loadedTokenIds.has(id) || loadedTokenIds.has(`preset::${preset.id}`)
+        )
 
         if (!allTokensLoaded) {
             return
@@ -246,9 +248,12 @@ export default function PartSearchPage() {
         const newColumnConfigs: Record<string, { name: string; fetch: boolean; sameValue?: boolean }[]> = {}
         const newSelectedColumns: Record<string, string[]> = {}
 
-        const isShared = preset.user_id !== currentUser?.id
+        const targetToken = selectedTokens.find(t => 
+            savedTokenIds.includes(t.id) || t.id === `preset::${preset.id}`
+        )
+        const usePresetPrefix = targetToken?.id.startsWith('preset::') || false
         const mapKey = (key: string) => {
-            if (!isShared) return key
+            if (!usePresetPrefix) return key
             const { tableName } = parseTableKey(key)
             return `preset::${preset.id}::${tableName}`
         }
@@ -279,7 +284,7 @@ export default function PartSearchPage() {
             }
 
             const remoteCols = remoteTable.columns
-            const originalTableKey = isShared 
+            const originalTableKey = usePresetPrefix 
                 ? Object.keys(preset.columns_data).find(k => parseTableKey(k).tableName === tableName) || tableKey 
                 : tableKey
             const savedCols = (preset.columns_data[originalTableKey] || []) as WpsColumn[]
@@ -287,7 +292,10 @@ export default function PartSearchPage() {
             const savedSelected = preset.selected_columns[originalTableKey] || []
 
             const savedConfigMap = new Map(savedConfigs.map(c => [c.name, c]))
-            const savedColMap = new Map(savedCols.map(c => [c.name, c]))
+            const savedColMap = new Map(savedCols.map(c => {
+                const scName = typeof c === 'string' ? c : c.name
+                return [scName, c]
+            }))
             const savedConfigNames = new Set(savedConfigs.map(c => c.name))
 
             const finalCols: WpsColumn[] = []
@@ -295,27 +303,34 @@ export default function PartSearchPage() {
 
             // 1. 未改变的列，按保存配置的顺序排列以维持自定义排序
             for (const cfg of savedConfigs) {
-                const rc = remoteCols.find(r => r.name === cfg.name)
+                const rc = remoteCols.find(r => (typeof r === 'string' ? r : r.name) === cfg.name)
                 if (rc) {
-                    finalCols.push(rc) // 使用最新的 remote 属性
+                    finalCols.push(typeof rc === 'string' ? { name: rc } : rc) // 确保推入的是 WpsColumn 对象结构
                     finalConfigs.push(cfg)
                 }
             }
 
             // 备选防御：如果在 savedCols 中有未定义在 savedConfigs 中的列，拼接到最后
             for (const sc of savedCols) {
-                if (!savedConfigNames.has(sc.name)) {
-                    const rc = remoteCols.find(r => r.name === sc.name)
+                const scName = typeof sc === 'string' ? sc : sc.name
+                if (!savedConfigNames.has(scName)) {
+                    const rc = remoteCols.find(r => (typeof r === 'string' ? r : r.name) === scName)
                     if (rc) {
-                        finalCols.push(rc)
-                        finalConfigs.push({ name: rc.name, fetch: true })
+                        finalCols.push(typeof rc === 'string' ? { name: rc } : rc)
+                        finalConfigs.push({ name: scName, fetch: true })
                     }
                 }
             }
 
             // 2. 匹配名字发生修改的列及新增的列
-            const remoteUnmatched = remoteCols.filter(rc => !savedColMap.has(rc.name))
-            const savedUnmatched = savedCols.filter(sc => !remoteCols.some(rc => rc.name === sc.name))
+            const remoteUnmatched = remoteCols.filter(rc => {
+                const rcName = typeof rc === 'string' ? rc : rc.name
+                return !savedColMap.has(rcName)
+            })
+            const savedUnmatched = savedCols.filter(sc => {
+                const scName = typeof sc === 'string' ? sc : sc.name
+                return !remoteCols.some(rc => (typeof rc === 'string' ? rc : rc.name) === scName)
+            })
 
             const modifiedCols: WpsColumn[] = []
             const modifiedConfigs: { name: string; fetch: boolean; sameValue?: boolean }[] = []
@@ -323,25 +338,32 @@ export default function PartSearchPage() {
             const newConfigs: { name: string; fetch: boolean; sameValue?: boolean }[] = []
 
             for (const rc of remoteUnmatched) {
+                const rcName = typeof rc === 'string' ? rc : rc.name
+                const rcIndex = typeof rc === 'string' ? undefined : rc.columnIndex
+
                 // 如果在 savedUnmatched 里有相同 columnIndex 且被移除的列，判定为修改列名
-                const matchedSaved = savedUnmatched.find(sc => sc.columnIndex === rc.columnIndex)
+                const matchedSaved = rcIndex !== undefined 
+                    ? savedUnmatched.find(sc => (typeof sc === 'string' ? undefined : sc.columnIndex) === rcIndex)
+                    : undefined
+
                 if (matchedSaved) {
-                    modifiedCols.push(rc)
-                    const oldCfg = savedConfigMap.get(matchedSaved.name)
+                    const scName = typeof matchedSaved === 'string' ? matchedSaved : matchedSaved.name
+                    modifiedCols.push(typeof rc === 'string' ? { name: rc } : rc)
+                    const oldCfg = savedConfigMap.get(scName)
                     modifiedConfigs.push({
-                        name: rc.name,
+                        name: rcName,
                         fetch: oldCfg ? oldCfg.fetch : true,
                         sameValue: oldCfg?.sameValue
                     })
-                    renamedColNames.push(`${matchedSaved.name} → ${rc.name}`)
+                    renamedColNames.push(`${scName} → ${rcName}`)
                 } else {
                     // 否则为新增的列
-                    newCols.push(rc)
+                    newCols.push(typeof rc === 'string' ? { name: rc } : rc)
                     newConfigs.push({
-                        name: rc.name,
+                        name: rcName,
                         fetch: true // 默认选中显示
                     })
-                    addedColNames.push(rc.name)
+                    addedColNames.push(rcName)
                 }
             }
 
@@ -356,14 +378,17 @@ export default function PartSearchPage() {
             // 同步已选的搜索列名称
             const finalSelectedCols: string[] = []
             for (const name of savedSelected) {
-                if (remoteCols.some(rc => rc.name === name)) {
+                if (remoteCols.some(rc => (typeof rc === 'string' ? rc : rc.name) === name)) {
                     finalSelectedCols.push(name)
                 } else {
-                    const sc = savedCols.find(c => c.name === name)
+                    const sc = savedCols.find(c => (typeof c === 'string' ? c : c.name) === name)
                     if (sc) {
-                        const renamedTo = remoteUnmatched.find(rc => rc.columnIndex === sc.columnIndex)
+                        const scIndex = typeof sc === 'string' ? undefined : sc.columnIndex
+                        const renamedTo = scIndex !== undefined
+                            ? remoteUnmatched.find(rc => (typeof rc === 'string' ? undefined : rc.columnIndex) === scIndex)
+                            : undefined
                         if (renamedTo) {
-                            finalSelectedCols.push(renamedTo.name)
+                            finalSelectedCols.push(typeof renamedTo === 'string' ? renamedTo : renamedTo.name)
                         }
                     }
                 }
@@ -393,7 +418,7 @@ export default function PartSearchPage() {
         }
 
         setPendingSyncPresetId(null)
-    }, [pendingSyncPresetId, isLoadingTables, tables, presets, setColumnsData, setColumnConfigs, setSelectedColumns])
+    }, [pendingSyncPresetId, isLoadingTables, tables, presets, selectedTokens, setColumnsData, setColumnConfigs, setSelectedColumns])
 
     // 加载预设（支持切换取消）
     const handleLoadPreset = useCallback((preset: SearchPreset) => {
@@ -426,10 +451,8 @@ export default function PartSearchPage() {
 
         let matchedTokens = tokens.filter(t => {
             if (savedTokenIds.includes(t.id)) return true
-            // 如果是虚拟 Mock Token，检查其原始 Token ID 是否在保存的 ID 列表中
-            if (t.id.startsWith('preset::') && 'originalTokenId' in t) {
-                return savedTokenIds.includes((t as any).originalTokenId)
-            }
+            // 如果是虚拟 Mock Token，只匹配当前预设对应的虚拟 Token，避免匹配到其他使用相同 Token ID 的预设
+            if (t.id === `preset::${preset.id}`) return true
             return false
         })
         
