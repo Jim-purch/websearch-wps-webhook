@@ -71,13 +71,13 @@ export function TokenSelector({
                         </p>
                     ) : (
                         <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 mb-3">
                                 {tokens.map((token) => {
                                     const isSelected = selectedIds.has(token.id)
                                     const isGSheet = token.webhook_url?.startsWith('gsheet://')
                                     const typeIcon = token._isShared ? '📥' : (isGSheet ? '📗' : '🔑')
                                     const typeSuffix = isGSheet ? ' [Google Sheets]' : ''
-                                    
+
                                     return (
                                         <button
                                             key={token.id}
@@ -103,9 +103,8 @@ export function TokenSelector({
                                                     <span className="truncate">{token.name}</span>
                                                 </div>
                                                 <div className="text-xs text-[var(--text-muted)] truncate mt-0.5">
-                                                    {isGSheet ? 'Google Sheets' : 'WPS 表格'}
-                                                    {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
-                                                    {!token._isShared && token.description && ` - ${token.description}`}
+                                                    {token._isShared && token._sharerEmail && `(来自${token._sharerEmail})`}
+                                                    {!token._isShared && token.description && `${token.description}`}
                                                 </div>
                                             </div>
                                         </button>
