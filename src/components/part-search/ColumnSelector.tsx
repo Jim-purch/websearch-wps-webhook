@@ -40,6 +40,7 @@ export function ColumnSelector({
     forceExpanded
 }: ColumnSelectorProps) {
     const [isOpen, setIsOpen] = useState(true)
+    const [showUnfetched, setShowUnfetched] = useState(false)
     const tableKeys = Object.keys(columnsData)
     const [draggedItem, setDraggedItem] = useState<{ tableName: string, index: number } | null>(null)
 
@@ -89,11 +90,17 @@ export function ColumnSelector({
         const currentConfig = columnConfigs[tableName]
         if (!currentConfig) return
 
-        const newConfig = [...currentConfig]
+        let newConfig = [...currentConfig]
         newConfig[configIndex] = {
             ...newConfig[configIndex],
             fetch: !newConfig[configIndex].fetch
         }
+
+        // 自动将“不获取”的搜索字段放到最后，同时保持各自内部的相对顺序
+        const fetchTrue = newConfig.filter(item => item.fetch)
+        const fetchFalse = newConfig.filter(item => !item.fetch)
+        newConfig = [...fetchTrue, ...fetchFalse]
+
         onConfigChange(tableName, newConfig)
     }
 
@@ -158,6 +165,20 @@ export function ColumnSelector({
                     <span className="text-xs text-[var(--text-muted)]">
                         拖动列名排序 | 右侧开关控制获取 | 🔗 同值开启后支持批量/联合查同一个值
                     </span>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setShowUnfetched(!showUnfetched)
+                        }}
+                        className={`text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1 ${
+                            showUnfetched
+                                ? 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/40 hover:bg-[#eab308]/30'
+                                : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-transparent hover:bg-[var(--text-muted)]/20'
+                        }`}
+                    >
+                        {showUnfetched ? '👁️ 已显示不获取' : '👁️‍🗨️ 已隐藏不获取'}
+                    </button>
                 </div>
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                     ▼
@@ -200,6 +221,9 @@ export function ColumnSelector({
                                         const { tokenId } = parseTableKey(tableKey)
                                         const isShared = tokenId.startsWith('preset::')
                                         if (isShared && !colConfig.fetch) return null
+
+                                        // 若设为“隐藏不获取”，则过滤掉 fetch 为 false 的列
+                                        if (!showUnfetched && !colConfig.fetch) return null
 
                                         const isSelected = selected.includes(colConfig.name)
                                         const uniqueKey = `${tableKey}-${colConfig.name}`
