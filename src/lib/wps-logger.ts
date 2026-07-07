@@ -1,4 +1,5 @@
 import { createClient } from './supabase/server'
+import { WpsQueueManager } from './wps/queue'
 
 export interface WpsLoggerConfig {
     airScriptToken: string
@@ -57,14 +58,16 @@ export class WpsLogger {
         }
 
         try {
-            const response = await fetch(config.webhookUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'AirScript-Token': config.airScriptToken
-                },
-                body: JSON.stringify(payload)
-            })
+            const response = await WpsQueueManager.enqueue(config.webhookUrl, () =>
+                fetch(config.webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'AirScript-Token': config.airScriptToken
+                    },
+                    body: JSON.stringify(payload)
+                })
+            )
 
             if (!response.ok) {
                 console.error('Failed to send log to WPS:', await response.text())

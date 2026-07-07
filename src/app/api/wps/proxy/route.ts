@@ -4,6 +4,8 @@ import { WpsLogger } from '@/lib/wps-logger'
 import { handleGoogleSheetsAction, getGoogleSheetsCacheTime } from '@/lib/googlesheets'
 import { parseWpsResponse } from '@/lib/wps/parser'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { WpsQueueManager } from '@/lib/wps/queue'
+import crypto from 'crypto'
 
 /**
  * WPS Webhook 代理 API
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
                 const columnConfigs = (presetData.column_configs as Record<string, any>) || {}
                 const selectedTableNames = Array.isArray(presetData.selected_table_names) ? presetData.selected_table_names : []
                 
-                // 为了获取 Google Sheets 的缓存时间，我们需要拉取关联的 token 信息
+                // 为了获取 Google Sheets 的缓存时间，我们需要拉取关联 of token 信息
                 let isGoogleSheets = false
                 let spreadsheetId = ''
                 
@@ -79,19 +81,57 @@ export async function POST(request: NextRequest) {
                     spreadsheetId = tokenData.webhook_url.replace('gsheet://', '').trim()
                 }
 
+                // 收集所有关联的原始 Token ID 并批量查出对应的 Webhook
+                const uniqueTokenIds = new Set<string>()
+                for (const fullTableKey of Object.keys(columnsData)) {
+                    if (!selectedTableNames.includes(fullTableKey)) continue
+                    let targetTokenId = presetData.token_id
+                    if (fullTableKey.includes('::')) {
+                        if (!fullTableKey.startsWith('preset::')) {
+                            const index = fullTableKey.indexOf('::')
+                            targetTokenId = fullTableKey.slice(0, index)
+                        }
+                    }
+                    uniqueTokenIds.add(targetTokenId)
+                }
+
+                const { data: tokensList } = await adminSupabase
+                    .from('tokens')
+                    .select('id, webhook_url')
+                    .in('id', Array.from(uniqueTokenIds))
+
+                const tokenUrlMap: Record<string, string> = {}
+                if (tokensList) {
+                    for (const t of tokensList) {
+                        tokenUrlMap[t.id] = t.webhook_url || ''
+                    }
+                }
+
                 const tables: any[] = []
                 for (const fullTableKey of Object.keys(columnsData)) {
                     if (!selectedTableNames.includes(fullTableKey)) continue
                     
                     const tableName = extractTableName(fullTableKey)
                     if (tableName === '') continue
+
+                    // 确定该数据表的队列唯一标识 (哈希值)
+                    let targetTokenId = presetData.token_id
+                    if (fullTableKey.includes('::')) {
+                        if (!fullTableKey.startsWith('preset::')) {
+                            const index = fullTableKey.indexOf('::')
+                            targetTokenId = fullTableKey.slice(0, index)
+                        }
+                    }
+                    const url = tokenUrlMap[targetTokenId] || ''
+                    const queueKey = url ? crypto.createHash('sha256').update(url).digest('hex') : targetTokenId
                     
                     const configs = columnConfigs[fullTableKey] || []
                     const allowedCols = configs.filter((c: any) => c.fetch).map((c: any) => c.name)
                     
                     const tableObj: any = {
                         name: tableName,
-                        columns: allowedCols.length > 0 ? allowedCols : (columnsData[fullTableKey] || []).map((c: any) => typeof c === 'string' ? c : c.name)
+                        columns: allowedCols.length > 0 ? allowedCols : (columnsData[fullTableKey] || []).map((c: any) => typeof c === 'string' ? c : c.name),
+                        webhookQueueKey: queueKey
                     }
 
                     if (isGoogleSheets && spreadsheetId) {
@@ -486,16 +526,18 @@ export async function POST(request: NextRequest) {
         }
 
         // WPS 模式
-        const wpsResponse = await fetch(token.webhook_url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'AirScript-Token': token.token_value
-            },
-            body: JSON.stringify({
-                Context: { argv }
+        const wpsResponse = await WpsQueueManager.enqueue(token.webhook_url, () =>
+            fetch(token.webhook_url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'AirScript-Token': token.token_value
+                },
+                body: JSON.stringify({
+                    Context: { argv }
+                })
             })
-        })
+        )
 
         if (!wpsResponse.ok) {
             return NextResponse.json(
@@ -512,6 +554,20 @@ export async function POST(request: NextRequest) {
         let finalWpsData = wpsData
         if (presetFilter) {
             finalWpsData = filterWpsResponse(argv.action, wpsData, presetFilter)
+        } else if (argv.action === 'getAll') {
+            const parsed = parseWpsResponse<any>(wpsData)
+            if (parsed.success && parsed.data) {
+                const tables = parsed.data.tables || parsed.data.sheets || []
+                const queueKey = crypto.createHash('sha256').update(token.webhook_url).digest('hex')
+                for (const t of tables) {
+                    t.webhookQueueKey = queueKey
+                }
+                finalWpsData = {
+                    data: {
+                        result: JSON.stringify(parsed.data)
+                    }
+                }
+            }
         }
 
         return NextResponse.json(finalWpsData)
@@ -601,18 +657,7 @@ function filterResponseData(action: string, data: any, presetFilter: any) {
 
         let filteredRecords = data.records || []
         if (Array.isArray(data.records)) {
-            filteredRecords = data.records.map((record: any) => {
-                const filteredRecord: Record<string, any> = {}
-                for (const col of allowedCols) {
-                    if (col in record) {
-                        filteredRecord[col] = record[col]
-                    }
-                }
-                if ('_rowNumber' in record) filteredRecord['_rowNumber'] = record['_rowNumber']
-                if ('rowNumber' in record) filteredRecord['rowNumber'] = record['rowNumber']
-                if ('id' in record) filteredRecord['id'] = record['id']
-                return filteredRecord
-            })
+            filteredRecords = data.records.map((record: Record<string, unknown>) => filterSingleRecord(record, allowedCols))
         }
         return {
             ...data,
@@ -627,18 +672,7 @@ function filterResponseData(action: string, data: any, presetFilter: any) {
         if (Array.isArray(data.results)) {
             filteredResults = data.results.map((res: any) => {
                 if (Array.isArray(res.records)) {
-                    const filteredRecords = res.records.map((record: any) => {
-                        const filteredRecord: Record<string, any> = {}
-                        for (const col of allowedCols) {
-                            if (col in record) {
-                                filteredRecord[col] = record[col]
-                            }
-                        }
-                        if ('_rowNumber' in record) filteredRecord['_rowNumber'] = record['_rowNumber']
-                        if ('rowNumber' in record) filteredRecord['rowNumber'] = record['rowNumber']
-                        if ('id' in record) filteredRecord['id'] = record['id']
-                        return filteredRecord
-                    })
+                    const filteredRecords = res.records.map((record: Record<string, unknown>) => filterSingleRecord(record, allowedCols))
                     return { ...res, records: filteredRecords }
                 }
                 return res
@@ -651,6 +685,41 @@ function filterResponseData(action: string, data: any, presetFilter: any) {
     }
 
     return data
+}
+
+/**
+ * 过滤单条记录的字段（自动兼容多维表格 fields 嵌套及普通表格扁平结构）
+ */
+function filterSingleRecord(
+    record: Record<string, unknown> | null | undefined,
+    allowedCols: string[]
+): Record<string, unknown> | null | undefined {
+    if (!record) return record
+
+    const hasFields = !!(record.fields && typeof record.fields === 'object')
+    const targetSource = hasFields 
+        ? (record.fields as Record<string, unknown>) 
+        : record
+
+    const filteredSource: Record<string, unknown> = {}
+    for (const col of allowedCols) {
+        if (targetSource && col in targetSource) {
+            filteredSource[col] = targetSource[col]
+        }
+    }
+
+    if (hasFields) {
+        return {
+            ...record,
+            fields: filteredSource
+        }
+    } else {
+        const result: Record<string, unknown> = { ...filteredSource }
+        if ('_rowNumber' in record) result['_rowNumber'] = record['_rowNumber']
+        if ('rowNumber' in record) result['rowNumber'] = record['rowNumber']
+        if ('id' in record) result['id'] = record['id']
+        return result
+    }
 }
 
 /**

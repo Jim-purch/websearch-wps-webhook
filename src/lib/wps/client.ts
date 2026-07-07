@@ -25,6 +25,7 @@ export interface WpsTable {
     tokenName?: string
     cacheTime?: string | null
     isGoogleSheets?: boolean
+    webhookQueueKey?: string
 }
 
 export interface WpsGetAllResult {

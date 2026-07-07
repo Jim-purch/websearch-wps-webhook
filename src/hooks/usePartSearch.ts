@@ -338,7 +338,8 @@ export function usePartSearch() {
                         tokenId: res.tokenId,
                         tokenName: res.tokenName,
                         isGoogleSheets: isGsheet,
-                        cacheTime: table.cacheTime || null
+                        cacheTime: table.cacheTime || null,
+                        webhookQueueKey: table.webhookQueueKey || undefined
                     }))
                     allTables.push(...tablesWithToken)
                 } else {
@@ -725,22 +726,60 @@ export function usePartSearch() {
             })
             setSearchingTables(initialSearchingTables)
 
-            // 将待查询的 tableKey 按 tokenId 分组
-            const tableKeysByTokenId: Record<string, string[]> = {}
+            // 将待查询的 tableKey 按 webhookQueueKey（真实 Webhook URL 哈希值）进行聚类分组
+            const tableKeysByQueue: Record<string, string[]> = {}
+            const tableKeyToTokenId: Record<string, string> = {}
+
             for (const tableKey of allSearchTableKeys) {
                 const tableKeyWithoutCopy = tableKey.includes('__copy_')
                     ? tableKey.split('__copy_')[0]
                     : tableKey
-                const { tokenId } = parseTableKey(tableKeyWithoutCopy)
-                if (!tableKeysByTokenId[tokenId]) {
-                    tableKeysByTokenId[tokenId] = []
+                const { tokenId, tableName } = parseTableKey(tableKeyWithoutCopy)
+                
+                tableKeyToTokenId[tableKey] = tokenId
+
+                // 在 tables 状态中查找对应的 table 从而提取其 webhookQueueKey
+                const matchedTable = tables.find(t => t.tokenId === tokenId && t.name === tableName)
+                const queueKey = matchedTable?.webhookQueueKey || tokenId
+
+                if (!tableKeysByQueue[queueKey]) {
+                    tableKeysByQueue[queueKey] = []
                 }
-                tableKeysByTokenId[tokenId].push(tableKey)
+                tableKeysByQueue[queueKey].push(tableKey)
             }
 
-            // 不同 Token 之间并行查询
-            const tokenPromises = Object.entries(tableKeysByTokenId).map(async ([tokenId, keys]) => {
+            // 1. 获取所有查询的 Webhook 队列状态
+            const queries = allSearchTableKeys.map(key => {
+                const tableKeyWithoutCopy = key.includes('__copy_')
+                    ? key.split('__copy_')[0]
+                    : key
+                const { tokenId, tableName } = parseTableKey(tableKeyWithoutCopy)
+                return { tokenId, tableName }
+            })
+
+            let queueStatus: Record<string, { isIdle: boolean; activeCount: number; isGoogleSheets: boolean }> = {}
+            try {
+                const statusRes = await fetch('/api/wps/proxy/status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ queries })
+                })
+                if (statusRes.ok) {
+                    const data = await statusRes.json()
+                    if (data.success) {
+                        queueStatus = data.status
+                    }
+                }
+            } catch (err) {
+                console.error('获取队列状态失败:', err)
+            }
+
+            // 定义执行单个 Webhook 队列的搜索函数（同一个队列内串行）
+            const executeSearchForQueue = async (queueKey: string, keys: string[]) => {
                 for (const tableKey of keys) {
+                    const tokenId = tableKeyToTokenId[tableKey]
                     const tableKeyWithoutCopy = tableKey.includes('__copy_')
                         ? tableKey.split('__copy_')[0]
                         : tableKey
@@ -975,9 +1014,32 @@ export function usePartSearch() {
                         setSearchingTables(prev => prev.filter(name => name !== displayTableNameWithToken))
                     }
                 }
-            })
+            }
 
-            await Promise.all(tokenPromises)
+            // 根据真实 Webhook 队列状态将数据表队列进行分组为空闲（或 Google Sheets，无队列限制）和繁忙
+            const queueEntries = Object.entries(tableKeysByQueue)
+            const idleEntries: typeof queueEntries = []
+            const busyEntries: typeof queueEntries = []
+
+            for (const entry of queueEntries) {
+                const [queueKey] = entry
+                const status = queueStatus[queueKey]
+                // 默认将未获取到状态、Google Sheets 或处于 isIdle 的 Webhook 队列归为优先空闲组
+                const isIdle = !status || status.isGoogleSheets || status.isIdle
+                if (isIdle) {
+                    idleEntries.push(entry)
+                } else {
+                    busyEntries.push(entry)
+                }
+            }
+
+            // 1. 优先并行处理所有空闲 Webhook 相关的查询
+            const idlePromises = idleEntries.map(([queueKey, keys]) => executeSearchForQueue(queueKey, keys))
+            await Promise.all(idlePromises)
+
+            // 2. 空闲处理完成后，并行发起繁忙 Webhook 相关的查询
+            const busyPromises = busyEntries.map(([queueKey, keys]) => executeSearchForQueue(queueKey, keys))
+            await Promise.all(busyPromises)
         } catch (err) {
             setSearchError(err instanceof Error ? err.message : '搜索发生错误')
         } finally {
@@ -986,7 +1048,7 @@ export function usePartSearch() {
                 setSearchingTables([])
             }
         }
-    }, [selectedTokens, columnConfigs, selectedColumns])
+    }, [selectedTokens, columnConfigs, selectedColumns, tables])
 
     // 加载更多 WPS 搜索数据
     const loadMore = useCallback(async (resultIndex: number) => {
