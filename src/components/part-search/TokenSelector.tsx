@@ -71,7 +71,7 @@ export function TokenSelector({
                         </p>
                     ) : (
                         <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-3">
                                 {tokens.map((token) => {
                                     const isSelected = selectedIds.has(token.id)
                                     const isGSheet = token.webhook_url?.startsWith('gsheet://')
@@ -84,7 +84,7 @@ export function TokenSelector({
                                             type="button"
                                             onClick={() => onToggle(token.id)}
                                             className={`
-                                                flex items-start text-left gap-3 p-3 rounded-lg border text-sm transition-all
+                                                flex items-start text-left gap-2.5 p-2 rounded-md border text-xs transition-all
                                                 ${isSelected
                                                     ? 'border-[#eab308] bg-[rgba(234,179,8,0.1)] text-[var(--foreground)] shadow-sm'
                                                     : 'border-[var(--border)] hover:border-[#667eea] hover:bg-[var(--hover-bg)]'
@@ -95,14 +95,14 @@ export function TokenSelector({
                                                 type="checkbox"
                                                 checked={isSelected}
                                                 readOnly
-                                                className="accent-[#eab308] mt-0.5 pointer-events-none"
+                                                className="accent-[#eab308] mt-0.5 pointer-events-none w-3.5 h-3.5"
                                             />
                                             <div className="flex-1 min-w-0">
                                                 <div className="font-semibold truncate flex items-center gap-1.5">
                                                     <span>{typeIcon}</span>
                                                     <span className="truncate">{token.name}</span>
                                                 </div>
-                                                <div className="text-xs text-[var(--text-muted)] truncate mt-1">
+                                                <div className="text-xs text-[var(--text-muted)] truncate mt-0.5">
                                                     {isGSheet ? 'Google Sheets' : 'WPS 表格'}
                                                     {token._isShared && token._sharerEmail && ` (来自 ${token._sharerEmail})`}
                                                     {!token._isShared && token.description && ` - ${token.description}`}

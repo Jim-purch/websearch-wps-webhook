@@ -53,13 +53,13 @@ export function SearchForm({
     onSavePreset,
     forceExpanded
 }: SearchFormProps) {
-    
+
     // 找出所有选中的且配置为 sameValue 的字段
     const sameValueCols = useMemo(() => {
         const cols: Array<{ tableKey: string; columnName: string; displayName: string }> = []
         for (const [tableKey, columns] of Object.entries(selectedColumns)) {
             const configs = columnConfigs[tableKey] || []
-            
+
             // 格式化表名：增加 Token 名称前缀
             const { tokenId, tableName } = parseTableKey(tableKey)
             const baseName = tableName.includes('__copy_')
@@ -119,6 +119,12 @@ export function SearchForm({
     // 同值批量搜索状态
     const [sameValueInput, setSameValueInput] = useState('')
     const [batchCleanMode, setBatchCleanMode] = useState<boolean>(true)
+    const [isFieldsExpanded, setIsFieldsExpanded] = useState(false)
+
+    // 当同值字段发生变化时，默认折叠
+    useEffect(() => {
+        setIsFieldsExpanded(false)
+    }, [sameValueCols])
 
     // 处理粘贴数据变化
     const handlePasteDataChange = useCallback((tableKey: string, data: PasteQueryData) => {
@@ -174,7 +180,7 @@ export function SearchForm({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        
+
         const sameValueValues = sameValueInput
             .split('\n')
             .map(v => v.trim())
@@ -248,7 +254,7 @@ export function SearchForm({
             {isOpen && (
                 <div className="p-6 pt-0 border-t border-transparent">
                     <form onSubmit={handleSubmit}>
-                        
+
                         {/* 同值批量搜索区域 */}
                         {sameValueCols.length > 0 && (
                             <div className="mb-6 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.02)] p-4 space-y-4">
@@ -269,7 +275,7 @@ export function SearchForm({
                                                     className={`px-2.5 py-1 text-xs transition-all ${batchMatchMode === 'exact'
                                                         ? 'bg-[#eab308] text-black font-semibold'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     精确
                                                 </button>
@@ -279,7 +285,7 @@ export function SearchForm({
                                                     className={`px-2.5 py-1 text-xs transition-all ${batchMatchMode === 'fuzzy'
                                                         ? 'bg-[#eab308] text-black font-semibold'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     模糊
                                                 </button>
@@ -296,7 +302,7 @@ export function SearchForm({
                                                     className={`px-2.5 py-1 text-xs transition-all ${batchCleanMode
                                                         ? 'bg-[#eab308] text-black font-semibold'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                    }`}
+                                                        }`}
                                                     title="过滤标点字符和多余空格"
                                                 >
                                                     过滤
@@ -307,7 +313,7 @@ export function SearchForm({
                                                     className={`px-2.5 py-1 text-xs transition-all ${!batchCleanMode
                                                         ? 'bg-[#eab308] text-black font-semibold'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-muted)]'
-                                                    }`}
+                                                        }`}
                                                     title="保留标点与空格，仅进行两端 trim"
                                                 >
                                                     原始
@@ -336,12 +342,25 @@ export function SearchForm({
                                 {/* 已绑定的列标签 */}
                                 <div className="flex flex-wrap gap-2 items-center">
                                     <span className="text-xs text-[var(--text-muted)]">生效字段:</span>
-                                    {sameValueCols.map(col => (
+                                    {(isFieldsExpanded ? sameValueCols : sameValueCols.slice(0, 3)).map(col => (
                                         <span key={`${col.tableKey}__${col.columnName}`} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[rgba(234,179,8,0.15)] border border-[rgba(234,179,8,0.3)] text-[#eab308]">
                                             <span>📊</span>
                                             {col.displayName}
                                         </span>
                                     ))}
+                                    {sameValueCols.length > 3 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsFieldsExpanded(!isFieldsExpanded)}
+                                            className="text-xs px-2 py-0.5 rounded border border-[#eab308]/40 text-[#eab308] bg-[#eab308]/10 hover:bg-[#eab308]/20 transition-all font-medium flex items-center gap-1 cursor-pointer"
+                                        >
+                                            {isFieldsExpanded ? (
+                                                <>收起 ▲</>
+                                            ) : (
+                                                <>展开其余 {sameValueCols.length - 3} 个 ▼</>
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* 批量输入区域 */}
@@ -419,7 +438,7 @@ export function SearchForm({
                                                             className="flex flex-col gap-1.5"
                                                         >
                                                             <div className="flex items-center gap-1.5 select-none w-fit flex-wrap">
-                                                                <span 
+                                                                <span
                                                                     onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}
                                                                     className={`
                                                                         text-sm font-medium transition-colors cursor-pointer
@@ -559,7 +578,7 @@ export function SearchForm({
                     </form>
                 </div >
             )}
-            
+
             {/* 批量查询弹窗 */}
             {isBatchModalOpen && createPortal(
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -584,7 +603,7 @@ export function SearchForm({
                                 3. 上传填写好的 Excel 文件进行批量查询。
                             </p>
 
-                             <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-3">
                                 {/* 过滤模式设置 */}
                                 <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
                                     <span className="text-sm font-medium text-[var(--foreground)]" title="是否过滤标点字符和多余空格">过滤机制：</span>

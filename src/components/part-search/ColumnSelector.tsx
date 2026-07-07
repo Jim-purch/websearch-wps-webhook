@@ -171,14 +171,14 @@ export function ColumnSelector({
                         const currentConfig = columnConfigs[tableKey] || []
 
                         return (
-                            <div key={tableKey} className="mb-6 last:mb-0">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <h4 className="font-medium text-[#eab308]">{getDisplayName(tableKey)}</h4>
+                            <div key={tableKey} className="mb-3.5 last:mb-0">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <h4 className="font-medium text-[#eab308] text-sm">{getDisplayName(tableKey)}</h4>
                                     {onDuplicate && (
                                         <button
                                             type="button"
                                             onClick={() => onDuplicate(tableKey)}
-                                            className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:border-[#667eea] hover:text-[#667eea] transition-colors"
+                                            className="text-[11px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:border-[#667eea] hover:text-[#667eea] transition-colors"
                                             title="复制此表以使用不同列搜索"
                                         >
                                             ➕ 复制
@@ -188,14 +188,14 @@ export function ColumnSelector({
                                         <button
                                             type="button"
                                             onClick={() => onRemove(tableKey)}
-                                            className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:border-[#ef4444] hover:text-[#ef4444] transition-colors"
+                                            className="text-[11px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:border-[#ef4444] hover:text-[#ef4444] transition-colors"
                                             title="删除此副本"
                                         >
                                             ✕ 删除
                                         </button>
                                     )}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-1.5">
                                     {currentConfig.map((colConfig, index) => {
                                         const { tokenId } = parseTableKey(tableKey)
                                         const isShared = tokenId.startsWith('preset::')
@@ -212,7 +212,7 @@ export function ColumnSelector({
                                                 onDragEnd={handleDragEnd}
                                                 onDragOver={(e) => handleDragOver(e, tableKey, index)}
                                                 className={`
-                                                    group flex items-center gap-2 px-2 py-1.5 rounded-md border text-sm transition-all cursor-move select-none
+                                                    group flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-xs transition-all cursor-move select-none
                                                     ${isSelected
                                                         ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)]'
                                                         : 'border-[var(--border)] hover:border-[#667eea] bg-[var(--card-bg)]'
@@ -223,7 +223,7 @@ export function ColumnSelector({
                                             >
                                                 {/* 搜索选中 Checkbox */}
                                                 <div
-                                                    className="flex items-center gap-2 cursor-pointer p-1"
+                                                    className="flex items-center gap-1.5 cursor-pointer p-0.5"
                                                     onClick={() => onToggle(tableKey, colConfig.name)}
                                                     title="点击选择作为搜索条件"
                                                 >
@@ -239,14 +239,14 @@ export function ColumnSelector({
                                                 </div>
 
                                                 {/* 分隔线 */}
-                                                <div className="w-[1px] h-3 bg-[var(--border)] mx-1"></div>
+                                                <div className="w-[1px] h-3 bg-[var(--border)] mx-0.5"></div>
 
                                                 {/* Fetch Toggle */}
                                                 <button
                                                     type="button"
                                                     onClick={(e) => handleFetchToggle(tableKey, index, e)}
                                                     className={`
-                                                        text-[10px] px-1.5 py-0.5 rounded transition-colors
+                                                        text-[9px] px-1 py-0.2 rounded transition-colors
                                                         ${colConfig.fetch
                                                             ? 'bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30'
                                                             : 'bg-[var(--text-muted)]/20 text-[var(--text-muted)] hover:bg-[var(--text-muted)]/30'
@@ -262,7 +262,7 @@ export function ColumnSelector({
                                                     type="button"
                                                     onClick={(e) => handleSameValueToggle(tableKey, index, e)}
                                                     className={`
-                                                        text-[10px] px-1.5 py-0.5 rounded border transition-colors
+                                                        text-[9px] px-1 py-0.2 rounded border transition-colors
                                                         ${colConfig.sameValue
                                                             ? 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/40 hover:bg-[#eab308]/30'
                                                             : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-transparent hover:bg-[var(--text-muted)]/20'

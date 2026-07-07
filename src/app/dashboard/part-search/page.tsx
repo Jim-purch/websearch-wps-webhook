@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePartSearch, parseTableKey } from '@/hooks/usePartSearch'
 import { useSearchPresets } from '@/hooks/useSearchPresets'
 import { useAuth } from '@/hooks/useAuth'
@@ -133,6 +133,16 @@ export default function PartSearchPage() {
     const [step3ExpandedCounter, setStep3ExpandedCounter] = useState(0) // 步骤3展开
     const [step4ExpandedCounter, setStep4ExpandedCounter] = useState(0) // 步骤4展开
 
+    // 跳过步骤自动展开的标识 (如加载预设时)
+    const skipAutoExpandRef = useRef(false)
+
+    // 在每次渲染后自动重置该标志
+    useEffect(() => {
+        if (skipAutoExpandRef.current) {
+            skipAutoExpandRef.current = false
+        }
+    })
+
     // 始终加载所有预设
     useEffect(() => {
         fetchPresets()
@@ -140,6 +150,9 @@ export default function PartSearchPage() {
 
     // 当加载列信息后，自动展开步骤3
     useEffect(() => {
+        if (skipAutoExpandRef.current) {
+            return
+        }
         if (Object.keys(columnsData).length > 0) {
             setStep3ExpandedCounter(prev => prev + 1)
         }
@@ -147,6 +160,9 @@ export default function PartSearchPage() {
 
     // 当选择搜索列后，自动展开步骤4
     useEffect(() => {
+        if (skipAutoExpandRef.current) {
+            return
+        }
         const hasColumns = Object.values(selectedColumns).some(cols => cols.length > 0)
         if (hasColumns) {
             setStep4ExpandedCounter(prev => prev + 1)
@@ -464,6 +480,9 @@ export default function PartSearchPage() {
             setPendingSyncPresetId(null)
             return
         }
+
+        // 设置跳过自动展开的标志
+        skipAutoExpandRef.current = true
 
         // 解析并恢复选中的 Token 列表 (步骤1)
         const savedTokenIds = preset.selected_table_names
