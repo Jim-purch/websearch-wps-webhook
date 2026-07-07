@@ -1666,7 +1666,8 @@ export function usePartSearch() {
         file: File,
         matchMode: 'fuzzy' | 'exact' = 'exact',
         batchSize: number = 50,
-        batchLimit: number = 30
+        batchLimit: number = 30,
+        clean: boolean = true
     ) => {
         if (selectedTokens.length === 0) {
             setSearchError('请先选择 Token')
@@ -1763,16 +1764,17 @@ export function usePartSearch() {
 
                         originalValues[fieldName] = cleanVal
 
-                        // WPS 表格内的数据已经是清理过的格式，直接用清理后的值进行 Find 查找
-                        const searchValueCleaned = cleanValue(cleanVal)
+                        // WPS 表格内的数据已经可能/或者需要是清理过的格式，直接用清理后的值进行 Find 查找
+                        const searchValueCleaned = clean ? cleanValue(cleanVal) : cleanVal.trim()
 
                         if (searchValueCleaned) {
                             criteria.push({
                                 columnName: fieldName,
-                                // 直接使用清理后的值进行搜索
+                                // 使用相应清理模式的值进行搜索
                                 searchValue: searchValueCleaned,
-                                searchValueClean: searchValueCleaned,
-                                op: matchMode === 'exact' ? 'Equals' : 'Contains'
+                                searchValueClean: clean ? cleanValue(cleanVal) : cleanVal.trim(),
+                                op: matchMode === 'exact' ? 'Equals' : 'Contains',
+                                clean: clean
                             } as WpsSearchCriteria)
                         }
                     })
@@ -1857,11 +1859,19 @@ export function usePartSearch() {
                                         matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
                                     )
 
-                                    const recordsWithId = filteredRecords.map(r => ({
-                                        ...r,
-                                        _BatchQueryID: itemResult.id,
-                                        ...prefixedOriginalValues
-                                    }))
+                                    const recordsWithId = filteredRecords.map(r => {
+                                        const rec = { ...r } as any
+                                        if (rec.fields && typeof rec.fields === 'object') {
+                                            rec.fields = {
+                                                ...rec.fields,
+                                                _BatchQueryID: itemResult.id,
+                                                ...prefixedOriginalValues
+                                            }
+                                        }
+                                        rec._BatchQueryID = itemResult.id
+                                        Object.assign(rec, prefixedOriginalValues)
+                                        return rec
+                                    })
                                     allRecords.push(...recordsWithId)
                                 }
                             }
@@ -1930,7 +1940,8 @@ export function usePartSearch() {
         data: Array<{ id: string; values: Record<string, string> }>,
         matchMode: 'fuzzy' | 'exact' = 'exact',
         batchSize: number = 50,
-        batchLimit: number = 30
+        batchLimit: number = 30,
+        clean: boolean = true
     ) => {
         if (selectedTokens.length === 0) {
             setSearchError('请先选择 Token')
@@ -1967,16 +1978,17 @@ export function usePartSearch() {
                     if (!value || !value.trim()) continue
 
                     originalValues[columnName] = value.trim()
-                    // WPS 表格内的数据已经是清理过的格式，直接用清理后的值进行 Find 查找
-                    const searchValueCleaned = cleanValue(value)
+                    // WPS 表格内的数据已经可能/或者需要是清理过的格式，直接用清理后的值进行 Find 查找
+                    const searchValueCleaned = clean ? cleanValue(value) : value.trim()
 
                     if (searchValueCleaned) {
                         criteria.push({
                             columnName,
-                            // 直接使用清理后的值进行搜索
+                            // 使用相应清理模式的值进行搜索
                             searchValue: searchValueCleaned,
-                            searchValueClean: searchValueCleaned,
-                            op: matchMode === 'exact' ? 'Equals' : 'Contains'
+                            searchValueClean: clean ? cleanValue(value) : value.trim(),
+                            op: matchMode === 'exact' ? 'Equals' : 'Contains',
+                            clean: clean
                         } as WpsSearchCriteria)
                     }
                 }
@@ -2041,11 +2053,19 @@ export function usePartSearch() {
                                 matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
                             )
 
-                            const recordsWithId = filteredRecords.map(r => ({
-                                ...r,
-                                _BatchQueryID: itemResult.id,
-                                ...prefixedOriginalValues
-                            }))
+                            const recordsWithId = filteredRecords.map(r => {
+                                const rec = { ...r } as any
+                                if (rec.fields && typeof rec.fields === 'object') {
+                                    rec.fields = {
+                                        ...rec.fields,
+                                        _BatchQueryID: itemResult.id,
+                                        ...prefixedOriginalValues
+                                    }
+                                }
+                                rec._BatchQueryID = itemResult.id
+                                Object.assign(rec, prefixedOriginalValues)
+                                return rec
+                            })
                             allRecords.push(...recordsWithId)
                         }
                     }

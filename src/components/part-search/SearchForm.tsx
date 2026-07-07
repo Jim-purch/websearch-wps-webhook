@@ -18,9 +18,9 @@ interface SearchFormProps {
     onAutoLoadImagesChange: (value: boolean) => void
     // Batch Search Props
     onDownloadTemplate?: () => void
-    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number) => void
+    onBatchSearch?: (file: File, matchMode?: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number, clean?: boolean) => void
     isBatchSearching?: boolean
-    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number) => void
+    onPasteSearch?: (tableKey: string, data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize?: number, batchLimit?: number, clean?: boolean) => void
     batchProgress?: string
     columnConfigs: Record<string, any[]> // 添加列配置用于识别同值搜索字段
     // Preset Props
@@ -197,7 +197,7 @@ export function SearchForm({
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file && onBatchSearch) {
-            onBatchSearch(file, batchMatchMode, batchSize, batchLimit)
+            onBatchSearch(file, batchMatchMode, batchSize, batchLimit, batchCleanMode)
             e.target.value = ''
             setIsBatchModalOpen(false)
         }
@@ -584,7 +584,36 @@ export function SearchForm({
                                 3. 上传填写好的 Excel 文件进行批量查询。
                             </p>
 
-                            <div className="flex flex-col gap-3">
+                             <div className="flex flex-col gap-3">
+                                {/* 过滤模式设置 */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
+                                    <span className="text-sm font-medium text-[var(--foreground)]" title="是否过滤标点字符和多余空格">过滤机制：</span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setBatchCleanMode(true)}
+                                            className={`px-3 py-1.5 text-sm rounded-md transition-all ${batchCleanMode
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                                }`}
+                                            title="过滤标点字符和多余空格"
+                                        >
+                                            过滤
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setBatchCleanMode(false)}
+                                            className={`px-3 py-1.5 text-sm rounded-md transition-all ${!batchCleanMode
+                                                ? 'bg-[#667eea] text-white font-medium'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)] border border-[var(--border)]'
+                                                }`}
+                                            title="保留标点与空格，仅进行两端 trim"
+                                        >
+                                            原始
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* 查询模式设置 */}
                                 <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
                                     <span className="text-sm font-medium text-[var(--foreground)]">查询模式：</span>
@@ -716,8 +745,8 @@ export function SearchForm({
                     onClose={() => setPasteModalTableKey(null)}
                     tableKey={pasteModalTableKey}
                     columns={selectedColumns[pasteModalTableKey] || []}
-                    onSearch={(data, matchMode, size, limit) => {
-                        onPasteSearch(pasteModalTableKey, data, matchMode, size, limit)
+                    onSearch={(data, matchMode, size, limit, clean) => {
+                        onPasteSearch(pasteModalTableKey, data, matchMode, size, limit, clean)
                         setPasteModalTableKey(null)
                     }}
                     isSearching={isBatchSearching}
@@ -730,6 +759,8 @@ export function SearchForm({
                     onBatchSizeChange={setBatchSize}
                     batchLimit={batchLimit}
                     onBatchLimitChange={setBatchLimit}
+                    clean={batchCleanMode}
+                    onCleanChange={setBatchCleanMode}
                 />
             )}
         </div >

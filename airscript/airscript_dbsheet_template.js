@@ -38,8 +38,85 @@
  */
 
 /**
+ * 清理字段值，特别是人员字段，只返回 nickName/name
+ */
+function cleanFieldValue(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    
+    // 如果是字符串，尝试解析是否为 JSON 对象/数组
+    if (typeof value === 'string') {
+        var trimmed = value.trim();
+        if ((trimmed.indexOf('{') === 0 && trimmed.lastIndexOf('}') === trimmed.length - 1) || 
+            (trimmed.indexOf('[') === 0 && trimmed.lastIndexOf(']') === trimmed.length - 1)) {
+            try {
+                var parsed = JSON.parse(trimmed);
+                return cleanFieldValue(parsed);
+            } catch (e) {
+                // 解析失败则返回原字符串
+            }
+        }
+        return value;
+    }
+    
+    // 如果是数组
+    if (Array.isArray(value)) {
+        var cleanedArr = [];
+        for (var i = 0; i < value.length; i++) {
+            cleanedArr.push(cleanFieldValue(value[i]));
+        }
+        // 如果数组元素都是字符串，可以用逗号拼接，方便展示
+        var allStrings = true;
+        for (var j = 0; j < cleanedArr.length; j++) {
+            if (typeof cleanedArr[j] !== 'string') {
+                allStrings = false;
+                break;
+            }
+        }
+        if (allStrings && cleanedArr.length > 0) {
+            return cleanedArr.join(', ');
+        }
+        return cleanedArr;
+    }
+    
+    // 如果是对象
+    if (typeof value === 'object') {
+        // 如果是人员对象（包含 nickName 或 name）
+        if (value.nickName !== undefined) {
+            return value.nickName;
+        }
+        if (value.name !== undefined) {
+            return value.name;
+        }
+        // 特殊处理 WPS API 的图片/附件等其他对象，可以直接保留
+        if (value.id !== undefined && value.avatar !== undefined) {
+            return value.id;
+        }
+    }
+    
+    return value;
+}
+
+/**
+ * 遍历记录的所有字段并清理
+ */
+function cleanRecordFields(fields) {
+    if (!fields || typeof fields !== 'object') {
+        return fields;
+    }
+    var cleanedFields = {};
+    for (var key in fields) {
+        if (Object.prototype.hasOwnProperty.call(fields, key)) {
+            cleanedFields[key] = cleanFieldValue(fields[key]);
+        }
+    }
+    return cleanedFields;
+}
+
+/**
  * 获取全部数据表信息
- * @returns {Object} 包含所有表名和列信息的对象
+ * @returns {Object} 包含所有表名 and 列信息的对象
  */
 function getAllTablesInfo() {
     console.log("开始获取全部数据表信息...")
@@ -322,17 +399,25 @@ function searchByColumn(sheetName, columnName, searchValue, op) {
 
         console.log("搜索完成，共找到 " + allRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
 
+        const cleanedRecords = finalRecords.map(function(rec) {
+            return {
+                id: rec.id,
+                recordId: rec.recordId,
+                fields: cleanRecordFields(rec.fields)
+            }
+        })
+
         return {
             success: true,
             sheetName: sheetName,
             columnName: columnName,
             searchValue: searchValue,
             op: opType,
-            totalCount: finalRecords.length,
-            originalTotalCount: truncated ? (originalTotalCount + "+") : finalRecords.length,
+            totalCount: cleanedRecords.length,
+            originalTotalCount: truncated ? (originalTotalCount + "+") : cleanedRecords.length,
             truncated: truncated,
             maxRecords: MAX_RECORDS,
-            records: JSON.parse(JSON.stringify(finalRecords))
+            records: JSON.parse(JSON.stringify(cleanedRecords))
         }
 
     } catch (error) {
@@ -399,6 +484,14 @@ function getTableDetails(sheetName, sampleSize) {
 
         console.log("获取到 " + sampleRecords.records.length + " 条示例记录")
 
+        const cleanedSampleRecords = sampleRecords.records.map(function(rec) {
+            return {
+                id: rec.id,
+                recordId: rec.recordId,
+                fields: cleanRecordFields(rec.fields)
+            }
+        })
+
         return {
             success: true,
             table: {
@@ -409,7 +502,7 @@ function getTableDetails(sheetName, sampleSize) {
             },
             sampleData: {
                 count: sampleRecords.records.length,
-                records: JSON.parse(JSON.stringify(sampleRecords.records))
+                records: JSON.parse(JSON.stringify(cleanedSampleRecords))
             }
         }
 
@@ -648,10 +741,18 @@ function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offse
                 filteredRecords.push({
                     id: rec.id,
                     recordId: rec.recordId,
-                    fields: newFields,
+                    fields: cleanRecordFields(newFields),
                 })
             }
             finalRecords = filteredRecords
+        } else {
+            finalRecords = finalRecords.map(function(rec) {
+                return {
+                    id: rec.id,
+                    recordId: rec.recordId,
+                    fields: cleanRecordFields(rec.fields)
+                }
+            })
         }
 
         console.log("多条件搜索完成，本批次返回 " + finalRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
@@ -817,9 +918,17 @@ function searchBatch(sheetName, batchCriteria, globalReturnColumns, limitVal) {
                     for (const c of returnColumns) {
                         if (rec.fields[c] !== undefined) newFields[c] = rec.fields[c]
                     }
-                    filteredRecs.push({ id: rec.id, recordId: rec.recordId, fields: newFields })
+                    filteredRecs.push({ id: rec.id, recordId: rec.recordId, fields: cleanRecordFields(newFields) })
                 }
                 allRecords = filteredRecs
+            } else {
+                allRecords = allRecords.map(function(rec) {
+                    return {
+                        id: rec.id,
+                        recordId: rec.recordId,
+                        fields: cleanRecordFields(rec.fields)
+                    }
+                })
             }
 
             batchResults.push({

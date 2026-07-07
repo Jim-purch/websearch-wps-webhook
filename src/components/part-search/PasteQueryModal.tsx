@@ -14,6 +14,7 @@ export interface PasteQueryData {
     matchMode: 'fuzzy' | 'exact'
     batchSize?: number
     batchLimit?: number
+    clean?: boolean
 }
 
 interface PasteQueryModalProps {
@@ -21,7 +22,7 @@ interface PasteQueryModalProps {
     onClose: () => void
     tableKey: string
     columns: string[]
-    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize: number, batchLimit: number) => void
+    onSearch: (data: Array<{ id: string; values: Record<string, string> }>, matchMode: 'fuzzy' | 'exact', batchSize: number, batchLimit: number, clean: boolean) => void
     isSearching: boolean
     batchProgress?: string
     initialData?: PasteQueryData
@@ -32,6 +33,8 @@ interface PasteQueryModalProps {
     onBatchSizeChange: (val: number) => void
     batchLimit: number
     onBatchLimitChange: (val: number) => void
+    clean: boolean
+    onCleanChange: (val: boolean) => void
 }
 
 export function PasteQueryModal({
@@ -49,7 +52,9 @@ export function PasteQueryModal({
     batchSize,
     onBatchSizeChange,
     batchLimit,
-    onBatchLimitChange
+    onBatchLimitChange,
+    clean,
+    onCleanChange
 }: PasteQueryModalProps) {
     // 使用 initialData 初始化状态，如果没有则使用默认值
     const [rows, setRows] = useState<RowData[]>(
@@ -124,9 +129,9 @@ export function PasteQueryModal({
     // 当数据变化时通知外部组件保存
     useEffect(() => {
         if (isOpen && onDataChange) {
-            onDataChange(tableKey, { rows, matchMode, batchSize, batchLimit })
+            onDataChange(tableKey, { rows, matchMode, batchSize, batchLimit, clean })
         }
-    }, [rows, matchMode, batchSize, batchLimit, isOpen, tableKey, onDataChange])
+    }, [rows, matchMode, batchSize, batchLimit, clean, isOpen, tableKey, onDataChange])
 
     // 处理单元格粘贴事件 - 从当前单元格位置开始粘贴
     const handleCellPaste = useCallback((e: React.ClipboardEvent, startRowIndex: number, startColIndex: number) => {
@@ -224,8 +229,8 @@ export function PasteQueryModal({
             return
         }
 
-        onSearch(validRows, matchMode, batchSize, batchLimit)
-    }, [rows, matchMode, batchSize, batchLimit, onSearch])
+        onSearch(validRows, matchMode, batchSize, batchLimit, clean)
+    }, [rows, matchMode, batchSize, batchLimit, clean, onSearch])
 
     // 获取显示名称
     const displayName = tableKey.includes('__copy_')
@@ -390,6 +395,35 @@ export function PasteQueryModal({
                                         }`}
                                 >
                                     模糊
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="h-4 w-[1px] bg-[var(--border)]"></div>
+
+                        {/* Clean Mode Selector */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-[var(--foreground)]" title="是否过滤标点字符和多余空格">过滤机制：</span>
+                            <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
+                                <button
+                                    onClick={() => onCleanChange(true)}
+                                    className={`px-3 py-1.5 text-sm transition-all ${clean
+                                        ? 'bg-[#667eea] text-white font-medium'
+                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                                        }`}
+                                    title="过滤标点字符和多余空格"
+                                >
+                                    过滤
+                                </button>
+                                <button
+                                    onClick={() => onCleanChange(false)}
+                                    className={`px-3 py-1.5 text-sm transition-all ${!clean
+                                        ? 'bg-[#667eea] text-white font-medium'
+                                        : 'bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]'
+                                        }`}
+                                    title="保留标点与空格，仅进行两端 trim"
+                                >
+                                    原始
                                 </button>
                             </div>
                         </div>
