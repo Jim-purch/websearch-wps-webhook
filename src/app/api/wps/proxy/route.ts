@@ -526,8 +526,11 @@ export async function POST(request: NextRequest) {
         }
 
         // WPS 模式
-        const wpsResponse = await WpsQueueManager.enqueue(token.webhook_url, () =>
-            fetch(token.webhook_url, {
+        const wpsResponse = await WpsQueueManager.enqueue(token.webhook_url, async () => {
+            // 适当抖动发起 webhook url 搜索的时间，避免并发请求瞬间撞墙
+            const jitterMs = Math.floor(Math.random() * 251) + 50
+            await new Promise(resolve => setTimeout(resolve, jitterMs))
+            return fetch(token.webhook_url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -537,7 +540,7 @@ export async function POST(request: NextRequest) {
                     Context: { argv }
                 })
             })
-        )
+        })
 
         if (!wpsResponse.ok) {
             return NextResponse.json(

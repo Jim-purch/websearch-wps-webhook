@@ -1033,12 +1033,24 @@ export function usePartSearch() {
                 }
             }
 
-            // 1. 优先并行处理所有空闲 Webhook 相关的查询
-            const idlePromises = idleEntries.map(([queueKey, keys]) => executeSearchForQueue(queueKey, keys))
+            // 1. 优先并行处理所有空闲 Webhook 相关的查询，并引入随机延迟（抖动）以分散请求
+            const idlePromises = idleEntries.map(async ([queueKey, keys], index) => {
+                if (index > 0) {
+                    const jitterMs = Math.floor(Math.random() * 201) + 50 // 50ms - 250ms
+                    await new Promise(resolve => setTimeout(resolve, jitterMs))
+                }
+                return executeSearchForQueue(queueKey, keys)
+            })
             await Promise.all(idlePromises)
 
-            // 2. 空闲处理完成后，并行发起繁忙 Webhook 相关的查询
-            const busyPromises = busyEntries.map(([queueKey, keys]) => executeSearchForQueue(queueKey, keys))
+            // 2. 空闲处理完成后，并行发起繁忙 Webhook 相关的查询，并引入随机延迟（抖动）
+            const busyPromises = busyEntries.map(async ([queueKey, keys], index) => {
+                if (index > 0) {
+                    const jitterMs = Math.floor(Math.random() * 201) + 50 // 50ms - 250ms
+                    await new Promise(resolve => setTimeout(resolve, jitterMs))
+                }
+                return executeSearchForQueue(queueKey, keys)
+            })
             await Promise.all(busyPromises)
         } catch (err) {
             setSearchError(err instanceof Error ? err.message : '搜索发生错误')
