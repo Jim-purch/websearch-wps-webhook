@@ -205,74 +205,101 @@ export function ColumnSelector({
                                         const uniqueKey = `${tableKey}-${colConfig.name}`
 
                                         return (
-                                            <div
-                                                key={uniqueKey}
-                                                draggable
-                                                onDragStart={(e) => handleDragStart(e, tableKey, index)}
-                                                onDragEnd={handleDragEnd}
-                                                onDragOver={(e) => handleDragOver(e, tableKey, index)}
-                                                className={`
-                                                    group flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-xs transition-all cursor-move select-none
-                                                    ${isSelected
-                                                        ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)]'
-                                                        : 'border-[var(--border)] hover:border-[#667eea] bg-[var(--card-bg)]'
-                                                    }
-                                                    ${!colConfig.fetch ? 'opacity-60 grayscale-[0.5]' : ''}
-                                                `}
-                                                title="拖动可调整结果列顺序"
-                                            >
-                                                {/* 搜索选中 Checkbox */}
-                                                <div
-                                                    className="flex items-center gap-1.5 cursor-pointer p-0.5"
-                                                    onClick={() => onToggle(tableKey, colConfig.name)}
-                                                    title="点击选择作为搜索条件"
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isSelected}
-                                                        readOnly
-                                                        className="accent-[#eab308] w-3 h-3 pointer-events-none"
-                                                    />
-                                                    <span className={isSelected ? 'text-[#eab308] font-medium' : ''}>
-                                                        {colConfig.name}
-                                                    </span>
-                                                </div>
+                                             <div key={uniqueKey} className="relative select-none">
+                                                 {/* 占位 Spacer：保持页面文档流稳定，避免悬停展开时导致周围按钮重排或折行 */}
+                                                 <div className="flex items-center gap-1.5 px-2 py-1 opacity-0 pointer-events-none text-sm border border-transparent whitespace-nowrap">
+                                                     <input type="checkbox" className="w-3.5 h-3.5" />
+                                                     <span>{colConfig.name}</span>
+                                                     <div className="flex items-center gap-1.5 ml-1">
+                                                         <span className="w-1.5 h-1.5 rounded-full" />
+                                                         <span className="w-1.5 h-1.5 rounded-full" />
+                                                     </div>
+                                                 </div>
 
-                                                {/* 分隔线 */}
-                                                <div className="w-[1px] h-3 bg-[var(--border)] mx-0.5"></div>
+                                                 {/* 实际交互按钮：悬浮时绝对定位浮起并向右侧无感知展开 */}
+                                                 <div
+                                                     draggable
+                                                     onDragStart={(e) => handleDragStart(e, tableKey, index)}
+                                                     onDragEnd={handleDragEnd}
+                                                     onDragOver={(e) => handleDragOver(e, tableKey, index)}
+                                                     className={`
+                                                         group absolute left-0 top-0 h-full w-full hover:w-auto hover:min-w-full hover:z-50 hover:shadow-lg hover:pr-3
+                                                         flex items-center gap-1.5 px-2 py-1 rounded border text-sm transition-all duration-150 cursor-move whitespace-nowrap
+                                                         ${isSelected
+                                                             ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)]'
+                                                             : 'border-[var(--border)] hover:border-[#667eea] bg-[var(--card-bg)]'
+                                                         }
+                                                         ${!colConfig.fetch ? 'opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0' : ''}
+                                                     `}
+                                                     title="拖动可调整结果列顺序"
+                                                 >
+                                                     {/* 搜索选中 Checkbox */}
+                                                     <div
+                                                         className="flex items-center gap-1.5 cursor-pointer p-0.5"
+                                                         onClick={() => onToggle(tableKey, colConfig.name)}
+                                                         title="点击选择作为搜索条件"
+                                                     >
+                                                         <input
+                                                             type="checkbox"
+                                                             checked={isSelected}
+                                                             readOnly
+                                                             className="accent-[#eab308] w-3.5 h-3.5 pointer-events-none"
+                                                         />
+                                                         <span className={isSelected ? 'text-[#eab308] font-medium' : ''}>
+                                                             {colConfig.name}
+                                                         </span>
+                                                     </div>
 
-                                                {/* Fetch Toggle */}
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleFetchToggle(tableKey, index, e)}
-                                                    className={`
-                                                        text-[9px] px-1 py-0.2 rounded transition-colors
-                                                        ${colConfig.fetch
-                                                            ? 'bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30'
-                                                            : 'bg-[var(--text-muted)]/20 text-[var(--text-muted)] hover:bg-[var(--text-muted)]/30'
-                                                        }
-                                                    `}
-                                                    title={colConfig.fetch ? "已开启获取数据 (点击不获取)" : "不获取数据 (点击获取)"}
-                                                >
-                                                    {colConfig.fetch ? '获取' : '不获取'}
-                                                </button>
+                                                     {/* 默认状态点 */}
+                                                     <div className="flex items-center gap-1.5 ml-1 group-hover:hidden transition-all">
+                                                         <span 
+                                                             className={`w-1.5 h-1.5 rounded-full ${colConfig.fetch ? 'bg-[#22c55e]' : 'bg-[var(--text-muted)]/30'}`}
+                                                             title={colConfig.fetch ? "已开启获取数据" : "未开启获取数据"}
+                                                         />
+                                                         <span 
+                                                             className={`w-1.5 h-1.5 rounded-full ${colConfig.sameValue ? 'bg-[#eab308]' : 'bg-[var(--text-muted)]/10'}`}
+                                                             title={colConfig.sameValue ? "已启用同值批量搜索" : "未启用同值"}
+                                                         />
+                                                     </div>
 
-                                                {/* Same Value Toggle */}
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleSameValueToggle(tableKey, index, e)}
-                                                    className={`
-                                                        text-[9px] px-1 py-0.2 rounded border transition-colors
-                                                        ${colConfig.sameValue
-                                                            ? 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/40 hover:bg-[#eab308]/30'
-                                                            : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-transparent hover:bg-[var(--text-muted)]/20'
-                                                        }
-                                                    `}
-                                                    title={colConfig.sameValue ? "已启用同值批量搜索 (点击取消)" : "点击启用同值批量搜索"}
-                                                >
-                                                    🔗 同值
-                                                </button>
-                                            </div>
+                                                     {/* 分隔线与动作按钮 */}
+                                                     <div className="hidden group-hover:flex items-center gap-1.5 transition-all">
+                                                         <div className="w-[1px] h-3 bg-[var(--border)] mx-0.5"></div>
+
+                                                         {/* Fetch Toggle */}
+                                                         <button
+                                                             type="button"
+                                                             onClick={(e) => handleFetchToggle(tableKey, index, e)}
+                                                             className={`
+                                                                 text-[11px] px-1.5 py-0.5 rounded transition-colors whitespace-nowrap
+                                                                 ${colConfig.fetch
+                                                                     ? 'bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30'
+                                                                     : 'bg-[var(--text-muted)]/20 text-[var(--text-muted)] hover:bg-[var(--text-muted)]/30'
+                                                                 }
+                                                             `}
+                                                             title={colConfig.fetch ? "已开启获取数据 (点击不获取)" : "不获取数据 (点击获取)"}
+                                                         >
+                                                             {colConfig.fetch ? '获取' : '不获取'}
+                                                         </button>
+
+                                                         {/* Same Value Toggle */}
+                                                         <button
+                                                             type="button"
+                                                             onClick={(e) => handleSameValueToggle(tableKey, index, e)}
+                                                             className={`
+                                                                 text-[11px] px-1.5 py-0.5 rounded border transition-colors whitespace-nowrap
+                                                                 ${colConfig.sameValue
+                                                                     ? 'bg-[#eab308]/20 text-[#eab308] border-[#eab308]/40 hover:bg-[#eab308]/30'
+                                                                     : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-transparent hover:bg-[var(--text-muted)]/20'
+                                                                 }
+                                                             `}
+                                                             title={colConfig.sameValue ? "已启用同值批量搜索 (点击取消)" : "点击启用同值批量搜索"}
+                                                         >
+                                                             🔗 同值
+                                                         </button>
+                                                     </div>
+                                                 </div>
+                                             </div>
                                         )
                                     })}
                                 </div>

@@ -154,7 +154,7 @@ export function TableSelector({
                                                             type="button"
                                                             onClick={() => onToggle(tableKey)}
                                                             className={`
-                                                                flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-all cursor-pointer
+                                                                flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-sm transition-all cursor-pointer
                                                                 ${isSelected
                                                                     ? 'border-[#eab308] bg-[rgba(234,179,8,0.15)] text-[#eab308]'
                                                                     : 'border-[var(--border)] hover:border-[#667eea]'
@@ -165,10 +165,10 @@ export function TableSelector({
                                                                 type="checkbox"
                                                                 checked={isSelected}
                                                                 readOnly
-                                                                className="accent-[#eab308] pointer-events-none w-3 h-3"
+                                                                className="accent-[#eab308] pointer-events-none w-3.5 h-3.5"
                                                             />
                                                             <span>{table.name}</span>
-                                                            <span className="text-[10px] text-[var(--text-muted)]">
+                                                            <span className="text-[11px] text-[var(--text-muted)]">
                                                                 ({table.columns?.length || 0} 列)
                                                             </span>
                                                             {table.isGoogleSheets && (
@@ -191,18 +191,18 @@ export function TableSelector({
                                 })}
                             </div>
 
-                             <div className="flex gap-1.5">
+                             <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={onSelectAll}
-                                    className="btn-secondary text-xs py-1.5 px-3"
+                                    className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全选
                                 </button>
                                 <button
                                     type="button"
                                     onClick={onDeselectAll}
-                                    className="btn-secondary text-xs py-1.5 px-3"
+                                    className="btn-secondary text-sm py-2 px-4"
                                 >
                                     全不选
                                 </button>
@@ -210,7 +210,7 @@ export function TableSelector({
                                     type="button"
                                     onClick={onLoadColumns}
                                     disabled={selectedTableNames.size === 0}
-                                    className="btn-primary text-xs py-1.5 px-3"
+                                    className="btn-primary text-sm py-2 px-4"
                                 >
                                     加载列信息
                                 </button>
