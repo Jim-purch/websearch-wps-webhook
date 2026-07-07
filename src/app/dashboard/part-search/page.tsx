@@ -48,6 +48,7 @@ export default function PartSearchPage() {
         searchResults,
         isSearching,
         searchError,
+        searchingTables,
         performSearch,
         loadMore,
         exportToExcel,
@@ -684,6 +685,7 @@ export default function PartSearchPage() {
                 <ResultTable
                     results={searchResults}
                     isSearching={isSearching}
+                    searchingTables={searchingTables}
                     tokenId={selectedToken?.id}
                     autoLoadImages={autoLoadImages}
                     onImageLoad={handleImageLoad}

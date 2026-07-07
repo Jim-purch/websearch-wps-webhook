@@ -9,6 +9,7 @@ import { BatchEditModal } from './BatchEditModal'
 interface ResultTableProps {
     results: TableSearchResult[]
     isSearching: boolean
+    searchingTables?: string[]
     tokenId?: string  // 用于获取图片URL
     autoLoadImages?: boolean  // 自动加载图片
     onImageLoad?: (tableName: string, cellAddress: string, url: string) => void // 图片加载回调
@@ -1274,6 +1275,7 @@ function ResultCard({
 export function ResultTable({
     results,
     isSearching,
+    searchingTables = [],
     tokenId,
     autoLoadImages,
     onImageLoad,
@@ -1308,7 +1310,12 @@ export function ResultTable({
             <div className="card p-8">
                 <div className="flex flex-col items-center justify-center gap-4">
                     <div className="spinner w-10 h-10"></div>
-                    <p className="text-[var(--text-muted)]">正在搜索...</p>
+                    <p className="text-[var(--text-muted)] font-semibold">正在搜索数据表...</p>
+                    {searchingTables.length > 0 && (
+                        <div className="text-sm text-[var(--text-muted)] max-w-md text-center bg-[rgba(59,130,246,0.05)] border border-[#3b82f6]/20 px-4 py-2.5 rounded-lg">
+                            正在查询: <span className="text-blue-500 font-semibold">{searchingTables.join(', ')}</span>
+                        </div>
+                    )}
                 </div>
             </div>
         )
@@ -1327,6 +1334,17 @@ export function ResultTable({
 
     return (
         <div>
+            {isSearching && searchingTables.length > 0 && (
+                <div className="mb-4 p-3 bg-[rgba(59,130,246,0.1)] border border-[#3b82f6]/30 rounded-lg flex items-center justify-between gap-3 animate-pulse">
+                    <div className="flex items-center gap-2.5">
+                        <span className="spinner w-4 h-4 border-[#3b82f6] border-t-transparent"></span>
+                        <div className="text-sm text-[var(--text-muted)]">
+                            正在搜索数据表：<span className="font-semibold text-blue-500">{searchingTables.join(', ')}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {modifiedCount > 0 && (
                 <div className="mb-4 p-4 bg-[rgba(234,179,8,0.1)] border border-[#eab308] rounded-lg flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50 backdrop-blur-md">
                     <div className="flex items-center gap-2">
