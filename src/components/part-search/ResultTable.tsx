@@ -73,6 +73,22 @@ function ImageWithPreview({
         setImgError(false)
     }, [src])
 
+    const displaySrc = useMemo(() => {
+        if (!src) return ''
+        const isAbsoluteHttp = src.startsWith('http://') || src.startsWith('https://')
+        const isAlreadyProxied = src.includes('/api/image-proxy')
+        
+        if (isAbsoluteHttp && !isAlreadyProxied) {
+            if (typeof window !== 'undefined') {
+                if (src.startsWith(window.location.origin)) {
+                    return src
+                }
+            }
+            return `/api/image-proxy?url=${encodeURIComponent(src)}`
+        }
+        return src
+    }, [src])
+
     if (imgError) {
         return (
             <span
@@ -101,7 +117,7 @@ function ImageWithPreview({
         >
             <div className="relative max-w-[90vw] max-h-[90vh]">
                 <img
-                    src={src}
+                    src={displaySrc}
                     alt="大图预览"
                     className="max-w-full max-h-[90vh] object-contain rounded-lg"
                 />
@@ -120,7 +136,7 @@ function ImageWithPreview({
         <div className="relative inline-block group">
             <img
                 key={retryCount}
-                src={src}
+                src={displaySrc}
                 alt="图片"
                 style={{ maxWidth: IMAGE_THUMBNAIL_SIZE.maxWidth, maxHeight: IMAGE_THUMBNAIL_SIZE.maxHeight }}
                 className={`object-contain cursor-pointer rounded border ${isCopied ? 'border-[#22c55e]' : 'border-[var(--border)] hover:border-[#eab308]'} transition-colors`}
