@@ -1088,6 +1088,25 @@ export function usePartSearch() {
                         return { imageId: obj.imageId, cellAddress: obj.cellAddress }
                     }
                 }
+                // 支持 WPS 多维表格附件中的图片
+                if (Array.isArray(value) && value.length > 0) {
+                    const first = value[0]
+                    if (first && typeof first === 'object' && ('uploadId' in first || 'tmpUrl' in first)) {
+                        const url = first.tmpUrl || first.url
+                        const isImg = first.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(first.fileName || '')
+                        if (url && isImg) {
+                            return { imageUrl: url }
+                        }
+                    }
+                }
+                if (value && typeof value === 'object' && ('uploadId' in value || 'tmpUrl' in value)) {
+                    const obj = value as any
+                    const url = obj.tmpUrl || obj.url
+                    const isImg = obj.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(obj.fileName || '')
+                    if (url && isImg) {
+                        return { imageUrl: url }
+                    }
+                }
                 return null
             }
 
@@ -1442,6 +1461,25 @@ export function usePartSearch() {
                     }
                     if (obj._type === 'dispimg' && obj.imageId) {
                         return { imageId: obj.imageId, cellAddress: obj.cellAddress }
+                    }
+                }
+                // 支持 WPS 多维表格附件中的图片
+                if (Array.isArray(value) && value.length > 0) {
+                    const first = value[0]
+                    if (first && typeof first === 'object' && ('uploadId' in first || 'tmpUrl' in first)) {
+                        const url = first.tmpUrl || first.url
+                        const isImg = first.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(first.fileName || '')
+                        if (url && isImg) {
+                            return { imageUrl: url }
+                        }
+                    }
+                }
+                if (value && typeof value === 'object' && ('uploadId' in value || 'tmpUrl' in value)) {
+                    const obj = value as any
+                    const url = obj.tmpUrl || obj.url
+                    const isImg = obj.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(obj.fileName || '')
+                    if (url && isImg) {
+                        return { imageUrl: url }
                     }
                 }
                 return null

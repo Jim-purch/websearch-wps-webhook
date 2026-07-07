@@ -542,6 +542,15 @@ function ResultCard({
         if (!col) return ''
         const val = row[col]
 
+        // 处理 WPS 多维表格附件/图片
+        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object' && val[0] !== null && ('uploadId' in val[0] || 'tmpUrl' in val[0])) {
+            return val.map((a: any) => a.tmpUrl || a.url || a.fileName || '附件').join(', ')
+        }
+        if (val && typeof val === 'object' && !('_type' in val) && ('uploadId' in val || 'tmpUrl' in val)) {
+            const obj = val as any
+            return obj.tmpUrl || obj.url || obj.fileName || '附件'
+        }
+
         // 处理图片对象
         if (val && typeof val === 'object' && '_type' in val) {
             const imgObj = val as { _type: string; imageUrl?: string; imageId?: string; cellAddress?: string }
@@ -904,9 +913,25 @@ function ResultCard({
 
                                                 // 普通值处理
                                                 let displayVal = val
-                                                if (val && typeof val === 'object' && !('_type' in val)) {
-                                                    displayVal = JSON.stringify(val)
+                                                let isWpsAttachment = false
+                                                let attachments: any[] = []
+
+                                                if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object' && val[0] !== null && ('uploadId' in val[0] || 'tmpUrl' in val[0])) {
+                                                    isWpsAttachment = true
+                                                    attachments = val
+                                                } else if (val && typeof val === 'object' && !('_type' in val)) {
+                                                    if ('uploadId' in val || 'tmpUrl' in val) {
+                                                        isWpsAttachment = true
+                                                        attachments = [val]
+                                                    } else {
+                                                        displayVal = JSON.stringify(val)
+                                                    }
                                                 }
+
+                                                if (isWpsAttachment) {
+                                                    displayVal = attachments.map(a => a.fileName || '附件').join(', ')
+                                                }
+
                                                 if (val && typeof val === 'object' && '_type' in val) {
                                                     const imgObj = val as { _type: string; value?: string }
                                                     displayVal = imgObj.value || ''
@@ -988,6 +1013,67 @@ function ResultCard({
                                                         setEditingCell({ rowIdx, colIdx })
                                                         setEditValue(strVal)
                                                     }
+                                                }
+
+                                                // WPS 附件/图片对象渲染
+                                                if (isWpsAttachment && attachments.length > 0) {
+                                                    return (
+                                                        <td
+                                                            key={col}
+                                                            data-selectable-cell
+                                                            className={cellClassName}
+                                                            onMouseDown={(e) => handleMouseDown(rowIdx, colIdx, e)}
+                                                            onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                                            onDoubleClick={handleDblClick}
+                                                            style={cellStyle}
+                                                        >
+                                                            <div className="flex flex-wrap gap-2 items-center">
+                                                                {attachments.map((att, idx) => {
+                                                                    const url = att.tmpUrl || att.url
+                                                                    const isImg = att.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(att.fileName || '')
+                                                                    
+                                                                    if (isImg && url) {
+                                                                        return (
+                                                                            <ImageWithPreview
+                                                                                key={idx}
+                                                                                src={url}
+                                                                                onCopy={() => handleCellClick(url, cellKey)}
+                                                                                isCopied={isCopied}
+                                                                            />
+                                                                        )
+                                                                    }
+                                                                    
+                                                                    if (url) {
+                                                                        return (
+                                                                            <a
+                                                                                key={idx}
+                                                                                href={url}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                className={`inline-flex items-center gap-1 text-[#3b82f6] hover:text-[#60a5fa] hover:underline text-xs bg-[rgba(59,130,246,0.1)] px-2 py-1 rounded max-w-[200px] truncate transition-colors ${isCopied ? 'text-[#22c55e]' : ''}`}
+                                                                                title={`点击下载附件: ${att.fileName} (${(att.size / 1024).toFixed(1)} KB)`}
+                                                                            >
+                                                                                <span>📄</span>
+                                                                                <span className="truncate">{att.fileName}</span>
+                                                                            </a>
+                                                                        )
+                                                                    }
+                                                                    
+                                                                    return (
+                                                                        <span
+                                                                            key={idx}
+                                                                            className="inline-flex items-center gap-1 text-gray-500 text-xs bg-gray-100 dark:bg-neutral-800 px-2 py-1 rounded max-w-[200px] truncate"
+                                                                            title={`附件: ${att.fileName} (无法获取下载链接)`}
+                                                                        >
+                                                                            <span>⚠️</span>
+                                                                            <span className="truncate">{att.fileName}</span>
+                                                                        </span>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </td>
+                                                    )
                                                 }
 
                                                 // 图片对象 (AirScript)

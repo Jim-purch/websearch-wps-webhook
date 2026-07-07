@@ -82,6 +82,21 @@ function cleanFieldValue(value) {
 
     // 如果是对象
     if (typeof value === 'object') {
+        // 如果是附件对象，使用 WPS API 获取其临时下载地址
+        if (value.uploadId !== undefined && value.source !== undefined) {
+            try {
+                var url = Application.Record.GetAttachmentURL({
+                    UploadId: value.uploadId,
+                    Source: value.source
+                });
+                if (url) {
+                    value.tmpUrl = url;
+                }
+            } catch (err) {
+                console.log("获取附件链接失败: " + err);
+            }
+            return value;
+        }
         // 如果是超链接对象，只返回其地址链接
         if (value.address !== undefined) {
             return value.address;
