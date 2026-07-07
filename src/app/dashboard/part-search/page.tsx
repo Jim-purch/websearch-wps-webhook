@@ -91,6 +91,31 @@ export default function PartSearchPage() {
     // 自动加载图片选项
     const [autoLoadImages, setAutoLoadImages] = useState(false)
 
+    // 顶部搜索进度提示状态
+    const [showStatus, setShowStatus] = useState<'idle' | 'searching' | 'completed'>('idle')
+
+    useEffect(() => {
+        if (isSearching) {
+            setShowStatus('searching')
+        } else {
+            setShowStatus(prev => {
+                if (prev === 'searching') {
+                    return 'completed'
+                }
+                return prev
+            })
+        }
+    }, [isSearching])
+
+    useEffect(() => {
+        if (showStatus === 'completed') {
+            const timer = setTimeout(() => {
+                setShowStatus('idle')
+            }, 3000)
+            return () => clearTimeout(timer)
+        }
+    }, [showStatus])
+
     // 预设相关状态
     const [activePresetId, setActivePresetId] = useState<string | null>(null)
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
@@ -556,6 +581,42 @@ export default function PartSearchPage() {
 
     return (
         <div className="w-full">
+            {/* Top Search Progress Banner */}
+            <div className={`fixed top-0 left-0 right-0 z-[10000] transition-all duration-500 ease-in-out transform ${
+                showStatus === 'idle' 
+                    ? '-translate-y-full opacity-0 pointer-events-none' 
+                    : 'translate-y-0 opacity-100'
+            } ${
+                showStatus === 'searching' 
+                    ? 'bg-blue-600/90 text-white shadow-lg border-b border-blue-500' 
+                    : 'bg-emerald-600/90 text-white shadow-lg border-b border-emerald-500'
+            } backdrop-blur-md`}>
+                <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        {showStatus === 'searching' ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            <span className="text-lg">✅</span>
+                        )}
+                        <span className="font-semibold tracking-wide">
+                            {showStatus === 'searching' 
+                                ? `正在搜索中，正在处理: ${searchingTables.length} 个表` 
+                                : '搜索完成，数据已全部加载！'}
+                        </span>
+                        {showStatus === 'searching' && searchingTables.length > 0 && (
+                            <span className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-mono max-w-[400px] truncate" title={searchingTables.join(', ')}>
+                                {searchingTables.join(', ')}
+                            </span>
+                        )}
+                    </div>
+                    {showStatus === 'searching' && (
+                        <span className="text-xs text-white/70 animate-pulse">
+                            请稍候...
+                        </span>
+                    )}
+                </div>
+            </div>
+
             <div className="mb-8">
                 <div className="flex flex-wrap items-center gap-4 mb-2">
                     <h1 className="text-3xl font-bold flex items-center gap-2">
