@@ -811,14 +811,26 @@ export function usePartSearch() {
 
                                         if (!recordKeySet.has(recKey)) {
                                             recordKeySet.add(recKey)
-                                            allRecords.push({
-                                                ...rec,
-                                                _BatchQueryID: val
-                                            })
+                                            const recCopy = { ...rec } as any
+                                            if (recCopy.fields && typeof recCopy.fields === 'object') {
+                                                recCopy.fields = {
+                                                    ...recCopy.fields,
+                                                    _BatchQueryID: val
+                                                }
+                                            }
+                                            recCopy._BatchQueryID = val
+                                            allRecords.push(recCopy)
                                         } else {
-                                            const existingRec = allRecords.find(r => `${(r._rowNumber || r.row)}` === recKey)
-                                            if (existingRec && existingRec._BatchQueryID !== val) {
-                                                existingRec._BatchQueryID = `${existingRec._BatchQueryID}, ${val}`
+                                            const existingRec = allRecords.find(r => `${(r._rowNumber || r.row)}` === recKey) as any
+                                            if (existingRec) {
+                                                const newVal = existingRec._BatchQueryID !== val ? `${existingRec._BatchQueryID}, ${val}` : existingRec._BatchQueryID
+                                                existingRec._BatchQueryID = newVal
+                                                if (existingRec.fields && typeof existingRec.fields === 'object') {
+                                                    existingRec.fields = {
+                                                        ...existingRec.fields,
+                                                        _BatchQueryID: newVal
+                                                    }
+                                                }
                                             }
                                         }
                                     }

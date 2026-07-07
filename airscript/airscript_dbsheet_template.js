@@ -44,11 +44,11 @@ function cleanFieldValue(value) {
     if (value === null || value === undefined) {
         return value;
     }
-    
+
     // 如果是字符串，尝试解析是否为 JSON 对象/数组
     if (typeof value === 'string') {
         var trimmed = value.trim();
-        if ((trimmed.indexOf('{') === 0 && trimmed.lastIndexOf('}') === trimmed.length - 1) || 
+        if ((trimmed.indexOf('{') === 0 && trimmed.lastIndexOf('}') === trimmed.length - 1) ||
             (trimmed.indexOf('[') === 0 && trimmed.lastIndexOf(']') === trimmed.length - 1)) {
             try {
                 var parsed = JSON.parse(trimmed);
@@ -59,7 +59,7 @@ function cleanFieldValue(value) {
         }
         return value;
     }
-    
+
     // 如果是数组
     if (Array.isArray(value)) {
         var cleanedArr = [];
@@ -79,22 +79,26 @@ function cleanFieldValue(value) {
         }
         return cleanedArr;
     }
-    
+
     // 如果是对象
     if (typeof value === 'object') {
+        // 如果是超链接对象，只返回其地址链接
+        if (value.address !== undefined) {
+            return value.address;
+        }
         // 如果是人员对象（包含 nickName 或 name）
         if (value.nickName !== undefined) {
             return value.nickName;
         }
-        if (value.name !== undefined) {
-            return value.name;
-        }
+        // if (value.name !== undefined) {
+        //     return value.name;
+        // }
         // 特殊处理 WPS API 的图片/附件等其他对象，可以直接保留
         if (value.id !== undefined && value.avatar !== undefined) {
             return value.id;
         }
     }
-    
+
     return value;
 }
 
@@ -399,7 +403,7 @@ function searchByColumn(sheetName, columnName, searchValue, op) {
 
         console.log("搜索完成，共找到 " + allRecords.length + " 条匹配记录" + (truncated ? "(已截断)" : ""))
 
-        const cleanedRecords = finalRecords.map(function(rec) {
+        const cleanedRecords = finalRecords.map(function (rec) {
             return {
                 id: rec.id,
                 recordId: rec.recordId,
@@ -449,7 +453,13 @@ function getTableDetails(sheetName, sampleSize) {
 
     try {
         const sheets = Application.Sheet.GetSheets()
-        const targetSheet = sheets.find(sheet => sheet.name === sheetName)
+        let targetSheet = null
+        for (let i = 0; i < sheets.length; i++) {
+            if (sheets[i].name === sheetName) {
+                targetSheet = sheets[i]
+                break
+            }
+        }
 
         if (!targetSheet) {
             return {
@@ -484,7 +494,7 @@ function getTableDetails(sheetName, sampleSize) {
 
         console.log("获取到 " + sampleRecords.records.length + " 条示例记录")
 
-        const cleanedSampleRecords = sampleRecords.records.map(function(rec) {
+        const cleanedSampleRecords = sampleRecords.records.map(function (rec) {
             return {
                 id: rec.id,
                 recordId: rec.recordId,
@@ -746,7 +756,7 @@ function searchMultiCriteria(sheetName, criteria, returnColumns, limitVal, offse
             }
             finalRecords = filteredRecords
         } else {
-            finalRecords = finalRecords.map(function(rec) {
+            finalRecords = finalRecords.map(function (rec) {
                 return {
                     id: rec.id,
                     recordId: rec.recordId,
@@ -808,7 +818,13 @@ function searchBatch(sheetName, batchCriteria, globalReturnColumns, limitVal) {
     try {
         // 1. 获取表信息 (只获取一次)
         const sheets = Application.Sheet.GetSheets()
-        const targetSheet = sheets.find(s => s.name === sheetName)
+        let targetSheet = null
+        for (let i = 0; i < sheets.length; i++) {
+            if (sheets[i].name === sheetName) {
+                targetSheet = sheets[i]
+                break
+            }
+        }
 
         if (!targetSheet) {
             return {
@@ -922,7 +938,7 @@ function searchBatch(sheetName, batchCriteria, globalReturnColumns, limitVal) {
                 }
                 allRecords = filteredRecs
             } else {
-                allRecords = allRecords.map(function(rec) {
+                allRecords = allRecords.map(function (rec) {
                     return {
                         id: rec.id,
                         recordId: rec.recordId,
