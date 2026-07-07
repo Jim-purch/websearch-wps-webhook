@@ -646,7 +646,7 @@ function ResultCard({
     if (result.error && records.length === 0) {
         return (
             <div className="card mb-3.5 overflow-hidden">
-                <div className="p-4 bg-[rgba(239,68,68,0.1)] border-b border-[var(--border)]">
+                <div className="py-2 px-4 bg-[rgba(239,68,68,0.1)] border-b border-[var(--border)]">
                     <h4 className="font-medium text-[#ef4444] flex items-center gap-2">
                         <span>❌</span>
                         搜索失败: {result.tableName}
@@ -664,7 +664,7 @@ function ResultCard({
     return (
         <div className="card mb-3.5 overflow-hidden">
             <div
-                className="p-4 bg-[rgba(234,179,8,0.1)] border-b border-[var(--border)] cursor-pointer flex justify-between items-center"
+                className="py-2 px-4 bg-[rgba(234,179,8,0.1)] border-b border-[var(--border)] cursor-pointer flex justify-between items-center"
                 onClick={() => setCollapsed(!collapsed)}
             >
                 <h4 className="font-medium text-[#eab308] flex items-center gap-2">
