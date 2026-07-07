@@ -27,6 +27,8 @@ interface SearchFormProps {
     onSavePreset?: () => void
     // Expand control
     forceExpanded?: number // 展开计数器，每次变化时强制展开
+    // Toggle field (sync with Step 3)
+    onToggle?: (tableName: string, columnName: string) => void
 }
 
 interface InputState {
@@ -51,7 +53,8 @@ export function SearchForm({
     batchProgress,
     columnConfigs,
     onSavePreset,
-    forceExpanded
+    forceExpanded,
+    onToggle
 }: SearchFormProps) {
 
     // 找出所有选中的且配置为 sameValue 的字段
@@ -252,13 +255,13 @@ export function SearchForm({
             </div>
 
             {isOpen && (
-                <div className="p-6 pt-0 border-t border-transparent">
+                <div className="p-4 pt-0 border-t border-transparent">
                     <form onSubmit={handleSubmit}>
 
                         {/* 同值批量搜索区域 */}
                         {sameValueCols.length > 0 && (
-                            <div className="mb-6 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.02)] p-4 space-y-4">
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(234,179,8,0.15)] pb-3">
+                            <div className="mb-4 rounded-lg border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.02)] p-3 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(234,179,8,0.15)] pb-2">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">🔗</span>
                                         <span className="font-semibold text-[#eab308]">同值联合批量搜索</span>
@@ -346,6 +349,16 @@ export function SearchForm({
                                         <span key={`${col.tableKey}__${col.columnName}`} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[rgba(234,179,8,0.15)] border border-[rgba(234,179,8,0.3)] text-[#eab308]">
                                             <span>📊</span>
                                             {col.displayName}
+                                            {onToggle && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onToggle(col.tableKey, col.columnName)}
+                                                    className="ml-1 text-[10px] text-[#eab308]/60 hover:text-[#ef4444] transition-colors cursor-pointer font-bold"
+                                                    title="关闭此搜索字段"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
                                         </span>
                                     ))}
                                     {sameValueCols.length > 3 && (
@@ -369,7 +382,7 @@ export function SearchForm({
                                         value={sameValueInput}
                                         onChange={(e) => setSameValueInput(e.target.value)}
                                         placeholder="请在此输入要搜索的相同值列表，一行一个。支持从 Excel 直接复制整列数据粘贴到此处。"
-                                        className="textarea w-full font-mono text-sm border-[var(--border)] focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] bg-[var(--card-bg)] rounded-lg p-3 resize-y min-h-[120px]"
+                                        className="textarea w-full font-mono text-sm border-[var(--border)] focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] bg-[var(--card-bg)] rounded-lg p-2.5 resize-y min-h-[90px]"
                                     />
                                     <span className="text-xs text-[var(--text-muted)] text-right">
                                         已输入 {sameValueInput.split('\n').filter(v => v.trim() !== '').length} 行
@@ -380,7 +393,7 @@ export function SearchForm({
 
                         {/* 常规独立条件字段 */}
                         {inputKeys.length > 0 && (
-                            <div className="space-y-4 mb-6">
+                            <div className="space-y-3 mb-4">
                                 {Object.entries(selectedColumns).map(([tableKey, columns]) => {
                                     // 检查该表是否含有处于常规检索下的字段
                                     const { tokenId: sTokenId } = parseTableKey(tableKey)
@@ -405,7 +418,7 @@ export function SearchForm({
                                             key={tableKey}
                                             className="rounded-lg border border-[var(--border)] overflow-hidden"
                                         >
-                                            <div className="bg-[rgba(234,179,8,0.1)] px-4 py-2 border-b border-[var(--border)] flex items-center gap-3">
+                                            <div className="bg-[rgba(234,179,8,0.1)] px-3 py-1.5 border-b border-[var(--border)] flex items-center gap-2">
                                                 {onPasteSearch && visibleColumns.length > 0 && (
                                                     <button
                                                         type="button"
@@ -413,7 +426,7 @@ export function SearchForm({
                                                             e.stopPropagation()
                                                             setPasteModalTableKey(tableKey)
                                                         }}
-                                                        className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white font-medium hover:from-[#7c3aed] hover:to-[#8b5cf6] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#8b5cf6]/30"
+                                                        className="text-xs px-2.5 py-1 rounded-md bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white font-medium hover:from-[#7c3aed] hover:to-[#8b5cf6] transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 border border-[#8b5cf6]/30"
                                                         title="粘贴 Excel 数据进行批量查询"
                                                     >
                                                         <span>📋</span>
@@ -425,7 +438,7 @@ export function SearchForm({
                                                     {displayName}
                                                 </span>
                                             </div>
-                                            <div className="p-4 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                                            <div className="p-3 bg-[var(--card-bg)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
                                                 {visibleColumns.map((columnName) => {
                                                     const key = `${tableKey}__${columnName}`
                                                     const input = inputs[key] || { value: '', op: 'Contains', clean: true }
@@ -451,6 +464,16 @@ export function SearchForm({
                                                                 >
                                                                     {columnName}
                                                                 </span>
+                                                                {onToggle && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onToggle(tableKey, columnName)}
+                                                                        className="text-xs text-[var(--text-muted)] hover:text-[#ef4444] transition-colors p-0.5 cursor-pointer font-bold mr-1"
+                                                                        title="关闭此搜索字段"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleOpChange(key, isExact ? 'Contains' : 'Equals')}

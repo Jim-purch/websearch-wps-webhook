@@ -747,6 +747,7 @@ export default function PartSearchPage() {
                         columnConfigs={columnConfigs}
                         onSavePreset={openSaveModal}
                         forceExpanded={step4ExpandedCounter}
+                        onToggle={withResetPreset(toggleColumn)}
                     />
                 )}
 

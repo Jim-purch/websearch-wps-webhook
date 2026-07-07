@@ -327,7 +327,7 @@ function ResultCard({
 
     // 列宽度和行高度状态
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
-    const [rowHeight, setRowHeight] = useState<'default' | 'compact' | 'very-compact'>('default')
+    const [rowHeight, setRowHeight] = useState<'default' | 'compact' | 'very-compact'>('compact')
     const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null)
 
     const handleResizeStart = useCallback((col: string, e: React.MouseEvent) => {
@@ -690,8 +690,8 @@ function ResultCard({
                             className="text-xs px-2 py-1 rounded bg-[var(--card-bg)] border border-[var(--border)] text-[var(--text-main)] hover:border-[#eab308] focus:border-[#eab308] transition-colors outline-none cursor-pointer"
                             title="行高"
                         >
-                            <option value="default">默认高度</option>
-                            <option value="compact">紧凑</option>
+                            <option value="default">较高</option>
+                            <option value="compact">紧凑 (默认)</option>
                             <option value="very-compact">非常紧凑</option>
                         </select>
                     </div>
