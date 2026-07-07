@@ -71,7 +71,7 @@ export function TokenSelector({
                         </p>
                     ) : (
                         <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                                 {tokens.map((token) => {
                                     const isSelected = selectedIds.has(token.id)
                                     const isGSheet = token.webhook_url?.startsWith('gsheet://')
