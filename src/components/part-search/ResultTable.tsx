@@ -645,7 +645,7 @@ function ResultCard({
 
     if (result.error && records.length === 0) {
         return (
-            <div className="card mb-4 overflow-hidden">
+            <div className="card mb-3.5 overflow-hidden">
                 <div className="p-4 bg-[rgba(239,68,68,0.1)] border-b border-[var(--border)]">
                     <h4 className="font-medium text-[#ef4444] flex items-center gap-2">
                         <span>❌</span>
@@ -662,7 +662,7 @@ function ResultCard({
     const pyClass = rowHeight === 'very-compact' ? 'py-0.5' : rowHeight === 'compact' ? 'py-1' : 'py-2'
 
     return (
-        <div className="card mb-6 overflow-hidden">
+        <div className="card mb-3.5 overflow-hidden">
             <div
                 className="p-4 bg-[rgba(234,179,8,0.1)] border-b border-[var(--border)] cursor-pointer flex justify-between items-center"
                 onClick={() => setCollapsed(!collapsed)}
@@ -702,7 +702,8 @@ function ResultCard({
                                 e.stopPropagation()
                                 onExportSingle(result)
                             }}
-                            className="btn-export flex items-center gap-1 px-3 py-1 text-sm"
+                            className="btn-export flex items-center gap-1 text-xs"
+                            style={{ padding: '4px 10px', height: '26px', borderRadius: '6px' }}
                             title="导出此结果表"
                         >
                             <span>📤</span>
