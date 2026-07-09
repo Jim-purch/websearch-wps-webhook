@@ -681,7 +681,7 @@ export default function PartSearchPage() {
                     />
                 </div>
                 <p className="text-[var(--text-muted)]">
-                    在 WPS 表格 / Google Sheets 中搜索件号和配件信息
+                    在云表格 / Google Sheets 中搜索件号和配件信息
                 </p>
             </div>
 

@@ -66,7 +66,7 @@ export default function ShareAccessPage({ params }: { params: Promise<{ code: st
             {/* 头部 */}
             <header className="header mb-8 rounded-lg">
                 <div className="flex items-center gap-4">
-                    <span className="text-xl font-bold">🔐 WPS Token 分享</span>
+                    <span className="text-xl font-bold">🔐 Token 分享</span>
                 </div>
             </header>
 

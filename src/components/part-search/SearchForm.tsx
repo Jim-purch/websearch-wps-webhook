@@ -685,7 +685,7 @@ export function SearchForm({
 
                                 {/* 批次数量设置 */}
                                 <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--hover-bg)] border border-[var(--border)]">
-                                    <span className="text-sm font-medium text-[var(--foreground)]" title="每次向WPS发送查询请求包含的行数">每次处理行数：</span>
+                                    <span className="text-sm font-medium text-[var(--foreground)]" title="每次发送查询请求包含的行数">每次处理行数：</span>
                                     <div className="flex items-center gap-2">
                                         <input
                                             type="range"

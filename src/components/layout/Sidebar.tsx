@@ -10,6 +10,7 @@ import { useSidebar } from '@/contexts/SidebarContext'
 const userNavItems = [
     { href: '/dashboard', label: '仪表板', icon: '📊' },
     { href: '/dashboard/part-search', label: '件号搜索', icon: '📦' },
+    { href: '/dashboard/profile#tokens', label: '管理 Token', icon: '🔑' },
     { href: '/dashboard/shares', label: '分享管理', icon: '🔗' },
     { href: '/dashboard/profile', label: '用户管理', icon: '👤' },
 ]
@@ -203,7 +204,7 @@ export function Sidebar() {
                 {/* 底部版本信息 */}
                 <div className="p-4 border-t border-[var(--border)] text-center">
                     <p className="text-xs text-[var(--text-muted)]">
-                        WPS快速查找 v1.0
+                        云表格快速查找 v1.0
                     </p>
                 </div>
             </aside>

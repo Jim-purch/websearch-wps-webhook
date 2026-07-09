@@ -205,7 +205,7 @@ export default function ProfilePage() {
             </section>
 
             {/* Token Management Section */}
-            <section className="card overflow-hidden">
+            <section id="tokens" className="card overflow-hidden scroll-mt-20">
                 <div
                     className="p-6 flex items-center justify-between cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
                     onClick={() => setIsTokenListOpen(!isTokenListOpen)}
@@ -286,7 +286,7 @@ export default function ProfilePage() {
                                             value={newToken.token_value}
                                             onChange={(e) => setNewToken({ ...newToken, token_value: e.target.value })}
                                             className="input min-h-[100px]"
-                                            placeholder="粘贴您的 WPS 脚本令牌"
+                                            placeholder="粘贴您的脚本令牌"
                                             required
                                         />
                                     </div>

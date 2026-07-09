@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WPS快速查找",
-  description: "管理和分享您的 WPS 脚本令牌",
+  title: "云表格快速查找",
+  description: "管理和分享您的云表格脚本令牌",
 };
 
 export default function RootLayout({

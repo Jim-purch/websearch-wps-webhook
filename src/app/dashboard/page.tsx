@@ -80,7 +80,7 @@ export default function DashboardPage() {
                         <span className="text-2xl">📋</span>
                         <div>
                             <p className="font-medium">管理 Token</p>
-                            <p className="text-sm text-[var(--text-muted)]">查看和管理您的 WPS Token</p>
+                            <p className="text-sm text-[var(--text-muted)]">查看和管理您的 Token</p>
                         </div>
                     </Link>
 
@@ -88,7 +88,7 @@ export default function DashboardPage() {
                         <span className="text-2xl">➕</span>
                         <div>
                             <p className="font-medium">新建 Token</p>
-                            <p className="text-sm text-[var(--text-muted)]">添加新的 WPS 脚本令牌</p>
+                            <p className="text-sm text-[var(--text-muted)]">添加新的脚本令牌</p>
                         </div>
                     </Link>
 
@@ -104,7 +104,7 @@ export default function DashboardPage() {
                         <span className="text-2xl">📦</span>
                         <div>
                             <p className="font-medium">件号搜索</p>
-                            <p className="text-sm text-[var(--text-muted)]">在 WPS 表格中搜索件号</p>
+                            <p className="text-sm text-[var(--text-muted)]">在云表格中搜索件号</p>
                         </div>
                     </Link>
 

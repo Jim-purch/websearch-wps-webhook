@@ -432,7 +432,7 @@ export function PasteQueryModal({
 
                         {/* Batch Size Selector */}
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-[var(--foreground)]" title="每次向WPS发送查询请求包含的行数">每次处理行数：</span>
+                            <span className="text-sm text-[var(--foreground)]" title="每次发送查询请求包含的行数">每次处理行数：</span>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="range"

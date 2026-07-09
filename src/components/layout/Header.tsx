@@ -49,7 +49,7 @@ export function Header() {
                 </button>
 
                 <Link href="/dashboard" className="text-xl font-bold text-white hover:opacity-90">
-                    🔐 WPS快速查找
+                    🔐 云表格快速查找
                 </Link>
             </div>
 

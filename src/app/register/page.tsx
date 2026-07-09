@@ -127,7 +127,7 @@ export default function RegisterPage() {
                         <span className="text-3xl">🔐</span>
                     </div>
                     <h1 className="text-2xl font-bold gradient-text">创建账户</h1>
-                    <p className="text-[var(--text-muted)] mt-2">加入 WPS快速查找</p>
+                    <p className="text-[var(--text-muted)] mt-2">加入 云表格快速查找</p>
                 </div>
 
                 {/* 错误提示 */}
