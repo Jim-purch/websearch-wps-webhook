@@ -375,10 +375,33 @@ function ResultCard({
         setSelectedRows(new Set())
     }, [result.records])
 
+    // 构建带未找到行的导出结果
+    const buildExportResult = (): TableSearchResult => {
+        if (!showNotFoundRows || !result.isBatchSearch || !result.allQueryItems) {
+            return result
+        }
+
+        // 按 _BatchQueryID 分组找到的记录
+        const foundIds = new Set(records.map(r => String(r._BatchQueryID || '')))
+        const notFoundItems = result.allQueryItems.filter(item => !foundIds.has(item.id))
+        if (notFoundItems.length === 0) return result
+
+        // 将未找到的行转为记录格式
+        const notFoundRecords = notFoundItems.map(item => {
+            const rec: Record<string, unknown> = { _BatchQueryID: item.id }
+            for (const [key, val] of Object.entries(item.originalValues)) {
+                rec[`原始_${key}`] = val
+            }
+            return rec
+        })
+
+        return { ...result, records: [...result.records, ...notFoundRecords] }
+    }
+
     const handleBatchExport = (e: React.MouseEvent) => {
         e.stopPropagation()
         if (onExportSingle) {
-            onExportSingle(result, Array.from(selectedRows))
+            onExportSingle(buildExportResult(), Array.from(selectedRows))
         }
     }
 
@@ -731,6 +754,7 @@ function ResultCard({
                         const foundIds = new Set(records.map(r => String(r._BatchQueryID || '')))
                         const notFoundCount = (result.allQueryItems || []).filter(item => !foundIds.has(item.id)).length
                         return notFoundCount > 0 ? (
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
                         <label
                             className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] cursor-pointer select-none"
                             title="显示未查找到任何结果的行"
@@ -743,6 +767,7 @@ function ResultCard({
                             />
                             显示未查找到的行 ({notFoundCount})
                         </label>
+                        </div>
                         ) : null
                     })()}
                     {onExportSingle && (
@@ -750,7 +775,7 @@ function ResultCard({
                             type="button"
                             onClick={(e) => {
                                 e.stopPropagation()
-                                onExportSingle(result)
+                                onExportSingle(buildExportResult())
                             }}
                             className="btn-export flex items-center gap-1 text-xs"
                             style={{ padding: '4px 10px', height: '26px', borderRadius: '6px' }}
