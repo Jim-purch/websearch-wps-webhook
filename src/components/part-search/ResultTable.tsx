@@ -1306,35 +1306,11 @@ export function ResultTable({
         }
     }
 
-    if (isSearching && results.length === 0) {
-        return (
-            <div className="card p-8">
-                <div className="flex flex-col items-center justify-center gap-4">
-                    <div className="spinner w-10 h-10"></div>
-                    <p className="text-[var(--text-muted)] font-semibold">正在搜索数据表...</p>
-                    {searchingTables.length > 0 && (
-                        <div className="text-sm text-[var(--text-muted)] max-w-md text-center bg-[rgba(59,130,246,0.05)] border border-[#3b82f6]/20 px-4 py-2.5 rounded-lg">
-                            正在查询: <span className="text-blue-500 font-semibold">{searchingTables.join(', ')}</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )
-    }
-
-    if (results.length === 0) {
-        return (
-            <div className="card p-8">
-                <div className="text-center text-[var(--text-muted)]">
-                    <div className="text-4xl mb-4">📦</div>
-                    <p>请按步骤选择 Token、数据表和列，然后输入关键词搜索</p>
-                </div>
-            </div>
-        )
-    }
+    const isInitialLoading = isSearching && results.length === 0
 
     return (
         <div>
+            {/* 搜索中横幅（稳定结构，不因结果到达而切换 DOM 树） */}
             {isSearching && searchingTables.length > 0 && (
                 <div className="mb-4 p-3 bg-[rgba(59,130,246,0.1)] border border-[#3b82f6]/30 rounded-lg flex items-center justify-between gap-3 animate-pulse">
                     <div className="flex items-center gap-2.5">
@@ -1346,6 +1322,23 @@ export function ResultTable({
                 </div>
             )}
 
+            {/* 初始加载（无结果时的加载占位） */}
+            {isInitialLoading ? (
+                <div className="card p-8">
+                    <div className="flex flex-col items-center justify-center gap-4">
+                        <div className="spinner w-10 h-10"></div>
+                        <p className="text-[var(--text-muted)] font-semibold">正在搜索数据表...</p>
+                    </div>
+                </div>
+            ) : results.length === 0 && !isSearching ? (
+                <div className="card p-8">
+                    <div className="text-center text-[var(--text-muted)]">
+                        <div className="text-4xl mb-4">📦</div>
+                        <p>请按步骤选择 Token、数据表和列，然后输入关键词搜索</p>
+                    </div>
+                </div>
+            ) : (
+                <>
             {modifiedCount > 0 && (
                 <div className="mb-4 p-4 bg-[rgba(234,179,8,0.1)] border border-[#eab308] rounded-lg flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50 backdrop-blur-md">
                     <div className="flex items-center gap-2">
@@ -1398,6 +1391,8 @@ export function ResultTable({
                     onLoadMore={onLoadMore}
                 />
             ))}
+                </>
+            )}
         </div>
     )
 }
