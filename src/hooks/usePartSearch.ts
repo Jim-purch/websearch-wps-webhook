@@ -110,6 +110,20 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
 }
 
 /**
+ * 替换或追加搜索结果（用于分批回退完成后的最终结果）
+ * 如果表格已存在（来自增量回调），则替换整个条目；否则追加
+ */
+function upsertSearchResult(prev: TableSearchResult[], newResult: TableSearchResult): TableSearchResult[] {
+    const index = prev.findIndex(p => p.tableName === newResult.tableName)
+    if (index === -1) {
+        return [...prev, newResult]
+    }
+    const next = [...prev]
+    next[index] = newResult
+    return next
+}
+
+/**
  * 清理搜索值：去除回车、空格、"-"、"."，以及最开始的"0"，再转小写
  * 用于对搜索值和被搜索内容都进行标准化处理后再匹配
  */
@@ -1068,7 +1082,7 @@ export function usePartSearch() {
 
                     // 立即更新客户端状态以展示该数据表的结果，并移除“正在搜索”中的对应表名
                     if (searchId === activeSearchIdRef.current) {
-                        setSearchResults(prev => [...prev, tableResult])
+                        setSearchResults(prev => upsertSearchResult(prev, tableResult))
                         setSearchingTables(prev => prev.filter(name => name !== displayTableNameWithToken))
                     }
                 }
@@ -2180,8 +2194,8 @@ export function usePartSearch() {
                                 }
                             }
 
-                            // 增量更新 State
-                            setSearchResults(prev => mergeBatchResults(prev, newResult))
+                            // 最终结果替换（而非合并）已有条目，避免增量结果与最终结果重复
+                            setSearchResults(prev => upsertSearchResult(prev, newResult))
 
                         } catch (err) {
                             const errorResult: TableSearchResult = {
@@ -2193,7 +2207,7 @@ export function usePartSearch() {
                                 truncated: false,
                                 error: err instanceof Error ? err.message : '未知错误'
                             }
-                            setSearchResults(prev => mergeBatchResults(prev, errorResult))
+                            setSearchResults(prev => upsertSearchResult(prev, errorResult))
                         } finally {
                             processedItemsCount += currentBatchSize
                             // 更新进度
@@ -2420,8 +2434,8 @@ export function usePartSearch() {
                     }
                 }
 
-                // 增量更新 SearchResults
-                setSearchResults(prev => mergeBatchResults(prev, newResult))
+                // 最终结果替换（而非合并）已有条目，避免增量结果与最终结果重复
+                setSearchResults(prev => upsertSearchResult(prev, newResult))
 
                 processedCount += currentBatchSize
                 setBatchProgress(`查询中(${Math.min(processedCount, totalCount)}/${totalCount})`)
