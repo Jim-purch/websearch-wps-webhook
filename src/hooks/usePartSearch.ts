@@ -60,6 +60,7 @@ export interface TableSearchResult {
     isLoadingMore?: boolean // 是否正在加载更多中
     isBatchSearch?: boolean // 标记是否为批量搜索
     allQueryItems?: Array<{ id: string; originalValues: Record<string, string> }> // 所有查询项（有序，含已找到和未找到）
+    batchStatus?: { completedBatches: number; totalBatches: number } | null // 分批查询进度状态
 }
 
 // 移除硬编码的 BATCH_SIZE，改为通过参数传递，默认50
@@ -98,6 +99,7 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
         displayColumns: newResult.displayColumns || existing.displayColumns, // 保留显示列配置
         isBatchSearch: existing.isBatchSearch || newResult.isBatchSearch,
         allQueryItems: mergedAllQueryItems.length > 0 ? mergedAllQueryItems : undefined,
+        batchStatus: newResult.batchStatus !== undefined ? newResult.batchStatus : existing.batchStatus,
         // 更新描述
         criteriaDescription: `批量查询 (已加载 ${mergedRecords.length} 条数据)`
     }
@@ -868,30 +870,13 @@ export function usePartSearch() {
                         if (batchItems.length === 0) continue
 
                         try {
-                            const res = await searchBatchWithFallback(
-                                tokenId,
-                                realTableName,
-                                batchItems,
-                                returnColumns.length > 0 ? returnColumns : undefined,
-                                sameValueParams?.limit,
-                                undefined,
-                                true,
-                                tableSameValueCols,
-                                cleanedSameValueValues,
-                                (completed, total) => {
-                                    const divisor = tableSameValueCols.length || 1
-                                    setBatchFallbackProgress({
-                                        completed: Math.ceil(completed / divisor),
-                                        total: Math.ceil(total / divisor),
-                                        tableName: realTableName
-                                    })
-                                }
-                            )
-                            if (res.success && res.data) {
-                                const batchRes = res.data as WpsBatchSearchResult
-                                const allRecords: Record<string, unknown>[] = []
-                                const recordKeySet = new Set<string>()
-
+                            // 同值搜索的记录处理函数（可复用于增量回调）
+                            const processSameValueBatchResult = (
+                                batchRes: WpsBatchSearchResult,
+                                existingRecords: Record<string, unknown>[],
+                                existingKeySet: Set<string>
+                            ): Record<string, unknown>[] => {
+                                const allRecords = [...existingRecords]
                                 for (const itemResult of batchRes.results) {
                                     if (itemResult.success && itemResult.records) {
                                         const [val] = itemResult.id.split('::')
@@ -906,8 +891,8 @@ export function usePartSearch() {
                                             const rowNum = (rec._rowNumber || rec.row) as number || Math.random()
                                             const recKey = `${rowNum}`
 
-                                            if (!recordKeySet.has(recKey)) {
-                                                recordKeySet.add(recKey)
+                                            if (!existingKeySet.has(recKey)) {
+                                                existingKeySet.add(recKey)
                                                 const recCopy = { ...rec } as any
                                                 if (recCopy.fields && typeof recCopy.fields === 'object') {
                                                     recCopy.fields = {
@@ -933,6 +918,54 @@ export function usePartSearch() {
                                         }
                                     }
                                 }
+                                return allRecords
+                            }
+
+                            // 增量状态追踪
+                            const incrementalKeySet = new Set<string>()
+                            let incrementalAllRecords: Record<string, unknown>[] = []
+
+                            const res = await searchBatchWithFallback(
+                                tokenId,
+                                realTableName,
+                                batchItems,
+                                returnColumns.length > 0 ? returnColumns : undefined,
+                                sameValueParams?.limit,
+                                undefined,
+                                true,
+                                tableSameValueCols,
+                                cleanedSameValueValues,
+                                (completed, total) => {
+                                    const divisor = tableSameValueCols.length || 1
+                                    setBatchFallbackProgress({
+                                        completed: Math.ceil(completed / divisor),
+                                        total: Math.ceil(total / divisor),
+                                        tableName: realTableName
+                                    })
+                                },
+                                (chunkData, completedBatches, totalBatches) => {
+                                    incrementalAllRecords = processSameValueBatchResult(chunkData, incrementalAllRecords, incrementalKeySet)
+
+                                    const incrementalResult: TableSearchResult = {
+                                        tableName: displayTableNameWithToken,
+                                        realTableName: realTableName,
+                                        tokenId: tokenId,
+                                        criteriaDescription: `同值批量搜索 (${tableSameValueCols.join('/')})，已匹配 ${incrementalAllRecords.length} 条 [批次 ${completedBatches}/${totalBatches}]`,
+                                        records: incrementalAllRecords,
+                                        totalCount: incrementalAllRecords.length,
+                                        truncated: false,
+                                        displayColumns: displayColumns,
+                                        originalQueryColumns: [],
+                                        isBatchSearch: true,
+                                        allQueryItems: cleanedSameValueValues.map(val => ({ id: val, originalValues: {} })),
+                                        batchStatus: { completedBatches, totalBatches }
+                                    }
+                                    setSearchResults(prev => mergeBatchResults(prev, incrementalResult))
+                                }
+                            )
+                            if (res.success && res.data) {
+                                const batchRes = res.data as WpsBatchSearchResult
+                                const allRecords = processSameValueBatchResult(batchRes, [], new Set())
 
                                 tableResult = {
                                     tableName: displayTableNameWithToken,
@@ -945,7 +978,8 @@ export function usePartSearch() {
                                     displayColumns: displayColumns,
                                     originalQueryColumns: [],
                                     isBatchSearch: true,
-                                    allQueryItems: cleanedSameValueValues.map(val => ({ id: val, originalValues: {} }))
+                                    allQueryItems: cleanedSameValueValues.map(val => ({ id: val, originalValues: {} })),
+                                    batchStatus: null
                                 }
                             } else {
                                 tableResult = {
@@ -2039,18 +2073,17 @@ export function usePartSearch() {
                             // 显示列顺序
                             const displayColumns = returnColumns
 
-                            const res = await searchBatchWithFallback(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined, undefined, undefined, undefined, (completed, total) => setBatchFallbackProgress({ completed, total, tableName: tableRealName }))
-
-                            let newResult: TableSearchResult
-
-                            if (res.success && res.data) {
-                                const batchRes = res.data as WpsBatchSearchResult
+                            // 批量搜索的记录处理函数（可复用于增量回调）
+                            const processBatchChunkResult = (
+                                batchRes: WpsBatchSearchResult,
+                                sourceChunk: typeof chunk
+                            ): { records: Record<string, unknown>[]; foundIds: Set<string> } => {
                                 const allRecords: Record<string, unknown>[] = []
                                 const foundIds = new Set<string>()
 
                                 for (const itemResult of batchRes.results) {
                                     if (itemResult.success && itemResult.records) {
-                                        const item = chunk.find(i => i.id === itemResult.id)
+                                        const item = sourceChunk.find(i => i.id === itemResult.id)
                                         const itemCriteria = item?.criteria || []
                                         const originalValues = item?.originalValues || {}
                                         const prefixedOriginalValues: Record<string, string> = {}
@@ -2084,6 +2117,40 @@ export function usePartSearch() {
                                         allRecords.push(...recordsWithId)
                                     }
                                 }
+                                return { records: allRecords, foundIds }
+                            }
+
+                            const res = await searchBatchWithFallback(
+                                tokenId, tableRealName, chunk,
+                                returnColumns.length > 0 ? returnColumns : undefined,
+                                batchLimit, undefined, undefined, undefined, undefined,
+                                (completed, total) => setBatchFallbackProgress({ completed, total, tableName: tableRealName }),
+                                (chunkData, completedBatches, totalBatches) => {
+                                    const { records: incRecords } = processBatchChunkResult(chunkData, chunk)
+                                    const incrementalResult: TableSearchResult = {
+                                        tableName: displayTableName,
+                                        realTableName: tableRealName,
+                                        tokenId: tokenId,
+                                        criteriaDescription: `批量查询 [批次 ${completedBatches}/${totalBatches}]`,
+                                        records: incRecords,
+                                        totalCount: incRecords.length,
+                                        truncated: false,
+                                        error: undefined,
+                                        originalQueryColumns,
+                                        displayColumns: displayColumns,
+                                        isBatchSearch: true,
+                                        allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                                        batchStatus: { completedBatches, totalBatches }
+                                    }
+                                    setSearchResults(prev => mergeBatchResults(prev, incrementalResult))
+                                }
+                            )
+
+                            let newResult: TableSearchResult
+
+                            if (res.success && res.data) {
+                                const batchRes = res.data as WpsBatchSearchResult
+                                const { records: allRecords, foundIds } = processBatchChunkResult(batchRes, chunk)
 
                                 newResult = {
                                     tableName: displayTableName,
@@ -2097,7 +2164,8 @@ export function usePartSearch() {
                                     originalQueryColumns,
                                     displayColumns: displayColumns,
                                     isBatchSearch: true,
-                                    allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))
+                                    allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                                    batchStatus: null
                                 }
                             } else {
                                 newResult = {
@@ -2245,18 +2313,17 @@ export function usePartSearch() {
                 // 显示列顺序
                 const displayColumns = returnColumns
 
-                const res = await searchBatchWithFallback(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined, undefined, undefined, undefined, (completed, total) => setBatchFallbackProgress({ completed, total, tableName: realTableName }))
-
-                let newResult: TableSearchResult
-
-                if (res.success && res.data) {
-                    const batchRes = res.data as WpsBatchSearchResult
+                // 粘贴搜索的记录处理函数（可复用于增量回调）
+                const processPasteChunkResult = (
+                    batchRes: WpsBatchSearchResult,
+                    sourceChunk: typeof chunk
+                ): { records: Record<string, unknown>[]; foundIds: Set<string> } => {
                     const allRecords: Record<string, unknown>[] = []
                     const foundIds = new Set<string>()
 
                     for (const itemResult of batchRes.results) {
                         if (itemResult.success && itemResult.records) {
-                            const item = chunk.find(i => i.id === itemResult.id)
+                            const item = sourceChunk.find(i => i.id === itemResult.id)
                             const itemCriteria = item?.criteria || []
                             const originalValues = item?.originalValues || {}
                             const prefixedOriginalValues: Record<string, string> = {}
@@ -2290,6 +2357,40 @@ export function usePartSearch() {
                             allRecords.push(...recordsWithId)
                         }
                     }
+                    return { records: allRecords, foundIds }
+                }
+
+                const res = await searchBatchWithFallback(
+                    tokenId, realTableName, chunk,
+                    returnColumns.length > 0 ? returnColumns : undefined,
+                    batchLimit, undefined, undefined, undefined, undefined,
+                    (completed, total) => setBatchFallbackProgress({ completed, total, tableName: realTableName }),
+                    (chunkData, completedBatches, totalBatches) => {
+                        const { records: incRecords } = processPasteChunkResult(chunkData, chunk)
+                        const incrementalResult: TableSearchResult = {
+                            tableName: displayTableName,
+                            realTableName: realTableName,
+                            tokenId: tokenId,
+                            criteriaDescription: `粘贴查询 [批次 ${completedBatches}/${totalBatches}]`,
+                            records: incRecords,
+                            totalCount: incRecords.length,
+                            truncated: false,
+                            error: undefined,
+                            originalQueryColumns,
+                            displayColumns: displayColumns,
+                            isBatchSearch: true,
+                            allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                            batchStatus: { completedBatches, totalBatches }
+                        }
+                        setSearchResults(prev => mergeBatchResults(prev, incrementalResult))
+                    }
+                )
+
+                let newResult: TableSearchResult
+
+                if (res.success && res.data) {
+                    const batchRes = res.data as WpsBatchSearchResult
+                    const { records: allRecords, foundIds } = processPasteChunkResult(batchRes, chunk)
 
                     newResult = {
                         tableName: displayTableName,
@@ -2303,7 +2404,8 @@ export function usePartSearch() {
                         originalQueryColumns,
                         displayColumns: displayColumns,
                         isBatchSearch: true,
-                        allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))
+                        allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                        batchStatus: null
                     }
                 } else {
                     newResult = {

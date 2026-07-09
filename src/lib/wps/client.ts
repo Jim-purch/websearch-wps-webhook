@@ -270,10 +270,13 @@ const FALLBACK_CHUNK_SIZE = (() => {
 /**
  * 带分批回退的批量搜索
  *
- * 当首次请求遇到 403/500 错误时，自动将查询拆分为每批 10 条重试，
- * 并通过 onProgress 回调实时报告进度。
+ * 当首次请求遇到 403/500 错误时，自动将查询拆分为每批 N 条重试。
+ * - 单个批次失败时仅重试该批次（最多 2 次），不影响其他批次
+ * - 每批成功后立即通过 onChunkResult 回调返回结果，实现增量显示
+ * - 通过 onProgress 回调报告整体进度
  *
  * @param onProgress 回调 (completed, total) → 用于 UI 展示进度
+ * @param onChunkResult 回调 (chunkResult, completedBatches, totalBatches) → 每批成功后增量返回结果
  */
 export async function searchBatchWithFallback(
     tokenId: string,
@@ -285,7 +288,8 @@ export async function searchBatchWithFallback(
     isSameValueSearch?: boolean,
     sameValueCols?: string[],
     sameValueValues?: string[],
-    onProgress?: (completed: number, total: number) => void
+    onProgress?: (completed: number, total: number) => void,
+    onChunkResult?: (chunkResult: WpsBatchSearchResult, completedBatches: number, totalBatches: number) => void
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     // 首次完整请求
     const result = await searchBatch(
@@ -324,8 +328,10 @@ export async function searchBatchWithFallback(
             await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500))
         }
 
-        // 每批最多重试 2 次
-        for (let attempt = 0; attempt < 2; attempt++) {
+        let chunkSucceeded = false
+
+        // 单批次最多重试 2 次
+        for (let attempt = 0; attempt < 2 && !chunkSucceeded; attempt++) {
             if (attempt > 0) {
                 await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
             }
@@ -341,7 +347,10 @@ export async function searchBatchWithFallback(
                     allResults.push(...(chunkResult.data.results || []))
                     totalMatches += chunkResult.data.totalMatches || 0
                     succeededChunks++
-                    break // 成功则跳出重试循环
+                    chunkSucceeded = true
+
+                    // 增量回调：立即通知调用方此批次的结果
+                    onChunkResult?.(chunkResult.data, i + 1, chunks.length)
                 } else {
                     lastError = chunkResult.error
                 }

@@ -747,6 +747,12 @@ function ResultCard({
                         {result.truncated && ' (已截断)'}
                         {result.error && ' (部分失败)'}
                     </span>
+                    {result.batchStatus && result.batchStatus.completedBatches < result.batchStatus.totalBatches && (
+                        <span className="text-sm text-[#3b82f6] bg-[rgba(59,130,246,0.1)] px-3 py-1 rounded-full flex items-center gap-1.5 animate-pulse">
+                            <span className="inline-block w-3 h-3 border-2 border-[#3b82f6]/30 border-t-[#3b82f6] rounded-full animate-spin" />
+                            查询中 {result.batchStatus.completedBatches}/{result.batchStatus.totalBatches}
+                        </span>
+                    )}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
                         <select
                             value={rowHeight}
@@ -759,7 +765,7 @@ function ResultCard({
                             <option value="very-compact">非常紧凑</option>
                         </select>
                     </div>
-                    {result.isBatchSearch && (() => {
+                    {result.isBatchSearch && !(result.batchStatus && result.batchStatus.completedBatches < result.batchStatus.totalBatches) && (() => {
                         const foundIds = new Set(records.map(r => String(r._BatchQueryID || '')))
                         const notFoundCount = (result.allQueryItems || []).filter(item => !foundIds.has(item.id)).length
                         return notFoundCount > 0 ? (
@@ -1449,7 +1455,7 @@ export function ResultTable({
             ) : (
                 <>
             {modifiedCount > 0 && (
-                <div className="mb-4 p-4 bg-[rgba(234,179,8,0.1)] border border-[#eab308] rounded-lg flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50 backdrop-blur-md">
+                <div className="mb-4 p-4 bg-[rgba(234,179,8,0.15)] border border-[#eab308] rounded-lg flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
                     <div className="flex items-center gap-2">
                         <span className="text-xl">⚠️</span>
                         <div>
