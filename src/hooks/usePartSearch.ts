@@ -7,7 +7,7 @@ import { useSharedTokens } from './useSharedTokens'
 import {
     getTableList,
     searchMultiCriteria,
-    searchBatch,
+    searchBatchWithFallback,
     getImageUrls,
     refreshGsheetCache,
     type WpsTable,
@@ -208,6 +208,9 @@ export function usePartSearch() {
     // 批量搜索状态
     const [isBatchSearching, setIsBatchSearching] = useState(false)
     const [batchProgress, setBatchProgress] = useState<string>('')
+
+    // 分批回退进度 { completed, total, tableName } | null
+    const [batchFallbackProgress, setBatchFallbackProgress] = useState<{ completed: number; total: number; tableName?: string } | null>(null)
 
     // 导出状态
     const [isExporting, setIsExporting] = useState(false)
@@ -672,6 +675,7 @@ export function usePartSearch() {
         setIsSearching(true)
         setSearchError(null)
         setSearchResults([])
+        setBatchFallbackProgress(null)
 
         try {
             // 按表分组独立条件
@@ -854,7 +858,7 @@ export function usePartSearch() {
                         if (batchItems.length === 0) continue
 
                         try {
-                            const res = await searchBatch(
+                            const res = await searchBatchWithFallback(
                                 tokenId,
                                 realTableName,
                                 batchItems,
@@ -863,7 +867,15 @@ export function usePartSearch() {
                                 undefined,
                                 true,
                                 tableSameValueCols,
-                                cleanedSameValueValues
+                                cleanedSameValueValues,
+                                (completed, total) => {
+                                    const divisor = tableSameValueCols.length || 1
+                                    setBatchFallbackProgress({
+                                        completed: Math.ceil(completed / divisor),
+                                        total: Math.ceil(total / divisor),
+                                        tableName: realTableName
+                                    })
+                                }
                             )
                             if (res.success && res.data) {
                                 const batchRes = res.data as WpsBatchSearchResult
@@ -1058,6 +1070,7 @@ export function usePartSearch() {
             if (searchId === activeSearchIdRef.current) {
                 setIsSearching(false)
                 setSearchingTables([])
+                setBatchFallbackProgress(null)
             }
         }
     }, [selectedTokens, columnConfigs, selectedColumns, tables])
@@ -1848,6 +1861,7 @@ export function usePartSearch() {
         setBatchProgress('正在解析文件...')
         setSearchError(null)
         setSearchResults([]) // 清空旧结果
+        setBatchFallbackProgress(null)
 
         try {
             const ExcelJS = (await import('exceljs')).default
@@ -2013,7 +2027,7 @@ export function usePartSearch() {
                             // 显示列顺序
                             const displayColumns = returnColumns
 
-                            const res = await searchBatch(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined)
+                            const res = await searchBatchWithFallback(tokenId, tableRealName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined, undefined, undefined, undefined, (completed, total) => setBatchFallbackProgress({ completed, total, tableName: tableRealName }))
 
                             let newResult: TableSearchResult
 
@@ -2112,6 +2126,7 @@ export function usePartSearch() {
         } finally {
             setIsBatchSearching(false)
             setBatchProgress('')
+            setBatchFallbackProgress(null)
         }
     }, [selectedTokens, selectedColumns, columnConfigs])
 
@@ -2138,6 +2153,7 @@ export function usePartSearch() {
         setBatchProgress('准备查询...')
         setSearchError(null)
         setSearchResults([])
+        setBatchFallbackProgress(null)
 
         try {
             const tableKeyWithoutCopy = tableKey.includes('__copy_')
@@ -2210,7 +2226,7 @@ export function usePartSearch() {
                 // 显示列顺序
                 const displayColumns = returnColumns
 
-                const res = await searchBatch(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined)
+                const res = await searchBatchWithFallback(tokenId, realTableName, chunk, returnColumns.length > 0 ? returnColumns : undefined, batchLimit, undefined, undefined, undefined, undefined, (completed, total) => setBatchFallbackProgress({ completed, total, tableName: realTableName }))
 
                 let newResult: TableSearchResult
 
@@ -2290,6 +2306,7 @@ export function usePartSearch() {
         } finally {
             setIsBatchSearching(false)
             setBatchProgress('')
+            setBatchFallbackProgress(null)
         }
     }, [selectedTokens, columnConfigs])
 
@@ -2578,6 +2595,7 @@ export function usePartSearch() {
         // Batch Search
         isBatchSearching,
         batchProgress,
+        batchFallbackProgress,
         downloadBatchTemplate,
         performBatchSearch,
         performPasteSearch,

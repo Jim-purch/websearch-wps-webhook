@@ -741,9 +741,6 @@ function extractTableName(fullKey: string): string {
 /** 可重试的 HTTP 状态码 */
 const RETRYABLE_STATUS = new Set([403, 500])
 
-/** 分批回退时每批的最大查询条数 */
-const FALLBACK_CHUNK_SIZE = 10
-
 /**
  * 调用 WPS Webhook（通过队列串行执行，含抖动延迟）
  */
@@ -769,13 +766,12 @@ async function callWpsWebhook(
 }
 
 /**
- * 执行 WPS Webhook 调用，支持 403/500 错误时的自动重试和分批回退
+ * 执行 WPS Webhook 调用，支持 403/500 错误时的自动重试
  *
- * 策略（对客户端完全透明）：
+ * 策略：
  * 1. 首次请求
  * 2. 403/500 → 延迟后重试一次
- * 3. 仍失败且为 searchBatch → 拆分为每批 10 条，逐批请求（每批最多重试 2 次），合并结果
- * 4. 全部失败 → 返回最后一次的错误信息
+ * 3. 仍失败 → 返回错误（分批回退由客户端处理，以便展示进度）
  */
 async function executeWpsCallWithFallback(
     webhookUrl: string,
@@ -792,90 +788,16 @@ async function executeWpsCallWithFallback(
         return { ok: false, status: response.status, error: `WPS API 错误: ${response.status} ${response.statusText}` }
     }
 
-    console.log(`[WPS Fallback] 首次请求失败 (${response.status})，2 秒后重试...`)
+    console.log(`[WPS Retry] 首次请求失败 (${response.status})，2 秒后重试...`)
 
     // 重试一次
     await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
     response = await callWpsWebhook(webhookUrl, tokenValue, argv)
     if (response.ok) {
-        console.log('[WPS Fallback] 重试成功')
+        console.log('[WPS Retry] 重试成功')
         return { ok: true, status: 200, data: await response.json() }
     }
 
-    if (!RETRYABLE_STATUS.has(response.status)) {
-        return { ok: false, status: response.status, error: `WPS API 错误: ${response.status} ${response.statusText}` }
-    }
-
-    // 重试仍失败 — 尝试分批回退（仅 searchBatch 且查询数 > 1）
-    if (argv.action === 'searchBatch' && Array.isArray(argv.batchCriteria) && (argv.batchCriteria as unknown[]).length > 1) {
-        console.log(`[WPS Fallback] 重试仍失败 (${response.status})，启用分批回退策略...`)
-
-        const batchCriteria = argv.batchCriteria as unknown[]
-        const chunks: unknown[][] = []
-        for (let i = 0; i < batchCriteria.length; i += FALLBACK_CHUNK_SIZE) {
-            chunks.push(batchCriteria.slice(i, i + FALLBACK_CHUNK_SIZE))
-        }
-
-        console.log(`[WPS Fallback] ${batchCriteria.length} 条查询 → ${chunks.length} 批（每批 ≤${FALLBACK_CHUNK_SIZE} 条）`)
-
-        const allResults: any[] = []
-        let totalMatches = 0
-        let succeededChunks = 0
-        let lastError = `HTTP ${response.status}`
-
-        for (let i = 0; i < chunks.length; i++) {
-            const chunkArgv = { ...argv, batchCriteria: chunks[i] }
-
-            // 批次间延迟，降低触发限流的概率
-            if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500))
-            }
-
-            try {
-                let chunkOk = false
-                // 每批最多尝试 2 次
-                for (let attempt = 0; attempt < 2 && !chunkOk; attempt++) {
-                    if (attempt > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
-                    }
-
-                    const chunkResp = await callWpsWebhook(webhookUrl, tokenValue, chunkArgv)
-                    if (chunkResp.ok) {
-                        const chunkData = await chunkResp.json()
-                        const parsed = parseWpsResponse<any>(chunkData)
-                        if (parsed.success && parsed.data) {
-                            allResults.push(...(parsed.data.results || []))
-                            totalMatches += parsed.data.totalMatches || 0
-                            succeededChunks++
-                            chunkOk = true
-                        } else {
-                            lastError = parsed.error || '解析失败'
-                        }
-                    } else {
-                        lastError = `HTTP ${chunkResp.status}`
-                    }
-                }
-            } catch (chunkErr) {
-                lastError = chunkErr instanceof Error ? chunkErr.message : '未知错误'
-            }
-        }
-
-        if (succeededChunks > 0) {
-            console.log(`[WPS Fallback] 分批完成: ${succeededChunks}/${chunks.length} 批成功，${allResults.length} 条结果`)
-            const mergedResult = {
-                success: true,
-                sheetName: argv.sheetName,
-                totalQueries: batchCriteria.length,
-                totalMatches,
-                results: allResults
-            }
-            return { ok: true, status: 200, data: { data: { result: JSON.stringify(mergedResult) } } }
-        }
-
-        // 所有批次均失败
-        return { ok: false, status: response.status, error: `WPS API 错误: 分批重试全部失败 (${lastError})` }
-    }
-
-    // 非 searchBatch 或单条查询，无法分批
+    // 返回错误，分批回退由客户端处理
     return { ok: false, status: response.status, error: `WPS API 错误: ${response.status} ${response.statusText}` }
 }

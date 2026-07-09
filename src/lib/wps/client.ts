@@ -260,6 +260,114 @@ export async function searchBatch(
     return result
 }
 
+/** 分批回退时每批的最大查询条数（优先从环境变量读取） */
+const FALLBACK_CHUNK_SIZE = (() => {
+    const env = process.env.NEXT_PUBLIC_WPS_FALLBACK_CHUNK_SIZE
+    const parsed = env ? parseInt(env, 10) : NaN
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10
+})()
+
+/**
+ * 带分批回退的批量搜索
+ *
+ * 当首次请求遇到 403/500 错误时，自动将查询拆分为每批 10 条重试，
+ * 并通过 onProgress 回调实时报告进度。
+ *
+ * @param onProgress 回调 (completed, total) → 用于 UI 展示进度
+ */
+export async function searchBatchWithFallback(
+    tokenId: string,
+    sheetName: string,
+    batchCriteria: Array<{ id: string; criteria: WpsSearchCriteria[] }>,
+    returnColumns?: string[],
+    limit?: number,
+    bypassCache?: boolean,
+    isSameValueSearch?: boolean,
+    sameValueCols?: string[],
+    sameValueValues?: string[],
+    onProgress?: (completed: number, total: number) => void
+): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
+    // 首次完整请求
+    const result = await searchBatch(
+        tokenId, sheetName, batchCriteria,
+        returnColumns, limit, bypassCache,
+        isSameValueSearch, sameValueCols, sameValueValues
+    )
+
+    if (result.success) {
+        return result
+    }
+
+    // 判断是否为可重试的 403/500 错误，且查询数 > 1 才有意义分批
+    const isRetryable = result.error && (result.error.includes('403') || result.error.includes('500'))
+    if (!isRetryable || batchCriteria.length <= 1) {
+        return result
+    }
+
+    // 启用分批回退
+    const chunks: Array<{ id: string; criteria: WpsSearchCriteria[] }[]> = []
+    for (let i = 0; i < batchCriteria.length; i += FALLBACK_CHUNK_SIZE) {
+        chunks.push(batchCriteria.slice(i, i + FALLBACK_CHUNK_SIZE))
+    }
+
+    const allResults: WpsBatchSearchResult['results'] = []
+    let totalMatches = 0
+    let succeededChunks = 0
+    let lastError = result.error
+    let completedItems = 0
+
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+
+        // 批次间延迟，降低触发限流的概率
+        if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500))
+        }
+
+        // 每批最多重试 2 次
+        for (let attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0) {
+                await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
+            }
+
+            try {
+                const chunkResult = await searchBatch(
+                    tokenId, sheetName, chunk,
+                    returnColumns, limit, bypassCache,
+                    isSameValueSearch, sameValueCols, sameValueValues
+                )
+
+                if (chunkResult.success && chunkResult.data) {
+                    allResults.push(...(chunkResult.data.results || []))
+                    totalMatches += chunkResult.data.totalMatches || 0
+                    succeededChunks++
+                    break // 成功则跳出重试循环
+                } else {
+                    lastError = chunkResult.error
+                }
+            } catch (err) {
+                lastError = err instanceof Error ? err.message : '未知错误'
+            }
+        }
+
+        completedItems += chunk.length
+        onProgress?.(completedItems, batchCriteria.length)
+    }
+
+    if (succeededChunks > 0) {
+        const mergedResult: WpsBatchSearchResult = {
+            success: true,
+            sheetName,
+            totalQueries: batchCriteria.length,
+            totalMatches,
+            results: allResults
+        }
+        return { success: true, data: mergedResult }
+    }
+
+    return { success: false, error: `分批重试全部失败 (${lastError})` }
+}
+
 /**
  * 刷新 Google Sheets 缓存
  */

@@ -58,6 +58,7 @@ export default function PartSearchPage() {
         imageUrlCache,
         isBatchSearching,
         batchProgress,
+        batchFallbackProgress,
         downloadBatchTemplate,
         performBatchSearch,
         performPasteSearch,
@@ -635,6 +636,32 @@ export default function PartSearchPage() {
                     )}
                 </div>
             </div>
+
+            {/* 分批回退进度提示 */}
+            {batchFallbackProgress && (
+                <div className="fixed top-14 left-0 right-0 z-[9999] bg-amber-500/95 text-white shadow-lg border-b border-amber-400 backdrop-blur-md">
+                    <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span className="font-semibold tracking-wide">
+                                正在分批查询「{batchFallbackProgress.tableName || '数据表'}」，已查询到第 {batchFallbackProgress.completed} 行，剩余 {batchFallbackProgress.total - batchFallbackProgress.completed} 行（共 {batchFallbackProgress.total} 行）
+                            </span>
+                        </div>
+                        {/* 进度条 */}
+                        <div className="flex items-center gap-2 min-w-[200px]">
+                            <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-white rounded-full transition-all duration-300"
+                                    style={{ width: `${batchFallbackProgress.total > 0 ? (batchFallbackProgress.completed / batchFallbackProgress.total * 100) : 0}%` }}
+                                />
+                            </div>
+                            <span className="text-xs font-mono whitespace-nowrap">
+                                {batchFallbackProgress.total > 0 ? Math.round(batchFallbackProgress.completed / batchFallbackProgress.total * 100) : 0}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="mb-8">
                 <div className="flex flex-wrap items-center gap-4 mb-2">
