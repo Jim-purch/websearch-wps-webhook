@@ -58,6 +58,8 @@ export interface TableSearchResult {
     displayColumns?: string[] // 显示列顺序（基于用户配置）
     originalCriteria?: WpsSearchCriteria[] // 原始查询条件（用于加载更多）
     isLoadingMore?: boolean // 是否正在加载更多中
+    isBatchSearch?: boolean // 标记是否为批量搜索
+    allQueryItems?: Array<{ id: string; originalValues: Record<string, string> }> // 所有查询项（有序，含已找到和未找到）
 }
 
 // 移除硬编码的 BATCH_SIZE，改为通过参数传递，默认50
@@ -81,6 +83,12 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
         ...(newResult.originalQueryColumns || [])
     ]))
 
+    // 合并所有查询项
+    const mergedAllQueryItems = [
+        ...(existing.allQueryItems || []),
+        ...(newResult.allQueryItems || [])
+    ]
+
     const mergedResult: TableSearchResult = {
         ...existing,
         records: mergedRecords,
@@ -88,6 +96,8 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
         error: newResult.error || existing.error,
         originalQueryColumns: mergedCols,
         displayColumns: newResult.displayColumns || existing.displayColumns, // 保留显示列配置
+        isBatchSearch: existing.isBatchSearch || newResult.isBatchSearch,
+        allQueryItems: mergedAllQueryItems.length > 0 ? mergedAllQueryItems : undefined,
         // 更新描述
         criteriaDescription: `批量查询 (已加载 ${mergedRecords.length} 条数据)`
     }
@@ -933,7 +943,9 @@ export function usePartSearch() {
                                     totalCount: allRecords.length,
                                     truncated: false,
                                     displayColumns: displayColumns,
-                                    originalQueryColumns: []
+                                    originalQueryColumns: [],
+                                    isBatchSearch: true,
+                                    allQueryItems: cleanedSameValueValues.map(val => ({ id: val, originalValues: {} }))
                                 }
                             } else {
                                 tableResult = {
@@ -2034,6 +2046,7 @@ export function usePartSearch() {
                             if (res.success && res.data) {
                                 const batchRes = res.data as WpsBatchSearchResult
                                 const allRecords: Record<string, unknown>[] = []
+                                const foundIds = new Set<string>()
 
                                 for (const itemResult of batchRes.results) {
                                     if (itemResult.success && itemResult.records) {
@@ -2050,6 +2063,10 @@ export function usePartSearch() {
                                         const filteredRecords = itemResult.records.filter(record =>
                                             matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
                                         )
+
+                                        if (filteredRecords.length > 0) {
+                                            foundIds.add(itemResult.id)
+                                        }
 
                                         const recordsWithId = filteredRecords.map(r => {
                                             const rec = { ...r } as any
@@ -2078,7 +2095,9 @@ export function usePartSearch() {
                                     truncated: false,
                                     error: undefined,
                                     originalQueryColumns,
-                                    displayColumns: displayColumns
+                                    displayColumns: displayColumns,
+                                    isBatchSearch: true,
+                                    allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))
                                 }
                             } else {
                                 newResult = {
@@ -2233,6 +2252,7 @@ export function usePartSearch() {
                 if (res.success && res.data) {
                     const batchRes = res.data as WpsBatchSearchResult
                     const allRecords: Record<string, unknown>[] = []
+                    const foundIds = new Set<string>()
 
                     for (const itemResult of batchRes.results) {
                         if (itemResult.success && itemResult.records) {
@@ -2249,6 +2269,10 @@ export function usePartSearch() {
                             const filteredRecords = itemResult.records.filter(record =>
                                 matchesAllCriteria(record as Record<string, unknown>, itemCriteria)
                             )
+
+                            if (filteredRecords.length > 0) {
+                                foundIds.add(itemResult.id)
+                            }
 
                             const recordsWithId = filteredRecords.map(r => {
                                 const rec = { ...r } as any
@@ -2277,7 +2301,9 @@ export function usePartSearch() {
                         truncated: false,
                         error: undefined,
                         originalQueryColumns,
-                        displayColumns: displayColumns
+                        displayColumns: displayColumns,
+                        isBatchSearch: true,
+                        allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))
                     }
                 } else {
                     newResult = {

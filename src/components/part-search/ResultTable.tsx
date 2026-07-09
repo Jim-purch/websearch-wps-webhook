@@ -325,6 +325,9 @@ function ResultCard({
     const [editValue, setEditValue] = useState('')
     const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
 
+    // 是否显示未查找到的行
+    const [showNotFoundRows, setShowNotFoundRows] = useState(false)
+
     // 列宽度和行高度状态
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
     const [rowHeight, setRowHeight] = useState<'default' | 'compact' | 'very-compact'>('compact')
@@ -476,6 +479,35 @@ function ResultCard({
     }, [records, sortConfig])
 
     const hasBatchQueryID = records.some(r => '_BatchQueryID' in r)
+
+    // 当 showNotFoundRows 开启时，按原始查询顺序构建交错显示列表
+    const renderList = useMemo(() => {
+        if (!showNotFoundRows || !result.allQueryItems || !result.isBatchSearch) {
+            return rows.map((row, idx) => ({ row, origIdx: idx, isPlaceholder: false as const }))
+        }
+
+        // 按 _BatchQueryID 分组找到的记录
+        const rowsById = new Map<string, Array<{ row: typeof rows[0]; origIdx: number }>>()
+        rows.forEach((row, idx) => {
+            const id = String(row._BatchQueryID || '')
+            if (!rowsById.has(id)) rowsById.set(id, [])
+            rowsById.get(id)!.push({ row, origIdx: idx })
+        })
+
+        // 按原始查询顺序交错
+        const list: Array<{ row: typeof rows[0] | null; origIdx: number; isPlaceholder: boolean; notFoundItem?: { id: string; originalValues: Record<string, string> } }> = []
+        for (const queryItem of result.allQueryItems) {
+            const foundEntries = rowsById.get(queryItem.id)
+            if (foundEntries && foundEntries.length > 0) {
+                for (const entry of foundEntries) {
+                    list.push({ row: entry.row, origIdx: entry.origIdx, isPlaceholder: false })
+                }
+            } else {
+                list.push({ row: null, origIdx: -1, isPlaceholder: true, notFoundItem: queryItem })
+            }
+        }
+        return list
+    }, [rows, showNotFoundRows, result.allQueryItems, result.isBatchSearch])
 
     const columns = rows.length > 0
         ? Object.keys(rows[0]).filter(k => k !== 'id' && k !== 'recordId' && k !== '_BatchQueryID')
@@ -695,6 +727,24 @@ function ResultCard({
                             <option value="very-compact">非常紧凑</option>
                         </select>
                     </div>
+                    {result.isBatchSearch && (() => {
+                        const foundIds = new Set(records.map(r => String(r._BatchQueryID || '')))
+                        const notFoundCount = (result.allQueryItems || []).filter(item => !foundIds.has(item.id)).length
+                        return notFoundCount > 0 ? (
+                        <label
+                            className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] cursor-pointer select-none"
+                            title="显示未查找到任何结果的行"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={showNotFoundRows}
+                                onChange={(e) => setShowNotFoundRows(e.target.checked)}
+                                className="cursor-pointer accent-amber-500"
+                            />
+                            显示未查找到的行 ({notFoundCount})
+                        </label>
+                        ) : null
+                    })()}
                     {onExportSingle && (
                         <button
                             type="button"
@@ -806,7 +856,7 @@ function ResultCard({
                         className={`overflow-auto max-h-[600px] ${isSelecting ? 'select-none' : ''}`}
                         {...containerProps}
                     >
-                        {rows.length === 0 ? (
+                        {renderList.length === 0 ? (
                             <p className="text-center text-[var(--text-muted)] py-8">未找到匹配的数据</p>
                         ) : (
                             <table className="w-full border-collapse text-sm">
@@ -883,7 +933,31 @@ function ResultCard({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((row, rowIdx) => (
+                                    {renderList.map((item, displayIdx) => {
+                                        if (item.isPlaceholder) {
+                                        return (
+                                            <tr key={`nf_${displayIdx}`} className="transition-colors opacity-50">
+                                                <td className="sticky left-0 bg-[var(--table-sticky-bg)] z-20 px-3 border-b border-[var(--border)] text-center w-10 text-[var(--text-muted)]" style={{ left: 0 }}>—</td>
+                                                {displayColumns.map(col => {
+                                                    const nf = item.notFoundItem!
+                                                    let val = ''
+                                                    if (col === '_BatchQueryID') {
+                                                        val = nf.id
+                                                    } else {
+                                                        const originalKey = col.startsWith('原始_') ? col.slice(3) : col
+                                                        val = nf.originalValues[originalKey] ?? ''
+                                                    }
+                                                    return (
+                                                        <td key={col} className="px-3 py-1.5 border-b border-[var(--border)] whitespace-nowrap text-[var(--text-muted)] italic">{val}</td>
+                                                    )
+                                                })}
+                                                <td className="px-3 border-b border-[var(--border)] whitespace-nowrap"></td>
+                                            </tr>
+                                        )
+                                        }
+                                        const row = item.row!
+                                        const rowIdx = item.origIdx
+                                        return (
                                         <tr key={rowIdx} className="transition-colors">
                                             <td 
                                                 className={`sticky left-0 bg-[var(--table-sticky-bg)] hover:bg-[var(--hover-bg)] z-20 px-3 ${pyClass} border-b border-[var(--border)] text-center w-10`}
@@ -1252,7 +1326,8 @@ function ResultCard({
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         )}
