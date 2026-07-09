@@ -375,27 +375,36 @@ function ResultCard({
         setSelectedRows(new Set())
     }, [result.records])
 
-    // 构建带未找到行的导出结果
+    // 构建带未找到行的导出结果（顺序与客户端显示一致）
     const buildExportResult = (): TableSearchResult => {
         if (!showNotFoundRows || !result.isBatchSearch || !result.allQueryItems) {
             return result
         }
 
-        // 按 _BatchQueryID 分组找到的记录
-        const foundIds = new Set(records.map(r => String(r._BatchQueryID || '')))
-        const notFoundItems = result.allQueryItems.filter(item => !foundIds.has(item.id))
-        if (notFoundItems.length === 0) return result
+        // 按原始查询顺序交错构建记录列表
+        const rowsById = new Map<string, Record<string, unknown>[]>()
+        for (const rec of records) {
+            const id = String(rec._BatchQueryID || '')
+            if (!rowsById.has(id)) rowsById.set(id, [])
+            rowsById.get(id)!.push(rec)
+        }
 
-        // 将未找到的行转为记录格式
-        const notFoundRecords = notFoundItems.map(item => {
-            const rec: Record<string, unknown> = { _BatchQueryID: item.id }
-            for (const [key, val] of Object.entries(item.originalValues)) {
-                rec[`原始_${key}`] = val
+        const orderedRecords: Record<string, unknown>[] = []
+        for (const queryItem of result.allQueryItems) {
+            const found = rowsById.get(queryItem.id)
+            if (found && found.length > 0) {
+                orderedRecords.push(...found)
+            } else {
+                // 未找到的行转为记录格式
+                const rec: Record<string, unknown> = { _BatchQueryID: queryItem.id }
+                for (const [key, val] of Object.entries(queryItem.originalValues)) {
+                    rec[`原始_${key}`] = val
+                }
+                orderedRecords.push(rec)
             }
-            return rec
-        })
+        }
 
-        return { ...result, records: [...result.records, ...notFoundRecords] }
+        return { ...result, records: orderedRecords }
     }
 
     const handleBatchExport = (e: React.MouseEvent) => {
