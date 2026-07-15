@@ -10,7 +10,7 @@ import type { Token } from '@/types'
 interface SearchFormProps {
     selectedColumns: Record<string, string[]>
     isSearching: boolean
-    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals'; limit?: number; clean?: boolean }) => void
+    onSearch: (conditions: SearchCondition[], sameValueParams?: { values: string[]; op: 'Contains' | 'Equals'; limit?: number; clean?: boolean; batchSize?: number }) => void
     selectedTokens?: Token[]
     onExport?: () => void
     isExporting?: boolean
@@ -193,7 +193,8 @@ export function SearchForm({
             values: sameValueValues,
             op: batchMatchMode === 'exact' ? 'Equals' : 'Contains',
             limit: batchLimit,
-            clean: batchCleanMode
+            clean: batchCleanMode,
+            batchSize
         })
     }
 
@@ -322,6 +323,22 @@ export function SearchForm({
                                                     原始
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        {/* 回退分批行数 */}
+                                        <div className="flex items-center gap-1.5 border-l border-[var(--border)] pl-3">
+                                            <span className="text-xs text-[var(--text-muted)]" title="当请求触发限流回退时，每批处理的行数">回退分批行数：</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={batchSize}
+                                                onChange={(e) => {
+                                                    const val = Math.max(1, Math.min(100, Number(e.target.value)))
+                                                    setBatchSize(val)
+                                                }}
+                                                className="w-12 px-1.5 py-0.5 text-xs border border-[var(--border)] rounded bg-[var(--card-bg)] text-center text-[var(--foreground)]"
+                                            />
                                         </div>
 
                                         {/* WPS表单项最大返回数 */}

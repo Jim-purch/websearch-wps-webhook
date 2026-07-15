@@ -289,7 +289,8 @@ export async function searchBatchWithFallback(
     sameValueCols?: string[],
     sameValueValues?: string[],
     onProgress?: (completed: number, total: number) => void,
-    onChunkResult?: (chunkResult: WpsBatchSearchResult, completedBatches: number, totalBatches: number) => void
+    onChunkResult?: (chunkResult: WpsBatchSearchResult, completedBatches: number, totalBatches: number) => void,
+    fallbackChunkSize?: number
 ): Promise<ParsedWpsResult<WpsBatchSearchResult>> {
     // 首次完整请求
     const result = await searchBatch(
@@ -308,10 +309,11 @@ export async function searchBatchWithFallback(
         return result
     }
 
-    // 启用分批回退
+    // 启用分批回退，使用用户指定的分批大小或默认值
+    const effectiveChunkSize = fallbackChunkSize && fallbackChunkSize > 0 ? fallbackChunkSize : FALLBACK_CHUNK_SIZE
     const chunks: Array<{ id: string; criteria: WpsSearchCriteria[] }[]> = []
-    for (let i = 0; i < batchCriteria.length; i += FALLBACK_CHUNK_SIZE) {
-        chunks.push(batchCriteria.slice(i, i + FALLBACK_CHUNK_SIZE))
+    for (let i = 0; i < batchCriteria.length; i += effectiveChunkSize) {
+        chunks.push(batchCriteria.slice(i, i + effectiveChunkSize))
     }
 
     const allResults: WpsBatchSearchResult['results'] = []

@@ -695,6 +695,7 @@ export function usePartSearch() {
             op: 'Contains' | 'Equals'
             limit?: number
             clean?: boolean
+            batchSize?: number
         }
     ) => {
         const searchId = ++activeSearchIdRef.current
@@ -939,6 +940,7 @@ export function usePartSearch() {
                             const incrementalKeySet = new Set<string>()
                             let incrementalAllRecords: Record<string, unknown>[] = []
 
+                            // 单次请求，仅在回退时按用户设置的 batchSize 分批
                             const res = await searchBatchWithFallback(
                                 tokenId,
                                 realTableName,
@@ -964,7 +966,7 @@ export function usePartSearch() {
                                         tableName: displayTableNameWithToken,
                                         realTableName: realTableName,
                                         tokenId: tokenId,
-                                        criteriaDescription: `同值批量搜索 (${tableSameValueCols.join('/')})，已匹配 ${incrementalAllRecords.length} 条 [批次 ${completedBatches}/${totalBatches}]`,
+                                        criteriaDescription: `同值批量搜索 (${tableSameValueCols.join('/')})，已匹配 ${incrementalAllRecords.length} 条 [回退批次 ${completedBatches}/${totalBatches}]`,
                                         records: incrementalAllRecords,
                                         totalCount: incrementalAllRecords.length,
                                         truncated: false,
@@ -975,7 +977,8 @@ export function usePartSearch() {
                                         batchStatus: { completedBatches, totalBatches }
                                     }
                                     setSearchResults(prev => mergeBatchResults(prev, incrementalResult))
-                                }
+                                },
+                                sameValueParams?.batchSize
                             )
                             if (res.success && res.data) {
                                 const batchRes = res.data as WpsBatchSearchResult
