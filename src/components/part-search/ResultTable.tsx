@@ -342,6 +342,12 @@ function ResultCard({
     // 右键菜单状态
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; column: string } | null>(null)
 
+    // 分页状态（仅在行数超过阈值时启用）
+    const PAGINATION_THRESHOLD = 10000
+    const PAGE_SIZE = 500
+    const needsPagination = (result.records?.length || 0) > PAGINATION_THRESHOLD
+    const [currentPage, setCurrentPage] = useState(1)
+
     const handleResizeStart = useCallback((col: string, e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
@@ -503,6 +509,11 @@ function ResultCard({
         })
     }, [])
 
+    // 当结果数据变化或排序变化时重置分页
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [result.records, sortConfig])
+
     const records = result.records || []
 
     // 处理 WPS 记录格式
@@ -590,6 +601,13 @@ function ResultCard({
 
     // 过滤掉本地隐藏的列
     const displayColumns = allDisplayColumns.filter(col => !hiddenColumns.has(col))
+
+    // 分页：仅在行数超过阈值时对渲染列表切片
+    const totalPages = needsPagination ? Math.max(1, Math.ceil(renderList.length / PAGE_SIZE)) : 1
+    const safePage = Math.min(currentPage, totalPages)
+    const pageStart = needsPagination ? (safePage - 1) * PAGE_SIZE : 0
+    const pageEnd = needsPagination ? pageStart + PAGE_SIZE : renderList.length
+    const paginatedRenderList = needsPagination ? renderList.slice(pageStart, pageEnd) : renderList
 
     const handleBatchEditConfirm = useCallback((columnName: string, newValue: string) => {
         if (!updateCell) return
@@ -805,6 +823,7 @@ function ResultCard({
                         {result.totalCount} 条结果
                         {result.truncated && ' (已截断)'}
                         {result.error && ' (部分失败)'}
+                        {needsPagination && ' (已分页)'}
                     </span>
                     {result.batchStatus && result.batchStatus.completedBatches < result.batchStatus.totalBatches && (
                         <span className="text-sm text-[#3b82f6] bg-[rgba(59,130,246,0.1)] px-3 py-1 rounded-full flex items-center gap-1.5 animate-pulse">
@@ -967,12 +986,20 @@ function ResultCard({
                                         >
                                             <input
                                                 type="checkbox"
-                                                checked={rows.length > 0 && selectedRows.size === rows.length}
+                                                checked={paginatedRenderList.length > 0 && paginatedRenderList.every(item => !item.isPlaceholder && selectedRows.has(item.origIdx))}
                                                 onChange={(e) => {
                                                     if (e.target.checked) {
-                                                        setSelectedRows(new Set(rows.map((_, i) => i)))
+                                                        const next = new Set(selectedRows)
+                                                        for (const item of paginatedRenderList) {
+                                                            if (!item.isPlaceholder) next.add(item.origIdx)
+                                                        }
+                                                        setSelectedRows(next)
                                                     } else {
-                                                        setSelectedRows(new Set())
+                                                        const next = new Set(selectedRows)
+                                                        for (const item of paginatedRenderList) {
+                                                            if (!item.isPlaceholder) next.delete(item.origIdx)
+                                                        }
+                                                        setSelectedRows(next)
                                                     }
                                                 }}
                                                 className="w-4 h-4 rounded border-gray-300 text-[#eab308] focus:ring-[#eab308] cursor-pointer"
@@ -1033,7 +1060,7 @@ function ResultCard({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {renderList.map((item, displayIdx) => {
+                                    {paginatedRenderList.map((item, displayIdx) => {
                                         if (item.isPlaceholder) {
                                         return (
                                             <tr key={`nf_${displayIdx}`} className="transition-colors opacity-50">
@@ -1432,6 +1459,71 @@ function ResultCard({
                             </table>
                         )}
                     </div>
+
+                    {/* 分页控件 */}
+                    {needsPagination && (
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--border)] bg-[var(--card-bg)] text-sm">
+                            <span className="text-[var(--text-muted)]">
+                                第 <span className="font-semibold text-[var(--text-main)]">{pageStart + 1}</span> - <span className="font-semibold text-[var(--text-main)]">{Math.min(pageEnd, renderList.length)}</span> 行，共 <span className="font-semibold text-[var(--text-main)]">{renderList.length}</span> 行
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(1)}
+                                    disabled={safePage <= 1}
+                                    className="px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                    title="第一页"
+                                >
+                                    ⏮
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={safePage <= 1}
+                                    className="px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                    title="上一页"
+                                >
+                                    ◀
+                                </button>
+                                <span className="text-xs text-[var(--text-muted)] px-2">
+                                    <span className="font-semibold text-[#eab308]">{safePage}</span> / {totalPages}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={safePage >= totalPages}
+                                    className="px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                    title="下一页"
+                                >
+                                    ▶
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(totalPages)}
+                                    disabled={safePage >= totalPages}
+                                    className="px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--hover-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                    title="最后一页"
+                                >
+                                    ⏭
+                                </button>
+                                <span className="text-xs text-[var(--text-muted)] ml-1">|</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={totalPages}
+                                    value={safePage}
+                                    onChange={(e) => {
+                                        const v = Number(e.target.value)
+                                        if (!isNaN(v) && v >= 1 && v <= totalPages) {
+                                            setCurrentPage(v)
+                                        }
+                                    }}
+                                    className="w-14 px-1.5 py-1 text-xs text-center border border-[var(--border)] rounded bg-[var(--card-bg)] text-[var(--text-main)]"
+                                    title="跳转到指定页"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -2097,6 +2097,11 @@ export function usePartSearch() {
                         chunkedItems.push(items.slice(j, j + batchSize))
                     }
 
+                    // 跨批次累积记录，避免每批结果覆盖上一批
+                    let accumulatedRecords: Record<string, unknown>[] = []
+                    let accumulatedQueryItems: Array<{ id: string; originalValues: Record<string, string> }> = []
+                    let accumulatedOriginalQueryColumns: string[] = []
+
                     for (let chunkIdx = 0; chunkIdx < chunkedItems.length; chunkIdx++) {
                         const chunk = chunkedItems[chunkIdx]
                         const currentBatchSize = chunk.length
@@ -2190,19 +2195,24 @@ export function usePartSearch() {
                                 const batchRes = res.data as WpsBatchSearchResult
                                 const { records: allRecords, foundIds } = processBatchChunkResult(batchRes, chunk)
 
+                                // 累积本批次结果到跨批次累加器
+                                accumulatedRecords = [...accumulatedRecords, ...allRecords]
+                                accumulatedQueryItems = [...accumulatedQueryItems, ...chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))]
+                                accumulatedOriginalQueryColumns = Array.from(new Set([...accumulatedOriginalQueryColumns, ...originalQueryColumns]))
+
                                 newResult = {
                                     tableName: displayTableName,
                                     realTableName: tableRealName,
                                     tokenId: tokenId,
-                                    criteriaDescription: `批量查询`, // 会在 merge 中更新
-                                    records: allRecords,
-                                    totalCount: allRecords.length,
+                                    criteriaDescription: `批量查询 (已加载 ${accumulatedRecords.length} 条数据)`,
+                                    records: accumulatedRecords,
+                                    totalCount: accumulatedRecords.length,
                                     truncated: false,
                                     error: undefined,
-                                    originalQueryColumns,
+                                    originalQueryColumns: accumulatedOriginalQueryColumns,
                                     displayColumns: displayColumns,
                                     isBatchSearch: true,
-                                    allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                                    allQueryItems: accumulatedQueryItems,
                                     batchStatus: null
                                 }
                             } else {
@@ -2210,15 +2220,20 @@ export function usePartSearch() {
                                     tableName: displayTableName,
                                     realTableName: tableRealName,
                                     tokenId: tokenId,
-                                    criteriaDescription: '批量查询失败',
-                                    records: [],
-                                    totalCount: 0,
+                                    criteriaDescription: `批量查询 (已加载 ${accumulatedRecords.length} 条数据，本批次失败)`,
+                                    records: accumulatedRecords,
+                                    totalCount: accumulatedRecords.length,
                                     truncated: false,
-                                    error: res.error || 'API 调用失败'
+                                    error: res.error || 'API 调用失败',
+                                    originalQueryColumns: accumulatedOriginalQueryColumns,
+                                    displayColumns: displayColumns,
+                                    isBatchSearch: true,
+                                    allQueryItems: accumulatedQueryItems,
+                                    batchStatus: null
                                 }
                             }
 
-                            // 最终结果替换（而非合并）已有条目，避免增量结果与最终结果重复
+                            // 最终结果替换已有条目（包含所有批次的累积记录），清除增量回调的临时数据
                             setSearchResults(prev => upsertSearchResult(prev, newResult))
 
                         } catch (err) {
@@ -2333,6 +2348,11 @@ export function usePartSearch() {
             let processedCount = 0
             const totalCount = allItems.length
 
+            // 跨批次累积记录，避免每批结果覆盖上一批
+            let accumulatedRecords: Record<string, unknown>[] = []
+            let accumulatedQueryItems: Array<{ id: string; originalValues: Record<string, string> }> = []
+            let accumulatedOriginalQueryColumns: string[] = []
+
             for (let chunkIdx = 0; chunkIdx < chunkedItems.length; chunkIdx++) {
                 const chunk = chunkedItems[chunkIdx]
                 const currentBatchSize = chunk.length
@@ -2430,19 +2450,24 @@ export function usePartSearch() {
                     const batchRes = res.data as WpsBatchSearchResult
                     const { records: allRecords, foundIds } = processPasteChunkResult(batchRes, chunk)
 
+                    // 累积本批次结果到跨批次累加器
+                    accumulatedRecords = [...accumulatedRecords, ...allRecords]
+                    accumulatedQueryItems = [...accumulatedQueryItems, ...chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} }))]
+                    accumulatedOriginalQueryColumns = Array.from(new Set([...accumulatedOriginalQueryColumns, ...originalQueryColumns]))
+
                     newResult = {
                         tableName: displayTableName,
                         realTableName: realTableName,
                         tokenId: tokenId,
-                        criteriaDescription: `粘贴查询`, // 会在 merge 中更新
-                        records: allRecords,
-                        totalCount: allRecords.length,
+                        criteriaDescription: `粘贴查询 (已加载 ${accumulatedRecords.length} 条数据)`,
+                        records: accumulatedRecords,
+                        totalCount: accumulatedRecords.length,
                         truncated: false,
                         error: undefined,
-                        originalQueryColumns,
+                        originalQueryColumns: accumulatedOriginalQueryColumns,
                         displayColumns: displayColumns,
                         isBatchSearch: true,
-                        allQueryItems: chunk.map(item => ({ id: item.id, originalValues: item.originalValues || {} })),
+                        allQueryItems: accumulatedQueryItems,
                         batchStatus: null
                     }
                 } else {
@@ -2450,15 +2475,20 @@ export function usePartSearch() {
                         tableName: displayTableName,
                         realTableName: realTableName,
                         tokenId: tokenId,
-                        criteriaDescription: '粘贴查询失败',
-                        records: [],
-                        totalCount: 0,
+                        criteriaDescription: `粘贴查询 (已加载 ${accumulatedRecords.length} 条数据，本批次失败)`,
+                        records: accumulatedRecords,
+                        totalCount: accumulatedRecords.length,
                         truncated: false,
-                        error: res.error || 'API 调用失败'
+                        error: res.error || 'API 调用失败',
+                        originalQueryColumns: accumulatedOriginalQueryColumns,
+                        displayColumns: displayColumns,
+                        isBatchSearch: true,
+                        allQueryItems: accumulatedQueryItems,
+                        batchStatus: null
                     }
                 }
 
-                // 最终结果替换（而非合并）已有条目，避免增量结果与最终结果重复
+                // 最终结果替换已有条目（包含所有批次的累积记录），清除增量回调的临时数据
                 setSearchResults(prev => upsertSearchResult(prev, newResult))
 
                 processedCount += currentBatchSize
