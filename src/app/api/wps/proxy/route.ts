@@ -738,9 +738,6 @@ function extractTableName(fullKey: string): string {
 // WPS Webhook 调用（含 403/500 自动重试和分批回退）
 // ==========================================
 
-/** 可重试的 HTTP 状态码 */
-const RETRYABLE_STATUS = new Set([403, 500])
-
 /**
  * 调用 WPS Webhook（通过队列串行执行，含抖动延迟）
  */
@@ -778,26 +775,12 @@ async function executeWpsCallWithFallback(
     tokenValue: string,
     argv: Record<string, unknown>
 ): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
-    // 第一次尝试
-    let response = await callWpsWebhook(webhookUrl, tokenValue, argv)
+    // 首次请求
+    const response = await callWpsWebhook(webhookUrl, tokenValue, argv)
     if (response.ok) {
         return { ok: true, status: 200, data: await response.json() }
     }
 
-    if (!RETRYABLE_STATUS.has(response.status)) {
-        return { ok: false, status: response.status, error: `WPS API 错误: ${response.status} ${response.statusText}` }
-    }
-
-    console.log(`[WPS Retry] 首次请求失败 (${response.status})，2 秒后重试...`)
-
-    // 重试一次
-    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
-    response = await callWpsWebhook(webhookUrl, tokenValue, argv)
-    if (response.ok) {
-        console.log('[WPS Retry] 重试成功')
-        return { ok: true, status: 200, data: await response.json() }
-    }
-
-    // 返回错误，分批回退由客户端处理
+    // 直接返回错误，由客户端进行分批回退处理
     return { ok: false, status: response.status, error: `WPS API 错误: ${response.status} ${response.statusText}` }
 }

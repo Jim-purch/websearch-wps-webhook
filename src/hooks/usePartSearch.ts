@@ -66,7 +66,7 @@ export interface TableSearchResult {
 // 移除硬编码的 BATCH_SIZE，改为通过参数传递，默认50
 
 /**
- * 合并批量查询结果
+ * 合并批量查询结果（去重，避免增量回调与最终结果叠加导致数据重复）
  */
 function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResult): TableSearchResult[] {
     const index = prev.findIndex(p => p.tableName === newResult.tableName)
@@ -75,8 +75,17 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
     }
     const existing = prev[index]
 
-    // 合并记录
-    const mergedRecords = [...existing.records, ...newResult.records]
+    // 合并记录并去重（基于 _rowNumber 或 row 唯一标识）
+    const seen = new Set<string>()
+    const mergedRecords: Record<string, unknown>[] = []
+    for (const rec of [...existing.records, ...newResult.records]) {
+        const rowKey = String(rec._rowNumber ?? rec.row ?? '')
+        const batchId = String(rec._BatchQueryID ?? '')
+        const dedupeKey = rowKey ? `${batchId}__${rowKey}` : ''
+        if (dedupeKey && seen.has(dedupeKey)) continue
+        if (dedupeKey) seen.add(dedupeKey)
+        mergedRecords.push(rec)
+    }
 
     // 合并原始查询列
     const mergedCols = Array.from(new Set([
@@ -84,16 +93,16 @@ function mergeBatchResults(prev: TableSearchResult[], newResult: TableSearchResu
         ...(newResult.originalQueryColumns || [])
     ]))
 
-    // 合并所有查询项
-    const mergedAllQueryItems = [
-        ...(existing.allQueryItems || []),
-        ...(newResult.allQueryItems || [])
-    ]
+    // 合并所有查询项并去重
+    const mergedAllQueryItems = Array.from(new Map(
+        [...(existing.allQueryItems || []), ...(newResult.allQueryItems || [])]
+            .map(item => [item.id, item])
+    ).values())
 
     const mergedResult: TableSearchResult = {
         ...existing,
         records: mergedRecords,
-        totalCount: existing.totalCount + newResult.totalCount,
+        totalCount: mergedRecords.length,
         error: newResult.error || existing.error,
         originalQueryColumns: mergedCols,
         displayColumns: newResult.displayColumns || existing.displayColumns, // 保留显示列配置

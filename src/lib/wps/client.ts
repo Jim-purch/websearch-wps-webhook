@@ -310,33 +310,39 @@ export async function searchBatchWithFallback(
     }
 
     // 启用分批回退，使用用户指定的分批大小或默认值
-    const effectiveChunkSize = fallbackChunkSize && fallbackChunkSize > 0 ? fallbackChunkSize : FALLBACK_CHUNK_SIZE
-    const chunks: Array<{ id: string; criteria: WpsSearchCriteria[] }[]> = []
-    for (let i = 0; i < batchCriteria.length; i += effectiveChunkSize) {
-        chunks.push(batchCriteria.slice(i, i + effectiveChunkSize))
-    }
+    // 如果首次请求的批次总数比回退分批行数还小，则以首次批次的一半作为回退批次大小
+    const configuredChunkSize = fallbackChunkSize && fallbackChunkSize > 0 ? fallbackChunkSize : FALLBACK_CHUNK_SIZE
+    let currentChunkSize = batchCriteria.length < configuredChunkSize
+        ? Math.max(1, Math.floor(batchCriteria.length / 2))
+        : configuredChunkSize
 
+    // 待处理的查询项（首轮为全部，后续轮次为失败的项）
+    let pendingCriteria = batchCriteria
+    // 已成功收集的结果
     const allResults: WpsBatchSearchResult['results'] = []
     let totalMatches = 0
-    let succeededChunks = 0
     let lastError = result.error
     let completedItems = 0
 
-    for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-
-        // 批次间延迟，降低触发限流的概率
-        if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500))
+    // 分批回退轮次：每轮将 chunk size 减半，直到 chunk size 为 1 或全部处理完成
+    while (pendingCriteria.length > 0) {
+        const chunks: Array<{ id: string; criteria: WpsSearchCriteria[] }[]> = []
+        for (let i = 0; i < pendingCriteria.length; i += currentChunkSize) {
+            chunks.push(pendingCriteria.slice(i, i + currentChunkSize))
         }
 
-        let chunkSucceeded = false
+        const failedCriteria: typeof pendingCriteria = []
+        let allChunksSucceeded = true
 
-        // 单批次最多重试 2 次
-        for (let attempt = 0; attempt < 2 && !chunkSucceeded; attempt++) {
-            if (attempt > 0) {
-                await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000))
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i]
+
+            // 批次间延迟，降低触发限流的概率
+            if (i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500))
             }
+
+            let chunkSucceeded = false
 
             try {
                 const chunkResult = await searchBatch(
@@ -348,7 +354,6 @@ export async function searchBatchWithFallback(
                 if (chunkResult.success && chunkResult.data) {
                     allResults.push(...(chunkResult.data.results || []))
                     totalMatches += chunkResult.data.totalMatches || 0
-                    succeededChunks++
                     chunkSucceeded = true
 
                     // 增量回调：立即通知调用方此批次的结果
@@ -359,13 +364,34 @@ export async function searchBatchWithFallback(
             } catch (err) {
                 lastError = err instanceof Error ? err.message : '未知错误'
             }
+
+            if (chunkSucceeded) {
+                completedItems += chunk.length
+                onProgress?.(completedItems, batchCriteria.length)
+            } else {
+                allChunksSucceeded = false
+                failedCriteria.push(...chunk)
+            }
         }
 
-        completedItems += chunk.length
-        onProgress?.(completedItems, batchCriteria.length)
+        // 所有批次都成功了，退出
+        if (allChunksSucceeded) {
+            break
+        }
+
+        // chunk size 已经为 1，无法再减半，退出
+        if (currentChunkSize <= 1) {
+            break
+        }
+
+        // 将 chunk size 减半，对失败的项重新发起
+        const newChunkSize = Math.max(1, Math.floor(currentChunkSize / 2))
+        console.log(`[WPS Fallback] 分批大小 ${currentChunkSize} 仍有失败，减半为 ${newChunkSize} 重新处理 ${failedCriteria.length} 项`)
+        currentChunkSize = newChunkSize
+        pendingCriteria = failedCriteria
     }
 
-    if (succeededChunks > 0) {
+    if (allResults.length > 0) {
         const mergedResult: WpsBatchSearchResult = {
             success: true,
             sheetName,
