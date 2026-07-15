@@ -1464,6 +1464,18 @@ export function usePartSearch() {
                             worksheet.addRow(rowData)
                         }
 
+                        // 将所有数据单元格设为文本格式，防止数字前导零丢失或大数字变成科学计数法
+                        for (let r = 2; r <= flatRecords.length + 1; r++) {
+                            const row = worksheet.getRow(r)
+                            for (let c = 1; c <= allKeys.length; c++) {
+                                const cell = row.getCell(c)
+                                if (typeof cell.value === 'number') {
+                                    cell.value = String(cell.value)
+                                }
+                                cell.numFmt = '@'
+                            }
+                        }
+
                         // 设置图片行的高度
                         if (imageColumns.size > 0) {
                             for (let rowIdx = 2; rowIdx <= flatRecords.length + 1; rowIdx++) {
@@ -1774,6 +1786,18 @@ export function usePartSearch() {
                     }
                 }
                 worksheet.addRow(rowData)
+            }
+
+            // 将所有数据单元格设为文本格式，防止数字前导零丢失或大数字变成科学计数法
+            for (let r = 2; r <= flatRecords.length + 1; r++) {
+                const row = worksheet.getRow(r)
+                for (let c = 1; c <= allKeys.length; c++) {
+                    const cell = row.getCell(c)
+                    if (typeof cell.value === 'number') {
+                        cell.value = String(cell.value)
+                    }
+                    cell.numFmt = '@'
+                }
             }
 
             // 设置图片行的高度
@@ -2685,6 +2709,13 @@ export function usePartSearch() {
         }
     }, [selectedTokens, searchResults, modifiedCells])
 
+    // 清空搜索结果
+    const clearSearchResults = useCallback(() => {
+        setSearchResults([])
+        setSearchError(null)
+        setSearchingTables([])
+    }, [])
+
     return {
         // Token
         tokens: allTokens,
@@ -2756,6 +2787,9 @@ export function usePartSearch() {
         updateCell,
         revertChanges,
         saveChanges,
-        deleteRows
+        deleteRows,
+
+        // 清空结果
+        clearSearchResults
     }
 }

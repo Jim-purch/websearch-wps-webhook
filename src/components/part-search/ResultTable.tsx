@@ -21,6 +21,8 @@ interface ResultTableProps {
     saveChanges?: () => Promise<void>
     onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>
     onLoadMore?: (resultIndex: number) => Promise<void> | void // 加载更多回调
+    onHideColumn?: (resultIndex: number, columnName: string) => void // 隐藏列回调
+    onClearResults?: () => void // 清空搜索结果
 }
 
 function copyToClipboard(text: string): Promise<boolean> {
@@ -298,7 +300,8 @@ function ResultCard({
     modifiedCells,
     updateCell,
     onDeleteRows,
-    onLoadMore
+    onLoadMore,
+    onHideColumn
 }: {
     result: TableSearchResult;
     index: number;
@@ -311,6 +314,7 @@ function ResultCard({
     updateCell?: (resultIndex: number, rowIdx: number, columnName: string, newValue: any) => void;
     onDeleteRows?: (resultIndex: number, rowIndices: number[]) => Promise<void>;
     onLoadMore?: (resultIndex: number) => Promise<void> | void;
+    onHideColumn?: (resultIndex: number, columnName: string) => void;
 }) {
     const [collapsed, setCollapsed] = useState(false)
     const [copiedCell, setCopiedCell] = useState<string | null>(null)
@@ -332,6 +336,11 @@ function ResultCard({
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
     const [rowHeight, setRowHeight] = useState<'default' | 'compact' | 'very-compact'>('compact')
     const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null)
+
+    // 隐藏的列（本地状态）
+    const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set())
+    // 右键菜单状态
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; column: string } | null>(null)
 
     const handleResizeStart = useCallback((col: string, e: React.MouseEvent) => {
         e.preventDefault()
@@ -375,36 +384,57 @@ function ResultCard({
         setSelectedRows(new Set())
     }, [result.records])
 
-    // 构建带未找到行的导出结果（顺序与客户端显示一致）
+    // 构建带未找到行的导出结果（顺序与客户端显示一致），并排除隐藏列
     const buildExportResult = (): TableSearchResult => {
-        if (!showNotFoundRows || !result.isBatchSearch || !result.allQueryItems) {
-            return result
-        }
+        let baseResult: TableSearchResult = result
 
-        // 按原始查询顺序交错构建记录列表
-        const rowsById = new Map<string, Record<string, unknown>[]>()
-        for (const rec of records) {
-            const id = String(rec._BatchQueryID || '')
-            if (!rowsById.has(id)) rowsById.set(id, [])
-            rowsById.get(id)!.push(rec)
-        }
-
-        const orderedRecords: Record<string, unknown>[] = []
-        for (const queryItem of result.allQueryItems) {
-            const found = rowsById.get(queryItem.id)
-            if (found && found.length > 0) {
-                orderedRecords.push(...found)
-            } else {
-                // 未找到的行转为记录格式
-                const rec: Record<string, unknown> = { _BatchQueryID: queryItem.id }
-                for (const [key, val] of Object.entries(queryItem.originalValues)) {
-                    rec[`原始_${key}`] = val
-                }
-                orderedRecords.push(rec)
+        if (showNotFoundRows && result.isBatchSearch && result.allQueryItems) {
+            // 按原始查询顺序交错构建记录列表
+            const rowsById = new Map<string, Record<string, unknown>[]>()
+            for (const rec of records) {
+                const id = String(rec._BatchQueryID || '')
+                if (!rowsById.has(id)) rowsById.set(id, [])
+                rowsById.get(id)!.push(rec)
             }
+
+            const orderedRecords: Record<string, unknown>[] = []
+            for (const queryItem of result.allQueryItems) {
+                const found = rowsById.get(queryItem.id)
+                if (found && found.length > 0) {
+                    orderedRecords.push(...found)
+                } else {
+                    // 未找到的行转为记录格式
+                    const rec: Record<string, unknown> = { _BatchQueryID: queryItem.id }
+                    for (const [key, val] of Object.entries(queryItem.originalValues)) {
+                        rec[`原始_${key}`] = val
+                    }
+                    orderedRecords.push(rec)
+                }
+            }
+
+            baseResult = { ...result, records: orderedRecords }
         }
 
-        return { ...result, records: orderedRecords }
+        // 排除隐藏列：从记录中删除隐藏列的字段，使导出时不包含这些列
+        if (hiddenColumns.size > 0) {
+            const cleanedRecords = baseResult.records.map(rec => {
+                const newRec: Record<string, unknown> = { ...rec }
+                // 同步处理 fields 对象（多维表格格式）
+                if (newRec.fields && typeof newRec.fields === 'object') {
+                    newRec.fields = { ...(newRec.fields as Record<string, unknown>) }
+                }
+                for (const col of hiddenColumns) {
+                    delete newRec[col]
+                    if (newRec.fields && typeof newRec.fields === 'object') {
+                        delete (newRec.fields as Record<string, unknown>)[col]
+                    }
+                }
+                return newRec
+            })
+            baseResult = { ...baseResult, records: cleanedRecords }
+        }
+
+        return baseResult
     }
 
     const handleBatchExport = (e: React.MouseEvent) => {
@@ -548,7 +578,7 @@ function ResultCard({
     const originalQueryColumns = result.originalQueryColumns || []
 
     // 优先使用 displayColumns (来自 Step 3 的配置顺序)，如果没有则回退到默认逻辑
-    const displayColumns = result.displayColumns && result.displayColumns.length > 0
+    const allDisplayColumns = result.displayColumns && result.displayColumns.length > 0
         ? (hasBatchQueryID
             ? ['_BatchQueryID', ...originalQueryColumns, ...result.displayColumns]
             : result.displayColumns
@@ -557,6 +587,9 @@ function ResultCard({
             ? ['_BatchQueryID', ...originalQueryColumns, ...columns.filter(c => !originalQueryColumns.includes(c))]
             : columns
         )
+
+    // 过滤掉本地隐藏的列
+    const displayColumns = allDisplayColumns.filter(col => !hiddenColumns.has(col))
 
     const handleBatchEditConfirm = useCallback((columnName: string, newValue: string) => {
         if (!updateCell) return
@@ -706,6 +739,32 @@ function ResultCard({
         setCopyToast(true)
         setTimeout(() => setCopyToast(false), 1500)
     }, [displayColumns])
+
+    // 隐藏列
+    const handleHideColumn = useCallback((col: string) => {
+        setHiddenColumns(prev => new Set(prev).add(col))
+        setContextMenu(null)
+        onHideColumn?.(index, col)
+    }, [index, onHideColumn])
+
+    // 右键菜单
+    const handleContextMenu = useCallback((e: React.MouseEvent, col: string) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setContextMenu({ x: e.clientX, y: e.clientY, column: col })
+    }, [])
+
+    // 点击外部关闭右键菜单
+    useEffect(() => {
+        if (!contextMenu) return
+        const close = () => setContextMenu(null)
+        document.addEventListener('click', close)
+        document.addEventListener('contextmenu', close)
+        return () => {
+            document.removeEventListener('click', close)
+            document.removeEventListener('contextmenu', close)
+        }
+    }, [contextMenu])
 
     if (result.error && records.length === 0) {
         return (
@@ -924,6 +983,7 @@ function ResultCard({
                                             return (
                                                 <th
                                                     key={col}
+                                                    onContextMenu={(e) => handleContextMenu(e, col)}
                                                     className={`px-3 py-2 text-left font-semibold text-[var(--text-muted)] border-b border-[var(--border)] whitespace-nowrap group transition-colors select-none ${
                                                         isFirstDataCol
                                                             ? 'sticky top-0 left-10 z-50 bg-[var(--table-sticky-bg)] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]'
@@ -1384,6 +1444,40 @@ function ResultCard({
                     onConfirm={handleBatchEditConfirm}
                 />
             )}
+
+            {/* 右键菜单：隐藏列 */}
+            {contextMenu && mounted && createPortal(
+                <div
+                    className="fixed z-[10000] min-w-[160px] py-1 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] shadow-xl animate-in fade-in zoom-in-95 duration-100"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
+                >
+                    <button
+                        type="button"
+                        onClick={() => handleHideColumn(contextMenu.column)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--hover-bg)] transition-colors flex items-center gap-2 text-[var(--text-main)]"
+                    >
+                        <span>🚫</span>
+                        <span>隐藏列「{contextMenu.column === '_BatchQueryID' ? 'QueryID' : contextMenu.column}」</span>
+                    </button>
+                </div>,
+                document.body
+            )}
+
+            {/* 隐藏列提示条 */}
+            {hiddenColumns.size > 0 && !collapsed && (
+                <div className="px-4 py-1.5 border-t border-[var(--border)] flex items-center gap-2 text-xs text-[var(--text-muted)] bg-[var(--hover-bg)]">
+                    <span>👁️ 已隐藏 {hiddenColumns.size} 列</span>
+                    <button
+                        type="button"
+                        onClick={() => setHiddenColumns(new Set())}
+                        className="text-[#3b82f6] hover:underline font-medium cursor-pointer"
+                    >
+                        全部显示
+                    </button>
+                </div>
+            )}
         </div>
     )
 }
@@ -1402,7 +1496,9 @@ export function ResultTable({
     revertChanges,
     saveChanges,
     onDeleteRows,
-    onLoadMore
+    onLoadMore,
+    onHideColumn,
+    onClearResults
 }: ResultTableProps) {
     const modifiedCount = modifiedCells ? Object.keys(modifiedCells).length : 0
     const [isSavingLocal, setIsSavingLocal] = useState(false)
@@ -1490,6 +1586,25 @@ export function ResultTable({
                 </div>
             )}
             
+            {/* 结果区域工具栏 */}
+            {results.length > 0 && onClearResults && (
+                <div className="mb-3.5 flex justify-end">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (window.confirm('确定要清空所有搜索结果吗？')) {
+                                onClearResults()
+                            }
+                        }}
+                        disabled={isSearching}
+                        className="text-xs px-3.5 py-2 rounded-lg bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#ef4444] hover:bg-[#ef4444] hover:text-white hover:border-[#ef4444] transition-all cursor-pointer flex items-center gap-1.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span>🗑️</span>
+                        清空搜索结果
+                    </button>
+                </div>
+            )}
+
             {results.map((result, index) => (
                 <ResultCard
                     key={`${result.tableName}-${index}`}
@@ -1504,6 +1619,7 @@ export function ResultTable({
                     updateCell={updateCell}
                     onDeleteRows={onDeleteRows}
                     onLoadMore={onLoadMore}
+                    onHideColumn={onHideColumn}
                 />
             ))}
                 </>

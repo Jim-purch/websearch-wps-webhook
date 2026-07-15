@@ -76,7 +76,9 @@ export default function PartSearchPage() {
         updateCell,
         revertChanges,
         saveChanges,
-        deleteRows
+        deleteRows,
+        // 清空结果
+        clearSearchResults
     } = usePartSearch()
 
     const {
@@ -599,6 +601,32 @@ export default function PartSearchPage() {
         setEditingPreset(null)
     }, [])
 
+    // 隐藏列：从结果表右键隐藏列，同步到步骤3的列配置（设为不获取）
+    const handleHideColumn = useCallback((resultIndex: number, columnName: string) => {
+        const targetResult = searchResults[resultIndex]
+        if (!targetResult || !targetResult.tokenId || !targetResult.realTableName) return
+
+        // 重构 tableKey：检查是否为副本表
+        let tableKey: string
+        const copyMatch = targetResult.tableName.match(/\(副本(\d+)\)/)
+        if (copyMatch) {
+            tableKey = `${targetResult.tokenId}::${targetResult.realTableName}__copy_${copyMatch[1]}`
+        } else {
+            tableKey = `${targetResult.tokenId}::${targetResult.realTableName}`
+        }
+
+        // 更新 columnConfigs：将对应列的 fetch 设为 false
+        setColumnConfigs(prev => {
+            const currentConfig = prev[tableKey]
+            if (!currentConfig) return prev
+            const newConfig = currentConfig.map(c =>
+                c.name === columnName ? { ...c, fetch: false } : c
+            )
+            return { ...prev, [tableKey]: newConfig }
+        })
+        setActivePresetId(null)
+    }, [searchResults, setColumnConfigs])
+
     return (
         <div className="w-full">
             {/* Top Search Progress Banner */}
@@ -805,6 +833,8 @@ export default function PartSearchPage() {
                     saveChanges={saveChanges}
                     onDeleteRows={deleteRows}
                     onLoadMore={loadMore}
+                    onHideColumn={handleHideColumn}
+                    onClearResults={clearSearchResults}
                 />
             </div>
 
