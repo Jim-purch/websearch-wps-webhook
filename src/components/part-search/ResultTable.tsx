@@ -343,7 +343,7 @@ function ResultCard({
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; column: string } | null>(null)
 
     // 分页状态（仅在行数超过阈值时启用）
-    const PAGINATION_THRESHOLD = 10000
+    const PAGINATION_THRESHOLD = 3000
     const PAGE_SIZE = 500
     const needsPagination = (result.records?.length || 0) > PAGINATION_THRESHOLD
     const [currentPage, setCurrentPage] = useState(1)
